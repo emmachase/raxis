@@ -1,11 +1,11 @@
 // #![windows_subsystem = "windows"]
 
 use glux::{
-    current_dpi, dips_scale,
+    current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
     widgets::{selectable_text::SelectableText, spinner::Spinner},
 };
-use std::sync::OnceLock;
+use std::{ffi::c_void, sync::OnceLock};
 use windows::{
     Win32::{
         Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
@@ -36,7 +36,7 @@ use windows::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
             Input::KeyboardAndMouse::{ReleaseCapture, SetCapture},
             WindowsAndMessaging::{
-                self as WAM, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
+                self as WAM, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
                 GetMessageW, HCURSOR, HTCLIENT, IDC_ARROW, IDC_IBEAM, LoadCursorW, MSG,
                 RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
@@ -372,8 +372,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 }
                 LRESULT(0)
             }
-            WM_CREATE => match AppState::new() {
-                Ok(mut state) => {
+            WM_CREATE => {
+                let pcs = lparam.0 as *const CREATESTRUCTW;
+                let ptr = (*pcs).lpCreateParams;
+                SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as isize);
+
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
                     // Get the composition refresh rate. If the DWM isn't running,
                     // get the refresh rate from GDI -- probably going to be 60Hz
                     let timing_info = &mut state.timing_info;
@@ -391,14 +395,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         timing_info.rateCompose.uiNumerator as f64,
                         timing_info.rateCompose.uiDenominator as f64
                     );
-
-                    let boxed = Box::new(state);
-                    let ptr = Box::into_raw(boxed) as isize;
-                    SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr);
-                    LRESULT(0)
                 }
-                Err(_) => LRESULT(-1),
-            },
+
+                LRESULT(0)
+            }
             WM_SIZE => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     let width = (lparam.0 & 0xFFFF) as u32;
@@ -506,6 +506,14 @@ fn main() -> Result<()> {
         };
         RegisterClassW(&wc);
 
+        let app = AppState::new()?;
+        let mut dpi_x = 0.0f32;
+        let mut dpi_y = 0.0f32;
+        app.d2d_factory.GetDesktopDpi(&mut dpi_x, &mut dpi_y);
+
+        let boxed = Box::new(app);
+        let ptr = Box::into_raw(boxed) as isize;
+
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             class_name,
@@ -513,12 +521,12 @@ fn main() -> Result<()> {
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            800,
-            600,
+            (800.0 / dips_scale_for_dpi(dpi_x)) as i32,
+            (600.0 / dips_scale_for_dpi(dpi_y)) as i32,
             None,
             None,
             Some(hinstance.into()),
-            None,
+            Some(ptr as *const c_void),
         )?;
 
         // We don't care if the window was previously hidden or not
