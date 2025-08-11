@@ -12,10 +12,10 @@ use windows::{
         Graphics::{
             Direct2D::{
                 Common::{
-                    D2D_RECT_F, D2D_SIZE_U, D2D1_ALPHA_MODE_UNKNOWN, D2D1_COLOR_F,
+                    D2D_SIZE_U, D2D1_ALPHA_MODE_UNKNOWN, D2D1_COLOR_F,
                     D2D1_PIXEL_FORMAT,
                 },
-                D2D1_DEBUG_LEVEL_NONE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+                D2D1_DEBUG_LEVEL_NONE,
                 D2D1_FACTORY_OPTIONS, D2D1_FACTORY_TYPE_SINGLE_THREADED,
                 D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES,
                 D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
@@ -26,7 +26,7 @@ use windows::{
                 DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_WEIGHT_REGULAR, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
                 DWRITE_TEXT_ALIGNMENT_CENTER, DWriteCreateFactory, IDWriteFactory,
-                IDWriteTextFormat, IDWriteTextLayout,
+                IDWriteTextFormat,
             },
             Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo},
             Dxgi::Common::DXGI_FORMAT_UNKNOWN,
@@ -38,7 +38,7 @@ use windows::{
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::{
-                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, GetDpiForWindow,
+                DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
                 SetProcessDpiAwarenessContext,
             },
             Input::KeyboardAndMouse::{ReleaseCapture, SetCapture},
