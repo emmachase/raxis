@@ -204,24 +204,6 @@ impl AppState {
         }
     }
 
-    // fn build_text_layout(&self, hwnd: HWND) -> Result<IDWriteTextLayout> {
-    //     let rc = client_rect(hwnd)?;
-    //     // let to_dip = dips_scale(hwnd);
-    //     // let max_width = (rc.right - rc.left) as f32 * to_dip;
-    //     // let max_height = (rc.bottom - rc.top) as f32 * to_dip;
-    //     self.text_widget
-    //         .build_text_layout(TEXT, max_width, max_height)
-    // }
-
-    // fn hit_test_index(&self, hwnd: HWND, x_dip: f32, y_dip: f32) -> Result<u32> {
-    //     let rc = client_rect(hwnd)?;
-    //     let to_dip = dips_scale(hwnd);
-    //     let max_width = (rc.right - rc.left) as f32 * to_dip;
-    //     let max_height = (rc.bottom - rc.top) as f32 * to_dip;
-    //     self.text_widget
-    //         .hit_test_index(TEXT, x_dip, y_dip, max_width, max_height)
-    // }
-
     fn on_paint(&mut self, hwnd: HWND) -> Result<()> {
         unsafe {
             self.create_device_resources(hwnd)?;
@@ -230,12 +212,9 @@ impl AppState {
             let mut ps = PAINTSTRUCT::default();
             BeginPaint(hwnd, &mut ps);
 
-            if let (d2d_factory, _dwrite_factory, Some(rt), Some(brush)) = (
-                &self.d2d_factory,
-                &self.dwrite_factory,
-                &self.render_target,
-                &self.black_brush,
-            ) {
+            if let (d2d_factory, Some(rt), Some(brush)) =
+                (&self.d2d_factory, &self.render_target, &self.black_brush)
+            {
                 rt.BeginDraw();
                 let white = D2D1_COLOR_F {
                     r: 1.0,
@@ -256,30 +235,14 @@ impl AppState {
                     a: 1.0,
                 });
 
-                // Build text layout sized to the window
-                // let text_layout = self.build_text_layout(hwnd)?;
-
-                // // Cache text layout bounds for cursor hit-testing via widget
-                // self.text_widget.update_bounds_from_layout(&text_layout)?;
-
-                // // Draw selection highlight behind text if any via widget
-                // self.text_widget.draw_selection(&text_layout, rt, brush)?;
-
                 let _ = self.text_widget.update_bounds(rc_dip);
                 let _ = self.text_widget.draw(rt, brush);
 
-                // rt.DrawTextLayout(
-                //     Vector2 { X: 0.0, Y: 0.0 },
-                //     &self.text_widget.layout,
-                //     brush,
-                //     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                // );
-
                 let center = Vector2 {
-                    X: 100.0 * to_dip, //width_dip * 0.25,
-                    Y: 100.0 * to_dip, //height_dip * 0.25,
+                    X: 100.0 * to_dip,
+                    Y: 100.0 * to_dip,
                 };
-                let radius = 64.0 * to_dip; // width_dip.min(height_dip) * 0.2;
+                let radius = 64.0 * to_dip;
                 self.spinner.set_layout(center, radius);
                 let dt = self.timing_info.rateCompose.uiDenominator as f32
                     / self.timing_info.rateCompose.uiNumerator as f32;
