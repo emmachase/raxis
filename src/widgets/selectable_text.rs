@@ -398,7 +398,7 @@ impl SelectableText {
                 self.bounds.width_dip,
                 self.bounds.height_dip,
             )?;
-            let caret_idx = underline_start + self.ime_cursor16;
+            let caret_idx = underline_start;
             let mut x = 0.0f32;
             let mut y = 0.0f32;
             let mut m = DWRITE_HIT_TEST_METRICS::default();
