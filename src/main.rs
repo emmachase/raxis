@@ -36,9 +36,10 @@ use windows::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
             Input::{
                 Ime::{
-                    CANDIDATEFORM, CFS_FORCE_POSITION, CFS_POINT, COMPOSITIONFORM, GCS_COMPSTR,
-                    GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW, ImmGetContext,
-                    ImmReleaseContext, ImmSetCandidateWindow, ImmSetCompositionWindow,
+                    CANDIDATEFORM, CFS_FORCE_POSITION, CFS_POINT, COMPOSITIONFORM, CPS_COMPLETE,
+                    GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW,
+                    ImmGetContext, ImmNotifyIME, ImmReleaseContext, ImmSetCandidateWindow,
+                    ImmSetCompositionWindow, NI_COMPOSITIONSTR,
                 },
                 KeyboardAndMouse::{
                     GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_A, VK_BACK, VK_CONTROL,
@@ -411,6 +412,15 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
                     if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
+                        if state.text_widget.is_composing() {
+                            let himc = ImmGetContext(hwnd);
+                            if !himc.is_invalid() {
+                                // Notify IME to complete composition so that we can move the cursor
+                                // to the clicked position.
+                                let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
+                            }
+                        }
+
                         state.text_widget.begin_drag(idx);
                         // Ensure we receive keyboard input
                         let _ = SetFocus(Some(hwnd));

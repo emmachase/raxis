@@ -73,12 +73,38 @@ impl SelectableText {
     pub fn build_text_layout(&mut self) -> Result<()> {
         unsafe {
             let wtext: Vec<u16> = self.text.encode_utf16().collect();
-            let layout = self.dwrite_factory.CreateTextLayout(
-                &wtext,
-                &self.text_format,
-                self.bounds.width_dip,
-                self.bounds.height_dip,
-            )?;
+            let layout = if self.is_composing() {
+                let (start16, end16) = self.selection_range();
+                let base_w: Vec<u16> = self.text.encode_utf16().collect();
+                let ime_w: Vec<u16> = self.ime_text.as_ref().unwrap().encode_utf16().collect();
+                let mut composed = Vec::with_capacity(base_w.len() + ime_w.len());
+                composed.extend_from_slice(&base_w[..start16 as usize]);
+                let underline_start = composed.len() as u32;
+                composed.extend_from_slice(&ime_w);
+                let underline_len = (composed.len() as u32).saturating_sub(underline_start);
+                composed.extend_from_slice(&base_w[end16 as usize..]);
+
+                let composed_layout = self.dwrite_factory.CreateTextLayout(
+                    &composed,
+                    &self.text_format,
+                    self.bounds.width_dip,
+                    self.bounds.height_dip,
+                )?;
+                let range = DWRITE_TEXT_RANGE {
+                    startPosition: underline_start,
+                    length: underline_len,
+                };
+                composed_layout.SetUnderline(true, range)?;
+                composed_layout
+            } else {
+                self.dwrite_factory.CreateTextLayout(
+                    &wtext,
+                    &self.text_format,
+                    self.bounds.width_dip,
+                    self.bounds.height_dip,
+                )?
+            };
+
             self.layout = Some(layout);
             Ok(())
         }
@@ -192,31 +218,26 @@ impl SelectableText {
                 self.caret_visible = !self.caret_visible;
             }
 
-            let is_composing = self.ime_text.is_some();
-            if !is_composing {
-                // Normal rendering: selection, base text, caret
-                self.draw_selection(layout, rt, brush)?;
-                rt.DrawTextLayout(
-                    Vector2 { X: 0.0, Y: 0.0 },
-                    layout,
-                    brush,
-                    D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                );
+            // Normal rendering: selection, base text, caret
+            self.draw_selection(layout, rt, brush)?;
+            rt.DrawTextLayout(
+                Vector2 { X: 0.0, Y: 0.0 },
+                layout,
+                brush,
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+            );
 
-                // Draw caret if there's no selection (1 DIP wide bar)
-                let sel_start = self.selection_anchor.min(self.selection_active);
-                let sel_end = self.selection_anchor.max(self.selection_active);
-                if sel_start == sel_end && self.caret_visible {
+            // Draw caret if there's no selection (1 DIP wide bar)
+            let sel_start = self.selection_anchor.min(self.selection_active);
+            let sel_end = self.selection_anchor.max(self.selection_active);
+            if self.caret_visible {
+                if self.is_composing() {
+                    // let (start16, end16) = self.selection_range();
+                    let ime_caret_pos = sel_start + self.ime_cursor16;
                     let mut x = 0.0f32;
                     let mut y = 0.0f32;
                     let mut m = DWRITE_HIT_TEST_METRICS::default();
-                    layout.HitTestTextPosition(
-                        self.selection_active,
-                        false,
-                        &mut x,
-                        &mut y,
-                        &mut m,
-                    )?;
+                    layout.HitTestTextPosition(ime_caret_pos, false, &mut x, &mut y, &mut m)?;
                     let caret_rect = D2D_RECT_F {
                         left: x,
                         top: m.top,
@@ -224,58 +245,26 @@ impl SelectableText {
                         bottom: m.top + m.height,
                     };
                     rt.FillRectangle(&caret_rect, brush);
-                }
-            } else {
-                // IME composition rendering: draw single layout with preedit inserted, underline it.
-                let (start16, end16) = self.selection_range();
-                let base_w: Vec<u16> = self.text.encode_utf16().collect();
-                let ime_w: Vec<u16> = self.ime_text.as_ref().unwrap().encode_utf16().collect();
-                let mut composed = Vec::with_capacity(base_w.len() + ime_w.len());
-                composed.extend_from_slice(&base_w[..start16 as usize]);
-                let underline_start = composed.len() as u32;
-                composed.extend_from_slice(&ime_w);
-                let underline_len = (composed.len() as u32).saturating_sub(underline_start);
-                composed.extend_from_slice(&base_w[end16 as usize..]);
-
-                let composed_layout = self.dwrite_factory.CreateTextLayout(
-                    &composed,
-                    &self.text_format,
-                    self.bounds.width_dip,
-                    self.bounds.height_dip,
-                )?;
-                let range = DWRITE_TEXT_RANGE {
-                    startPosition: underline_start,
-                    length: underline_len,
-                };
-                composed_layout.SetUnderline(true, range)?;
-
-                rt.DrawTextLayout(
-                    Vector2 { X: 0.0, Y: 0.0 },
-                    &composed_layout,
-                    brush,
-                    D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                );
-
-                // Draw IME caret
-                let ime_caret_pos = start16 + self.ime_cursor16;
-                if self.caret_visible {
-                    let mut x = 0.0f32;
-                    let mut y = 0.0f32;
-                    let mut m = DWRITE_HIT_TEST_METRICS::default();
-                    composed_layout.HitTestTextPosition(
-                        ime_caret_pos,
-                        false,
-                        &mut x,
-                        &mut y,
-                        &mut m,
-                    )?;
-                    let caret_rect = D2D_RECT_F {
-                        left: x,
-                        top: m.top,
-                        right: x + 1.0,
-                        bottom: m.top + m.height,
-                    };
-                    rt.FillRectangle(&caret_rect, brush);
+                } else {
+                    if sel_start == sel_end {
+                        let mut x = 0.0f32;
+                        let mut y = 0.0f32;
+                        let mut m = DWRITE_HIT_TEST_METRICS::default();
+                        layout.HitTestTextPosition(
+                            self.selection_active,
+                            false,
+                            &mut x,
+                            &mut y,
+                            &mut m,
+                        )?;
+                        let caret_rect = D2D_RECT_F {
+                            left: x,
+                            top: m.top,
+                            right: x + 1.0,
+                            bottom: m.top + m.height,
+                        };
+                        rt.FillRectangle(&caret_rect, brush);
+                    }
                 }
             }
 
@@ -337,10 +326,17 @@ impl SelectableText {
     }
 
     pub fn ime_begin(&mut self) {
+        // Make sure to clear any selection before IME composition starts
+        let (start16, end16) = self.selection_range();
+        if start16 != end16 {
+            self.insert_str("").unwrap();
+        }
+
         self.ime_text = Some(String::new());
         self.ime_cursor16 = 0;
         self.caret_blink_timer = 0.0;
         self.caret_visible = true;
+        self.build_text_layout().unwrap();
     }
 
     pub fn ime_update(&mut self, s: String, cursor16: u32) {
@@ -348,6 +344,7 @@ impl SelectableText {
         self.ime_cursor16 = cursor16;
         self.caret_blink_timer = 0.0;
         self.caret_visible = true;
+        self.build_text_layout().unwrap();
     }
 
     pub fn ime_commit(&mut self, s: String) -> Result<()> {
@@ -355,6 +352,7 @@ impl SelectableText {
         self.insert_str(&s)?;
         self.caret_blink_timer = 0.0;
         self.caret_visible = true;
+        self.build_text_layout().unwrap();
         Ok(())
     }
 
@@ -363,6 +361,7 @@ impl SelectableText {
         self.ime_cursor16 = 0;
         self.caret_blink_timer = 0.0;
         self.caret_visible = true;
+        self.build_text_layout().unwrap();
     }
 
     /// Caret DIP position for a given UTF-16 index in the base layout.
