@@ -34,15 +34,19 @@ use windows::{
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
-            Input::KeyboardAndMouse::{ReleaseCapture, SetCapture},
+            Input::KeyboardAndMouse::{
+                GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_A, VK_BACK, VK_CONTROL,
+                VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT,
+            },
             WindowsAndMessaging::{
                 self as WAM, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
                 GetMessageW, HCURSOR, HTCLIENT, IDC_ARROW, IDC_IBEAM, LoadCursorW, MSG,
                 RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
-                WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE, WM_LBUTTONDOWN, WM_LBUTTONUP,
-                WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                WM_CHAR, WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE, WM_KEYDOWN, WM_LBUTTONDOWN,
+                WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW,
+                WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -96,6 +100,9 @@ struct AppState {
 
     // Selectable text widget encapsulating layout, selection, and bounds
     text_widget: SelectableText,
+
+    // For combining UTF-16 surrogate pairs from WM_CHAR
+    pending_high_surrogate: Option<u16>,
 }
 
 impl AppState {
@@ -140,6 +147,7 @@ impl AppState {
                 timing_info: DWM_TIMING_INFO::default(),
                 spinner,
                 text_widget,
+                pending_high_surrogate: None,
             })
         }
     }
@@ -205,6 +213,9 @@ impl AppState {
     }
 
     fn on_paint(&mut self, hwnd: HWND) -> Result<()> {
+        let dt = self.timing_info.rateCompose.uiDenominator as f64
+            / self.timing_info.rateCompose.uiNumerator as f64;
+
         unsafe {
             self.create_device_resources(hwnd)?;
             // Refresh target DPI in case it changed (e.g. monitor move)
@@ -236,7 +247,7 @@ impl AppState {
                 });
 
                 let _ = self.text_widget.update_bounds(rc_dip);
-                let _ = self.text_widget.draw(rt, brush);
+                let _ = self.text_widget.draw(rt, brush, dt);
 
                 let center = Vector2 {
                     X: 100.0 * to_dip,
@@ -265,8 +276,7 @@ impl AppState {
             let _ = InvalidateRect(Some(hwnd), None, false);
         }
 
-        self.clock += self.timing_info.rateCompose.uiDenominator as f64
-            / self.timing_info.rateCompose.uiNumerator as f64;
+        self.clock += dt;
 
         Ok(())
     }
@@ -294,6 +304,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let y = y_px * to_dip;
                     if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
                         state.text_widget.begin_drag(idx);
+                        // Ensure we receive keyboard input
+                        let _ = SetFocus(Some(hwnd));
                         let _ = SetCapture(hwnd);
                         let _ = InvalidateRect(Some(hwnd), None, false);
                     }
@@ -334,6 +346,89 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
+            }
+            WM_CHAR => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    let mut code = (wparam.0 & 0xFFFF) as u32;
+                    // Handle CR -> LF
+                    if code == 0x0D {
+                        code = 0x0A;
+                    }
+                    // Skip most control chars except TAB and LF
+                    if (code < 0x20 && code != 0x09 && code != 0x0A) || code == 0x7F {
+                        return LRESULT(0);
+                    }
+
+                    // Surrogate handling
+                    let is_high = (0xD800..=0xDBFF).contains(&(code as u16));
+                    let is_low = (0xDC00..=0xDFFF).contains(&(code as u16));
+                    let mut to_insert = String::new();
+                    if is_high {
+                        state.pending_high_surrogate = Some(code as u16);
+                    } else if is_low {
+                        if let Some(high) = state.pending_high_surrogate.take() {
+                            let u = 0x10000
+                                + (((high as u32 - 0xD800) << 10)
+                                    | ((code as u32 - 0xDC00) & 0x3FF));
+                            if let Some(ch) = char::from_u32(u) {
+                                to_insert.push(ch);
+                            }
+                        }
+                    } else {
+                        state.pending_high_surrogate = None;
+                        if let Some(ch) = char::from_u32(code) {
+                            to_insert.push(ch);
+                        }
+                    }
+                    if !to_insert.is_empty() {
+                        let _ = state.text_widget.insert_str(&to_insert);
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                    }
+                }
+                LRESULT(0)
+            }
+            WM_KEYDOWN => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    let vk = wparam.0 as u32;
+                    let shift_down = GetKeyState(VK_SHIFT.0 as i32) < 0;
+                    let ctrl_down = GetKeyState(VK_CONTROL.0 as i32) < 0;
+                    let handled = match vk {
+                        x if x == VK_LEFT.0 as u32 => {
+                            state.text_widget.move_left(shift_down);
+                            true
+                        }
+                        x if x == VK_RIGHT.0 as u32 => {
+                            state.text_widget.move_right(shift_down);
+                            true
+                        }
+                        x if x == VK_HOME.0 as u32 => {
+                            state.text_widget.move_to_start(shift_down);
+                            true
+                        }
+                        x if x == VK_END.0 as u32 => {
+                            state.text_widget.move_to_end(shift_down);
+                            true
+                        }
+                        x if x == VK_BACK.0 as u32 => {
+                            let _ = state.text_widget.backspace();
+                            true
+                        }
+                        x if x == VK_DELETE.0 as u32 => {
+                            let _ = state.text_widget.delete_forward();
+                            true
+                        }
+                        x if x == VK_A.0 as u32 && ctrl_down => {
+                            state.text_widget.select_all();
+                            true
+                        }
+                        _ => false,
+                    };
+                    if handled {
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                        return LRESULT(0);
+                    }
+                }
+                DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_CREATE => {
                 let pcs = lparam.0 as *const CREATESTRUCTW;

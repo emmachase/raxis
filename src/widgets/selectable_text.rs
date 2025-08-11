@@ -11,6 +11,9 @@ use windows::core::Result;
 use windows_numerics::Vector2;
 
 use crate::gfx::RectDIP;
+use unicode_segmentation::UnicodeSegmentation;
+
+const BLINK_TIME: f64 = 0.5;
 
 /// A widget that renders selectable text using DirectWrite and draws
 /// the selection highlight using Direct2D.
@@ -31,6 +34,8 @@ pub struct SelectableText {
     selection_anchor: u32,
     selection_active: u32,
     is_dragging: bool,
+    caret_blink_timer: f64,
+    caret_visible: bool,
 
     // Cached layout bounds in DIPs (for cursor hit-testing)
     metric_bounds: RectDIP,
@@ -51,6 +56,8 @@ impl SelectableText {
             selection_anchor: 0,
             selection_active: 0,
             is_dragging: false,
+            caret_blink_timer: 0.0,
+            caret_visible: true,
             metric_bounds: RectDIP::default(),
         }
     }
@@ -163,11 +170,40 @@ impl SelectableText {
         }
     }
 
-    pub fn draw(&self, rt: &ID2D1HwndRenderTarget, brush: &ID2D1SolidColorBrush) -> Result<()> {
+    pub fn draw(
+        &mut self,
+        rt: &ID2D1HwndRenderTarget,
+        brush: &ID2D1SolidColorBrush,
+        dt: f64,
+    ) -> Result<()> {
         unsafe {
             let layout = self.layout.as_ref().expect("layout not built");
 
+            self.caret_blink_timer += dt;
+            if self.caret_blink_timer >= BLINK_TIME {
+                self.caret_blink_timer = 0.0;
+                self.caret_visible = !self.caret_visible;
+            }
+
             self.draw_selection(layout, rt, brush)?;
+
+            // Draw caret if there's no selection (1 DIP wide vertical bar)
+            let sel_start = self.selection_anchor.min(self.selection_active);
+            let sel_end = self.selection_anchor.max(self.selection_active);
+            if sel_start == sel_end && self.caret_visible {
+                let mut x = 0.0f32;
+                let mut y = 0.0f32;
+                let mut m = DWRITE_HIT_TEST_METRICS::default();
+                // Hit-test at the active caret position
+                layout.HitTestTextPosition(self.selection_active, false, &mut x, &mut y, &mut m)?;
+                let caret_rect = D2D_RECT_F {
+                    left: x,
+                    top: m.top,
+                    right: x + 1.0, // 1 DIP width
+                    bottom: m.top + m.height,
+                };
+                rt.FillRectangle(&caret_rect, brush);
+            }
 
             rt.DrawTextLayout(
                 Vector2 { X: 0.0, Y: 0.0 },
@@ -206,6 +242,9 @@ impl SelectableText {
         self.selection_anchor = idx;
         self.selection_active = idx;
         self.is_dragging = true;
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
     }
 
     pub fn update_drag_index(&mut self, idx: u32) -> bool {
@@ -219,6 +258,9 @@ impl SelectableText {
     pub fn end_drag(&mut self, idx: u32) {
         self.selection_active = idx;
         self.is_dragging = false;
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
     }
 
     pub fn is_dragging(&self) -> bool {
@@ -227,5 +269,242 @@ impl SelectableText {
 
     pub fn metric_bounds(&self) -> RectDIP {
         self.metric_bounds
+    }
+
+    // ===== Editing helpers =====
+    fn utf16_len_of_str(s: &str) -> u32 {
+        s.encode_utf16().count() as u32
+    }
+
+    fn clamp_sel_to_len(&mut self) {
+        let total_len = self.text.encode_utf16().count() as u32;
+        let anchor = self.selection_anchor.min(total_len);
+        let active = self.selection_active.min(total_len);
+        self.selection_anchor = self.snap_to_scalar_boundary(anchor);
+        self.selection_active = self.snap_to_scalar_boundary(active);
+    }
+
+    fn utf16_index_to_byte(&self, idx16: u32) -> usize {
+        // Walk chars accumulating UTF-16 code units until reaching idx16
+        if idx16 == 0 {
+            return 0;
+        }
+        let mut acc16: u32 = 0;
+        for (byte_idx, ch) in self.text.char_indices() {
+            let ch16 = ch.encode_utf16(&mut [0u16; 2]).len() as u32;
+            if acc16 >= idx16 {
+                return byte_idx;
+            }
+            acc16 += ch16;
+            if acc16 >= idx16 {
+                // Return boundary after this char
+                return byte_idx + ch.len_utf8();
+            }
+        }
+        self.text.len()
+    }
+
+    fn utf16_boundaries(&self) -> Vec<u32> {
+        // Returns UTF-16 code unit indices at each grapheme cluster boundary (including 0 and end)
+        let mut out: Vec<u32> = Vec::with_capacity(self.text.len().max(1));
+        let mut acc16: u32 = 0;
+        out.push(0);
+        for g in self.text.graphemes(true) {
+            acc16 += g.encode_utf16().count() as u32;
+            out.push(acc16);
+        }
+        out
+    }
+
+    fn prev_scalar_index(&self, idx16: u32) -> u32 {
+        let mut prev = 0u32;
+        for b in self.utf16_boundaries() {
+            if b >= idx16 {
+                return prev;
+            }
+            prev = b;
+        }
+        prev
+    }
+
+    fn next_scalar_index(&self, idx16: u32) -> u32 {
+        for b in self.utf16_boundaries() {
+            if b > idx16 {
+                return b;
+            }
+        }
+        // Already at or beyond end
+        self.text.encode_utf16().count() as u32
+    }
+
+    fn is_scalar_boundary(&self, idx16: u32) -> bool {
+        self.utf16_boundaries().into_iter().any(|b| b == idx16)
+    }
+
+    fn snap_to_scalar_boundary(&self, idx16: u32) -> u32 {
+        if self.is_scalar_boundary(idx16) {
+            idx16
+        } else {
+            self.prev_scalar_index(idx16)
+        }
+    }
+
+    fn recalc_metrics(&mut self) -> Result<()> {
+        unsafe {
+            let mut metrics = DWRITE_TEXT_METRICS::default();
+            self.layout
+                .as_ref()
+                .expect("layout not built")
+                .GetMetrics(&mut metrics)?;
+            self.metric_bounds = RectDIP {
+                x_dip: metrics.left,
+                y_dip: metrics.top,
+                width_dip: metrics.width,
+                height_dip: metrics.height,
+            };
+            Ok(())
+        }
+    }
+
+    fn selection_range(&self) -> (u32, u32) {
+        (
+            self.selection_anchor.min(self.selection_active),
+            self.selection_anchor.max(self.selection_active),
+        )
+    }
+
+    pub fn select_all(&mut self) {
+        let len16 = self.text.encode_utf16().count() as u32;
+        self.selection_anchor = 0;
+        self.selection_active = len16;
+    }
+
+    pub fn insert_str(&mut self, s: &str) -> Result<()> {
+        let (start16, end16) = self.selection_range();
+        if s.is_empty() && start16 == end16 {
+            return Ok(()); // nothing to do
+        }
+        let start_byte = self.utf16_index_to_byte(start16);
+        let end_byte = self.utf16_index_to_byte(end16);
+        self.text.replace_range(start_byte..end_byte, s);
+        if s.is_empty() {
+            // Deletion: caret at start of removed range
+            self.selection_anchor = start16;
+            self.selection_active = start16;
+        } else {
+            // Insertion: caret after inserted text
+            let ins16 = Self::utf16_len_of_str(s);
+            self.selection_anchor = start16 + ins16;
+            self.selection_active = self.selection_anchor;
+        }
+        self.build_text_layout()?;
+        self.recalc_metrics()?;
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+        Ok(())
+    }
+
+    pub fn backspace(&mut self) -> Result<()> {
+        let (start16, end16) = self.selection_range();
+        if start16 != end16 {
+            return self.insert_str("");
+        }
+        if start16 == 0 {
+            return Ok(());
+        }
+        // Delete previous Unicode scalar
+        let prev16 = self.prev_scalar_index(start16);
+        let prev_byte = self.utf16_index_to_byte(prev16);
+        let caret_byte = self.utf16_index_to_byte(start16);
+        self.text.replace_range(prev_byte..caret_byte, "");
+        self.selection_anchor = prev16;
+        self.selection_active = prev16;
+        self.build_text_layout()?;
+        self.recalc_metrics()?;
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+        Ok(())
+    }
+
+    pub fn delete_forward(&mut self) -> Result<()> {
+        let (start16, end16) = self.selection_range();
+        if start16 != end16 {
+            return self.insert_str("");
+        }
+        let total16 = self.text.encode_utf16().count() as u32;
+        if start16 >= total16 {
+            return Ok(());
+        }
+        // Delete next Unicode scalar
+        let next16 = self.next_scalar_index(start16);
+        let caret_byte = self.utf16_index_to_byte(start16);
+        let next_byte = self.utf16_index_to_byte(next16);
+        self.text.replace_range(caret_byte..next_byte, "");
+        // Caret stays at start16
+        self.build_text_layout()?;
+        self.recalc_metrics()?;
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+        Ok(())
+    }
+
+    pub fn move_left(&mut self, extend: bool) {
+        let (start16, end16) = self.selection_range();
+        if !extend && start16 != end16 {
+            self.selection_active = start16;
+            self.selection_anchor = start16;
+            return;
+        }
+        let target = self.prev_scalar_index(self.selection_active);
+        self.selection_active = target;
+        if !extend {
+            self.selection_anchor = self.selection_active;
+        }
+        self.clamp_sel_to_len();
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+    }
+
+    pub fn move_right(&mut self, extend: bool) {
+        let (start16, end16) = self.selection_range();
+        if !extend && start16 != end16 {
+            self.selection_active = end16;
+            self.selection_anchor = end16;
+            return;
+        }
+        let target = self.next_scalar_index(self.selection_active);
+        self.selection_active = target;
+        if !extend {
+            self.selection_anchor = self.selection_active;
+        }
+        self.clamp_sel_to_len();
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+    }
+
+    pub fn move_to_start(&mut self, extend: bool) {
+        self.selection_active = 0;
+        if !extend {
+            self.selection_anchor = 0;
+        }
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+    }
+
+    pub fn move_to_end(&mut self, extend: bool) {
+        let total16 = self.text.encode_utf16().count() as u32;
+        self.selection_active = total16;
+        if !extend {
+            self.selection_anchor = total16;
+        }
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
     }
 }
