@@ -34,9 +34,16 @@ use windows::{
         System::LibraryLoader::GetModuleHandleW,
         UI::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
-            Input::KeyboardAndMouse::{
-                GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_A, VK_BACK, VK_CONTROL,
-                VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT,
+            Input::{
+                Ime::{
+                    CANDIDATEFORM, CFS_FORCE_POSITION, CFS_POINT, COMPOSITIONFORM, GCS_COMPSTR,
+                    GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW, ImmGetContext,
+                    ImmReleaseContext, ImmSetCandidateWindow, ImmSetCompositionWindow,
+                },
+                KeyboardAndMouse::{
+                    GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_A, VK_BACK, VK_CONTROL,
+                    VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT,
+                },
             },
             WindowsAndMessaging::{
                 self as WAM, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
@@ -44,7 +51,8 @@ use windows::{
                 GetMessageW, HCURSOR, HTCLIENT, IDC_ARROW, IDC_IBEAM, LoadCursorW, MSG,
                 RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
-                WM_CHAR, WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE, WM_KEYDOWN, WM_LBUTTONDOWN,
+                WM_CHAR, WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION,
+                WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN,
                 WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW,
                 WS_OVERLAPPEDWINDOW,
             },
@@ -294,6 +302,106 @@ impl AppState {
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match msg {
+            WM_IME_STARTCOMPOSITION => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    state.text_widget.ime_begin();
+                    // Position IME window at current caret
+                    let to_dip = dips_scale(hwnd);
+                    if let Ok((x_dip, y_dip, h)) = state
+                        .text_widget
+                        .caret_pos_dip(state.text_widget.caret_active16())
+                    {
+                        let x_px = (x_dip / to_dip).round() as i32;
+                        let y_px = ((y_dip + h) / to_dip).round() as i32;
+                        let himc = ImmGetContext(hwnd);
+                        if !himc.is_invalid() {
+                            let cf = CANDIDATEFORM {
+                                dwStyle: CFS_POINT,
+                                ptCurrentPos: POINT { x: x_px, y: y_px },
+                                rcArea: RECT::default(),
+                                dwIndex: 0,
+                            };
+                            let _ = ImmSetCandidateWindow(himc, &cf);
+
+                            let _ = ImmReleaseContext(hwnd, himc);
+                        }
+                    }
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
+                LRESULT(0)
+            }
+            WM_IME_COMPOSITION => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    let himc = ImmGetContext(hwnd);
+                    if !himc.is_invalid() {
+                        let flags = lparam.0 as u32;
+
+                        // Handle result string (committed text)
+                        if flags & GCS_RESULTSTR.0 != 0 {
+                            let bytes = ImmGetCompositionStringW(himc, GCS_RESULTSTR, None, 0);
+                            if bytes > 0 {
+                                let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
+                                let _ = ImmGetCompositionStringW(
+                                    himc,
+                                    GCS_RESULTSTR,
+                                    Some(buf.as_mut_ptr() as *mut _),
+                                    bytes as u32,
+                                );
+                                let s = String::from_utf16_lossy(&buf);
+                                let _ = state.text_widget.ime_commit(s);
+                            }
+                        }
+
+                        // Handle ongoing composition string
+                        if flags & GCS_COMPSTR.0 != 0 {
+                            let bytes = ImmGetCompositionStringW(himc, GCS_COMPSTR, None, 0);
+                            let mut comp = String::new();
+                            if bytes > 0 {
+                                let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
+                                let _ = ImmGetCompositionStringW(
+                                    himc,
+                                    GCS_COMPSTR,
+                                    Some(buf.as_mut_ptr() as *mut _),
+                                    bytes as u32,
+                                );
+                                comp = String::from_utf16_lossy(&buf);
+                            }
+                            // Caret within comp string (UTF-16 units)
+                            let caret_units = {
+                                let v = ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0);
+                                if v < 0 { 0 } else { v as u32 }
+                            };
+                            state.text_widget.ime_update(comp, caret_units);
+
+                            // Reposition IME window at composition caret
+                            let to_dip = dips_scale(hwnd);
+                            if let Ok((x_dip, y_dip, h)) = state.text_widget.ime_caret_pos_dip() {
+                                let x_px = (x_dip / to_dip).round() as i32;
+                                let y_px = ((y_dip + h) / to_dip).round() as i32;
+                                let cf = CANDIDATEFORM {
+                                    dwStyle: CFS_FORCE_POSITION,
+                                    ptCurrentPos: POINT { x: x_px, y: y_px },
+                                    rcArea: RECT::default(),
+                                    dwIndex: 0,
+                                };
+                                let _ = ImmSetCandidateWindow(himc, &cf);
+                            }
+
+                            let _ = InvalidateRect(Some(hwnd), None, false);
+                        }
+
+                        let _ = ImmReleaseContext(hwnd, himc);
+                    }
+                }
+                LRESULT(0)
+            }
+            WM_IME_ENDCOMPOSITION => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    state.text_widget.ime_end();
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
+                LRESULT(0)
+            }
             WM_LBUTTONDOWN => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     // Extract mouse position in client pixels
@@ -349,6 +457,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_CHAR => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    // Suppress WM_CHAR while IME composition is active to avoid duplicate input
+                    if state.text_widget.is_composing() {
+                        return LRESULT(0);
+                    }
                     let mut code = (wparam.0 & 0xFFFF) as u32;
                     // Handle CR -> LF
                     if code == 0x0D {
