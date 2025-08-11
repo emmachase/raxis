@@ -1,9 +1,10 @@
+// #![windows_subsystem = "windows"]
+
 use glux::widgets::spinner::Spinner;
+use std::sync::OnceLock;
 use windows::{
     Win32::{
-        Foundation::{
-            D2DERR_RECREATE_TARGET, ERROR_INSUFFICIENT_BUFFER, HWND, LPARAM, LRESULT, RECT, WPARAM,
-        },
+        Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::{
             Direct2D::{
                 Common::{
@@ -28,7 +29,7 @@ use windows::{
             Dxgi::Common::DXGI_FORMAT_UNKNOWN,
             Gdi::{
                 BeginPaint, EndPaint, GetDC, GetDeviceCaps, InvalidateRect, PAINTSTRUCT, ReleaseDC,
-                UpdateWindow, VREFRESH,
+                ScreenToClient, UpdateWindow, VREFRESH,
             },
         },
         System::LibraryLoader::GetModuleHandleW,
@@ -40,18 +41,25 @@ use windows::{
             Input::KeyboardAndMouse::{ReleaseCapture, SetCapture},
             WindowsAndMessaging::{
                 self as WAM, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
-                DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW,
-                IDC_ARROW, LoadCursorW, MSG, RegisterClassW, STRSAFE_E_INSUFFICIENT_BUFFER,
-                SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+                DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
+                GetMessageW, HCURSOR, HTCLIENT, IDC_ARROW, IDC_IBEAM, LoadCursorW, MSG,
+                RegisterClassW, STRSAFE_E_INSUFFICIENT_BUFFER, SW_SHOW, SWP_NOACTIVATE,
+                SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos, ShowWindow,
                 TranslateMessage, WINDOW_EX_STYLE, WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SIZE, WNDCLASSW,
-                WS_OVERLAPPEDWINDOW,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE,
+                WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
     core::{PCWSTR, Result, w},
 };
 use windows_numerics::Vector2;
+
+pub struct SafeCursor(pub HCURSOR);
+unsafe impl Send for SafeCursor {}
+unsafe impl Sync for SafeCursor {}
+
+static IBEAM_CURSOR: OnceLock<Option<SafeCursor>> = OnceLock::new();
 
 const TEXT: &str = "Hello, בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ.  DirectWrite! こんにちは 😍";
 
@@ -103,6 +111,12 @@ struct AppState {
     selection_anchor: u32,
     selection_active: u32,
     is_dragging: bool,
+
+    // Cached text layout bounds in DIPs for cursor hit-testing
+    text_left_dip: f32,
+    text_top_dip: f32,
+    text_width_dip: f32,
+    text_height_dip: f32,
 }
 
 impl AppState {
@@ -142,6 +156,10 @@ impl AppState {
                 selection_anchor: 0,
                 selection_active: 0,
                 is_dragging: false,
+                text_left_dip: 0.0,
+                text_top_dip: 0.0,
+                text_width_dip: 0.0,
+                text_height_dip: 0.0,
             })
         }
     }
@@ -282,8 +300,13 @@ impl AppState {
                 // Build text layout sized to the window
                 let text_layout = self.build_text_layout(hwnd)?;
 
-                // let mut textmetrics = DWRITE_TEXT_METRICS::default();
-                // text_layout.GetMetrics(&mut textmetrics)?;
+                // Cache text layout metrics for cursor hit-testing
+                let mut textmetrics = DWRITE_TEXT_METRICS::default();
+                text_layout.GetMetrics(&mut textmetrics)?;
+                self.text_left_dip = textmetrics.left;
+                self.text_top_dip = textmetrics.top;
+                self.text_width_dip = textmetrics.width;
+                self.text_height_dip = textmetrics.height;
 
                 // Draw selection highlight behind text if any
                 let sel_start = self.selection_anchor.min(self.selection_active);
@@ -514,6 +537,36 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
+            }
+            WM_SETCURSOR => {
+                // Set I-beam cursor when hovering over visible text bounds (in client area)
+                let hit_test = (lparam.0 & 0xFFFF) as u32;
+                if hit_test == HTCLIENT {
+                    if let Some(state) = state_mut_from_hwnd(hwnd) {
+                        // Get mouse in client pixels and convert to DIPs
+                        let mut pt = POINT { x: 0, y: 0 };
+                        let _ = GetCursorPos(&mut pt);
+                        let _ = ScreenToClient(hwnd, &mut pt);
+                        let to_dip = dips_scale(hwnd);
+                        let x_dip = (pt.x as f32) * to_dip;
+                        let y_dip = (pt.y as f32) * to_dip;
+
+                        if x_dip >= state.text_left_dip
+                            && y_dip >= state.text_top_dip
+                            && x_dip < state.text_left_dip + state.text_width_dip
+                            && y_dip < state.text_top_dip + state.text_height_dip
+                        {
+                            if let Some(h) = IBEAM_CURSOR
+                                .get_or_init(|| LoadCursorW(None, IDC_IBEAM).ok().map(SafeCursor))
+                                .as_ref()
+                            {
+                                let _ = SetCursor(Some(h.0));
+                                return LRESULT(1);
+                            }
+                        }
+                    }
+                }
+                DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_PAINT => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
