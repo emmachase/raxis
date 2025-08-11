@@ -1,6 +1,10 @@
 // #![windows_subsystem = "windows"]
 
-use glux::widgets::spinner::Spinner;
+use glux::{
+    current_dpi, dips_scale,
+    gfx::RectDIP,
+    widgets::{selectable_text::SelectableText, spinner::Spinner},
+};
 use std::sync::OnceLock;
 use windows::{
     Win32::{
@@ -20,10 +24,9 @@ use windows::{
             },
             DirectWrite::{
                 DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_WEIGHT_REGULAR, DWRITE_HIT_TEST_METRICS, DWRITE_MEASURING_MODE_NATURAL,
-                DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER,
-                DWRITE_TEXT_METRICS, DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat,
-                IDWriteTextLayout,
+                DWRITE_FONT_WEIGHT_REGULAR, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
+                DWRITE_TEXT_ALIGNMENT_CENTER, DWriteCreateFactory, IDWriteFactory,
+                IDWriteTextFormat, IDWriteTextLayout,
             },
             Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo},
             Dxgi::Common::DXGI_FORMAT_UNKNOWN,
@@ -43,11 +46,10 @@ use windows::{
                 self as WAM, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
                 GetMessageW, HCURSOR, HTCLIENT, IDC_ARROW, IDC_IBEAM, LoadCursorW, MSG,
-                RegisterClassW, STRSAFE_E_INSUFFICIENT_BUFFER, SW_SHOW, SWP_NOACTIVATE,
-                SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-                TranslateMessage, WINDOW_EX_STYLE, WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE,
-                WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
+                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+                WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE, WM_LBUTTONDOWN, WM_LBUTTONUP,
+                WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -83,14 +85,6 @@ fn client_rect(hwnd: HWND) -> Result<RECT> {
     }
 }
 
-fn current_dpi(hwnd: HWND) -> f32 {
-    unsafe { GetDpiForWindow(hwnd) as f32 }
-}
-
-fn dips_scale(hwnd: HWND) -> f32 {
-    96.0f32 / current_dpi(hwnd).max(1.0)
-}
-
 fn apply_dpi_to_rt(rt: &ID2D1HwndRenderTarget, hwnd: HWND) {
     let dpi = current_dpi(hwnd);
     unsafe { rt.SetDpi(dpi, dpi) };
@@ -99,7 +93,7 @@ fn apply_dpi_to_rt(rt: &ID2D1HwndRenderTarget, hwnd: HWND) {
 struct AppState {
     d2d_factory: ID2D1Factory,
     dwrite_factory: IDWriteFactory,
-    text_format: IDWriteTextFormat,
+    _text_format: IDWriteTextFormat,
     render_target: Option<ID2D1HwndRenderTarget>,
     black_brush: Option<ID2D1SolidColorBrush>,
 
@@ -107,16 +101,8 @@ struct AppState {
     timing_info: DWM_TIMING_INFO,
     spinner: Spinner,
 
-    // Text selection state (UTF-16 code unit indices)
-    selection_anchor: u32,
-    selection_active: u32,
-    is_dragging: bool,
-
-    // Cached text layout bounds in DIPs for cursor hit-testing
-    text_left_dip: f32,
-    text_top_dip: f32,
-    text_width_dip: f32,
-    text_height_dip: f32,
+    // Selectable text widget encapsulating layout, selection, and bounds
+    text_widget: SelectableText,
 }
 
 impl AppState {
@@ -144,22 +130,23 @@ impl AppState {
 
             let spinner = Spinner::new(6.0, 200.0, 1.6);
 
+            // Build selectable text widget using shared DWrite factory/format
+            let text_widget = SelectableText::new(
+                dwrite_factory.clone(),
+                text_format.clone(),
+                TEXT.to_string(),
+            );
+
             Ok(Self {
                 d2d_factory,
                 dwrite_factory,
-                text_format,
+                _text_format: text_format,
                 render_target: None,
                 black_brush: None,
                 clock: 0.0,
                 timing_info: DWM_TIMING_INFO::default(),
                 spinner,
-                selection_anchor: 0,
-                selection_active: 0,
-                is_dragging: false,
-                text_left_dip: 0.0,
-                text_top_dip: 0.0,
-                text_width_dip: 0.0,
-                text_height_dip: 0.0,
+                text_widget,
             })
         }
     }
@@ -224,44 +211,23 @@ impl AppState {
         }
     }
 
-    fn build_text_layout(&self, hwnd: HWND) -> Result<IDWriteTextLayout> {
-        unsafe {
-            let rc = client_rect(hwnd)?;
-            let to_dip = dips_scale(hwnd);
-            let max_width = (rc.right - rc.left) as f32 * to_dip;
-            let max_height = (rc.bottom - rc.top) as f32 * to_dip;
+    // fn build_text_layout(&self, hwnd: HWND) -> Result<IDWriteTextLayout> {
+    //     let rc = client_rect(hwnd)?;
+    //     // let to_dip = dips_scale(hwnd);
+    //     // let max_width = (rc.right - rc.left) as f32 * to_dip;
+    //     // let max_height = (rc.bottom - rc.top) as f32 * to_dip;
+    //     self.text_widget
+    //         .build_text_layout(TEXT, max_width, max_height)
+    // }
 
-            let wtext: Vec<u16> = TEXT.encode_utf16().collect();
-            let layout = self.dwrite_factory.CreateTextLayout(
-                &wtext,
-                &self.text_format,
-                max_width,
-                max_height,
-            )?;
-            Ok(layout)
-        }
-    }
-
-    fn hit_test_index(&self, hwnd: HWND, x_dip: f32, y_dip: f32) -> Result<u32> {
-        unsafe {
-            let layout = self.build_text_layout(hwnd)?;
-            let mut trailing = windows::core::BOOL(0);
-            let mut inside = windows::core::BOOL(0);
-            let mut metrics = DWRITE_HIT_TEST_METRICS::default();
-            layout.HitTestPoint(x_dip, y_dip, &mut trailing, &mut inside, &mut metrics)?;
-
-            let mut idx = if trailing.as_bool() {
-                metrics.textPosition.saturating_add(metrics.length)
-            } else {
-                metrics.textPosition
-            };
-            let total_len = TEXT.encode_utf16().count() as u32;
-            if idx > total_len {
-                idx = total_len;
-            }
-            Ok(idx)
-        }
-    }
+    // fn hit_test_index(&self, hwnd: HWND, x_dip: f32, y_dip: f32) -> Result<u32> {
+    //     let rc = client_rect(hwnd)?;
+    //     let to_dip = dips_scale(hwnd);
+    //     let max_width = (rc.right - rc.left) as f32 * to_dip;
+    //     let max_height = (rc.bottom - rc.top) as f32 * to_dip;
+    //     self.text_widget
+    //         .hit_test_index(TEXT, x_dip, y_dip, max_width, max_height)
+    // }
 
     fn on_paint(&mut self, hwnd: HWND) -> Result<()> {
         unsafe {
@@ -287,7 +253,7 @@ impl AppState {
                 rt.Clear(Some(&white));
 
                 let rc = client_rect(hwnd)?;
-                // Convert client pixel size to DIPs for D2D drawing
+                let rc_dip = RectDIP::from(hwnd, rc);
                 let to_dip = dips_scale(hwnd);
 
                 brush.SetColor(&D2D1_COLOR_F {
@@ -298,98 +264,29 @@ impl AppState {
                 });
 
                 // Build text layout sized to the window
-                let text_layout = self.build_text_layout(hwnd)?;
+                // let text_layout = self.build_text_layout(hwnd)?;
 
-                // Cache text layout metrics for cursor hit-testing
-                let mut textmetrics = DWRITE_TEXT_METRICS::default();
-                text_layout.GetMetrics(&mut textmetrics)?;
-                self.text_left_dip = textmetrics.left;
-                self.text_top_dip = textmetrics.top;
-                self.text_width_dip = textmetrics.width;
-                self.text_height_dip = textmetrics.height;
+                // // Cache text layout bounds for cursor hit-testing via widget
+                // self.text_widget.update_bounds_from_layout(&text_layout)?;
 
-                // Draw selection highlight behind text if any
-                let sel_start = self.selection_anchor.min(self.selection_active);
-                let sel_end = self.selection_anchor.max(self.selection_active);
-                let sel_len = sel_end.saturating_sub(sel_start);
-                if sel_len > 0 {
-                    let mut needed: u32 = 0;
-                    // First call: expect ERROR_INSUFFICIENT_BUFFER (0x8007007A) with needed count.
-                    match text_layout.HitTestTextRange(
-                        sel_start,
-                        sel_len,
-                        0.0,
-                        0.0,
-                        None,
-                        &mut needed,
-                    ) {
-                        Ok(()) => {
-                            // No metrics to draw (nothing selected on screen)
-                        }
-                        Err(e) if e.code() == STRSAFE_E_INSUFFICIENT_BUFFER => {
-                            // Allocate and retry; loop in case depth grows.
-                            let capacity = needed.max(1);
-                            loop {
-                                let mut runs =
-                                    vec![DWRITE_HIT_TEST_METRICS::default(); capacity as usize];
-                                let mut actual: u32 = 0;
-                                match text_layout.HitTestTextRange(
-                                    sel_start,
-                                    sel_len,
-                                    0.0,
-                                    0.0,
-                                    Some(&mut runs),
-                                    &mut actual,
-                                ) {
-                                    Ok(()) => {
-                                        // Selection color (light blue)
-                                        brush.SetColor(&D2D1_COLOR_F {
-                                            r: 0.2,
-                                            g: 0.4,
-                                            b: 1.0,
-                                            a: 0.35,
-                                        });
-                                        for m in runs.iter().take(actual as usize) {
-                                            let rect = D2D_RECT_F {
-                                                left: m.left,
-                                                top: m.top,
-                                                right: m.left + m.width,
-                                                bottom: m.top + m.height,
-                                            };
-                                            rt.FillRectangle(&rect, brush);
-                                        }
-                                        // Restore brush to black for drawing text
-                                        brush.SetColor(&D2D1_COLOR_F {
-                                            r: 0.0,
-                                            g: 0.0,
-                                            b: 0.0,
-                                            a: 1.0,
-                                        });
-                                        break;
-                                    }
-                                    Err(e) => return Err(e),
-                                }
-                            }
-                        }
-                        Err(e) => return Err(e),
-                    }
-                }
+                // // Draw selection highlight behind text if any via widget
+                // self.text_widget.draw_selection(&text_layout, rt, brush)?;
 
-                rt.DrawTextLayout(
-                    Vector2 { X: 0.0, Y: 0.0 },
-                    &text_layout,
-                    brush,
-                    D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                );
+                let _ = self.text_widget.update_bounds(rc_dip);
+                let _ = self.text_widget.draw(rt, brush);
 
-                // Spinner: arc grows to 90%, shrinks to 10%, start angle rotates slowly
-                let width_dip = (rc.right - rc.left) as f32 * to_dip;
-                let height_dip = (rc.bottom - rc.top) as f32 * to_dip;
+                // rt.DrawTextLayout(
+                //     Vector2 { X: 0.0, Y: 0.0 },
+                //     &self.text_widget.layout,
+                //     brush,
+                //     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+                // );
+
                 let center = Vector2 {
-                    X: width_dip * 0.5,
-                    Y: height_dip * 0.5,
+                    X: 100.0 * to_dip, //width_dip * 0.25,
+                    Y: 100.0 * to_dip, //height_dip * 0.25,
                 };
-                let radius = width_dip.min(height_dip) * 0.3;
+                let radius = 64.0 * to_dip; // width_dip.min(height_dip) * 0.2;
                 self.spinner.set_layout(center, radius);
                 let dt = self.timing_info.rateCompose.uiDenominator as f32
                     / self.timing_info.rateCompose.uiNumerator as f32;
@@ -439,10 +336,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let to_dip = dips_scale(hwnd);
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
-                    if let Ok(idx) = state.hit_test_index(hwnd, x, y) {
-                        state.selection_anchor = idx;
-                        state.selection_active = idx;
-                        state.is_dragging = true;
+                    if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
+                        state.text_widget.begin_drag(idx);
                         let _ = SetCapture(hwnd);
                         let _ = InvalidateRect(Some(hwnd), None, false);
                     }
@@ -451,15 +346,14 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_MOUSEMOVE => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    if state.is_dragging {
+                    if state.text_widget.is_dragging() {
                         let x_px = (lparam.0 & 0xFFFF) as i16 as i32 as f32;
                         let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32 as f32;
                         let to_dip = dips_scale(hwnd);
                         let x = x_px * to_dip;
                         let y = y_px * to_dip;
-                        if let Ok(idx) = state.hit_test_index(hwnd, x, y) {
-                            if idx != state.selection_active {
-                                state.selection_active = idx;
+                        if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
+                            if state.text_widget.update_drag_index(idx) {
                                 let _ = InvalidateRect(Some(hwnd), None, false);
                             }
                         }
@@ -474,10 +368,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let to_dip = dips_scale(hwnd);
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
-                    if let Ok(idx) = state.hit_test_index(hwnd, x, y) {
-                        state.selection_active = idx;
+                    if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
+                        state.text_widget.end_drag(idx);
+                    } else {
+                        // Even on failure, ensure drag ends
+                        state.text_widget.end_drag(0);
                     }
-                    state.is_dragging = false;
                     let _ = ReleaseCapture();
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
@@ -550,11 +446,16 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         let to_dip = dips_scale(hwnd);
                         let x_dip = (pt.x as f32) * to_dip;
                         let y_dip = (pt.y as f32) * to_dip;
-
-                        if x_dip >= state.text_left_dip
-                            && y_dip >= state.text_top_dip
-                            && x_dip < state.text_left_dip + state.text_width_dip
-                            && y_dip < state.text_top_dip + state.text_height_dip
+                        let RectDIP {
+                            x_dip: left,
+                            y_dip: top,
+                            width_dip: width,
+                            height_dip: height,
+                        } = state.text_widget.metric_bounds();
+                        if x_dip >= left
+                            && y_dip >= top
+                            && x_dip < left + width
+                            && y_dip < top + height
                         {
                             if let Some(h) = IBEAM_CURSOR
                                 .get_or_init(|| LoadCursorW(None, IDC_IBEAM).ok().map(SafeCursor))
