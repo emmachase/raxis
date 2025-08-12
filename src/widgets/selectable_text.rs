@@ -40,6 +40,11 @@ pub struct SelectableText {
     // Cached layout bounds in DIPs (for cursor hit-testing)
     metric_bounds: RectDIP,
 
+    // Cached segmentation data (recomputed when text changes)
+    utf16_boundaries: Vec<u32>,
+    word_starts_utf16: Vec<u32>,
+    word_ranges_utf16: Vec<(u32, u32)>,
+
     // IME composition state (preedit). When Some, we draw `ime_text` at the
     // composition anchor position (start of current selection) with underline.
     ime_text: Option<String>,
@@ -52,7 +57,7 @@ impl SelectableText {
         text_format: IDWriteTextFormat,
         text: String,
     ) -> Self {
-        Self {
+        let mut s = Self {
             dwrite_factory,
             text_format,
             text,
@@ -64,9 +69,14 @@ impl SelectableText {
             caret_blink_timer: 0.0,
             caret_visible: true,
             metric_bounds: RectDIP::default(),
+            utf16_boundaries: Vec::new(),
+            word_starts_utf16: Vec::new(),
+            word_ranges_utf16: Vec::new(),
             ime_text: None,
             ime_cursor16: 0,
-        }
+        };
+        s.recompute_text_boundaries();
+        s
     }
 
     /// Build a text layout for the given text and maximum size in DIPs.
@@ -424,6 +434,38 @@ impl SelectableText {
         s.encode_utf16().count() as u32
     }
 
+    fn recompute_text_boundaries(&mut self) {
+        // Recompute UTF-16 grapheme boundaries
+        let mut boundaries: Vec<u32> = Vec::with_capacity(self.text.len().max(1));
+        let mut acc16: u32 = 0;
+        boundaries.push(0);
+        for g in self.text.graphemes(true) {
+            acc16 += g.encode_utf16().count() as u32;
+            boundaries.push(acc16);
+        }
+        self.utf16_boundaries = boundaries;
+
+        // Recompute word starts and ranges in UTF-16
+        let mut starts: Vec<u32> = Vec::new();
+        let mut ranges: Vec<(u32, u32)> = Vec::new();
+        let mut acc16w: u32 = 0;
+        let mut words = self.text.unicode_words().peekable();
+        for seg in self.text.split_word_bounds() {
+            let seg_start = acc16w;
+            let seg_len16 = seg.encode_utf16().count() as u32;
+            acc16w += seg_len16;
+            if let Some(next_word) = words.peek() {
+                if *next_word == seg {
+                    starts.push(seg_start);
+                    ranges.push((seg_start, seg_start + seg_len16));
+                    let _ = words.next();
+                }
+            }
+        }
+        self.word_starts_utf16 = starts;
+        self.word_ranges_utf16 = ranges;
+    }
+
     fn clamp_sel_to_len(&mut self) {
         let total_len = self.text.encode_utf16().count() as u32;
         let anchor = self.selection_anchor.min(total_len);
@@ -452,60 +494,11 @@ impl SelectableText {
         self.text.len()
     }
 
-    fn utf16_boundaries(&self) -> Vec<u32> {
-        // Returns UTF-16 code unit indices at each grapheme cluster boundary (including 0 and end)
-        let mut out: Vec<u32> = Vec::with_capacity(self.text.len().max(1));
-        let mut acc16: u32 = 0;
-        out.push(0);
-        for g in self.text.graphemes(true) {
-            acc16 += g.encode_utf16().count() as u32;
-            out.push(acc16);
-        }
-        out
-    }
-
-    fn word_starts_utf16(&self) -> Vec<u32> {
-        // UTF-16 indices at the start of each Unicode word (skips whitespace/punctuation segments)
-        let mut out: Vec<u32> = Vec::new();
-        let mut acc16: u32 = 0;
-        let mut words = self.text.unicode_words().peekable();
-        for seg in self.text.split_word_bounds() {
-            let seg_start = acc16;
-            acc16 += seg.encode_utf16().count() as u32;
-            if let Some(next_word) = words.peek() {
-                if *next_word == seg {
-                    out.push(seg_start);
-                    let _ = words.next();
-                }
-            }
-        }
-        out
-    }
-
-    fn word_ranges_utf16(&self) -> Vec<(u32, u32)> {
-        // UTF-16 [start, end) ranges for each Unicode word
-        let mut out: Vec<(u32, u32)> = Vec::new();
-        let mut acc16: u32 = 0;
-        let mut words = self.text.unicode_words().peekable();
-        for seg in self.text.split_word_bounds() {
-            let seg_start = acc16;
-            let seg_len16 = seg.encode_utf16().count() as u32;
-            acc16 += seg_len16;
-            if let Some(next_word) = words.peek() {
-                if *next_word == seg {
-                    out.push((seg_start, seg_start + seg_len16));
-                    let _ = words.next();
-                }
-            }
-        }
-        out
-    }
-
     fn prev_word_index(&self, idx16: u32) -> u32 {
         // Move to the start of the current word if inside it; if at a word start,
         // move to the start of the previous word. If before the first word, return 0.
         let mut prev = 0u32;
-        for s in self.word_starts_utf16() {
+        for &s in &self.word_starts_utf16 {
             if s >= idx16 {
                 return prev;
             }
@@ -516,7 +509,7 @@ impl SelectableText {
 
     fn next_word_index(&self, idx16: u32) -> u32 {
         // Prefer the end of the current word; if in whitespace, jump to end of the next word.
-        let ranges = self.word_ranges_utf16();
+        let ranges = &self.word_ranges_utf16;
         for (i, (start, end)) in ranges.iter().cloned().enumerate() {
             if idx16 < end && idx16 >= start {
                 return end; // inside current word: go to its end (before trailing whitespace)
@@ -537,7 +530,7 @@ impl SelectableText {
 
     fn prev_scalar_index(&self, idx16: u32) -> u32 {
         let mut prev = 0u32;
-        for b in self.utf16_boundaries() {
+        for &b in &self.utf16_boundaries {
             if b >= idx16 {
                 return prev;
             }
@@ -547,7 +540,7 @@ impl SelectableText {
     }
 
     fn next_scalar_index(&self, idx16: u32) -> u32 {
-        for b in self.utf16_boundaries() {
+        for &b in &self.utf16_boundaries {
             if b > idx16 {
                 return b;
             }
@@ -557,7 +550,7 @@ impl SelectableText {
     }
 
     fn is_scalar_boundary(&self, idx16: u32) -> bool {
-        self.utf16_boundaries().into_iter().any(|b| b == idx16)
+        self.utf16_boundaries.iter().any(|&b| b == idx16)
     }
 
     fn snap_to_scalar_boundary(&self, idx16: u32) -> u32 {
@@ -617,6 +610,7 @@ impl SelectableText {
         let start_byte = self.utf16_index_to_byte(start16);
         let end_byte = self.utf16_index_to_byte(end16);
         self.text.replace_range(start_byte..end_byte, s);
+        self.recompute_text_boundaries();
         if s.is_empty() {
             // Deletion: caret at start of removed range
             self.selection_anchor = start16;
@@ -648,6 +642,7 @@ impl SelectableText {
         let prev_byte = self.utf16_index_to_byte(prev16);
         let caret_byte = self.utf16_index_to_byte(start16);
         self.text.replace_range(prev_byte..caret_byte, "");
+        self.recompute_text_boundaries();
         self.selection_anchor = prev16;
         self.selection_active = prev16;
         self.build_text_layout()?;
@@ -672,6 +667,7 @@ impl SelectableText {
         let caret_byte = self.utf16_index_to_byte(start16);
         let next_byte = self.utf16_index_to_byte(next16);
         self.text.replace_range(caret_byte..next_byte, "");
+        self.recompute_text_boundaries();
         // Caret stays at start16
         self.build_text_layout()?;
         self.recalc_metrics()?;
