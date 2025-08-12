@@ -173,17 +173,19 @@ impl DropTarget {
                             let mut s = String::from_utf16_lossy(&out);
 
                             // If we dropped from our own drag, remove the selection
-                            if state.text_widget.is_ole_dragging() {
-                                if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
-                                    // Delete original selection on successful MOVE drop
-                                    let _ = state.text_widget.insert_str("");
-                                }
-                            }
+                            let internal_move = state.text_widget.is_ole_dragging()
+                                && (effect.0 & DROPEFFECT_MOVE.0) != 0;
+                            // if  {
+                            //     // Delete original selection on successful MOVE drop
+                            //     let _ = state.text_widget.insert_str("");
+                            // }
 
                             // Normalize CRLF to LF for internal text
                             s = s.replace("\r\n", "\n");
-                            state.text_widget.move_caret_to(idx16);
-                            let _ = state.text_widget.insert_str(&s);
+
+                            state.text_widget.finish_ole_drop(&s, internal_move)?;
+                            // state.text_widget.move_caret_to(idx16);
+                            // let _ = state.text_widget.insert_str(&s);
                         }
                         let _ = ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
                     }
@@ -743,51 +745,42 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_MOUSEMOVE => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    if state.text_widget.is_dragging() {
-                        // Current mouse in pixels
-                        let xi = (lparam.0 & 0xFFFF) as i16 as i32;
-                        let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+                    // Current mouse in pixels
+                    let xi = (lparam.0 & 0xFFFF) as i16 as i32;
+                    let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
 
-                        // If this is a drag-move and we've exceeded the system drag threshold,
+                    if state.text_widget.is_ole_dragging() {
+                        // If we've exceeded the system drag threshold,
                         // escalate to OLE DoDragDrop with CF_UNICODETEXT.
-                        if state.text_widget.is_drag_moving() {
-                            let dx = (xi - state.last_click_pos.x).unsigned_abs();
-                            let dy = (yi - state.last_click_pos.y).unsigned_abs();
-                            let w = GetSystemMetrics(SM_CXDRAG) as u32 / 2;
-                            let h = GetSystemMetrics(SM_CYDRAG) as u32 / 2;
-                            if dx > w || dy > h {
-                                if let Some(s) = state.text_widget.selected_text() {
-                                    // Hand control to OLE DnD
-                                    let _ = ReleaseCapture();
-                                    state.text_widget.cancel_drag();
-                                    state.text_widget.set_is_ole_dragging(true);
-                                    let effect = start_text_drag(&s, true).unwrap_or_default();
-                                    if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
-                                        // Delete original selection on successful MOVE drop
-                                        let _ = state.text_widget.insert_str("");
-                                    }
-                                    state.text_widget.set_is_ole_dragging(false);
-                                    let _ = InvalidateRect(Some(hwnd), None, false);
-                                    return LRESULT(0);
+                        let dx = (xi - state.last_click_pos.x).unsigned_abs();
+                        let dy = (yi - state.last_click_pos.y).unsigned_abs();
+                        let w = GetSystemMetrics(SM_CXDRAG) as u32 / 2;
+                        let h = GetSystemMetrics(SM_CYDRAG) as u32 / 2;
+                        if dx > w || dy > h {
+                            if let Some(s) = state.text_widget.selected_text() {
+                                // Hand control to OLE DnD
+                                let _ = ReleaseCapture();
+                                state.text_widget.cancel_drag();
+                                let effect = start_text_drag(&s, true).unwrap_or_default();
+                                if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
+                                    // Delete original selection on successful MOVE drop
+                                    let _ = state.text_widget.insert_str("");
                                 }
+                                state.text_widget.set_is_ole_dragging(false);
+                                let _ = InvalidateRect(Some(hwnd), None, false);
+                                return LRESULT(0);
                             }
                         }
+                    }
 
-                        // Continue manual drag (selection or preview drop position)
-                        let x_px = xi as f32;
-                        let y_px = yi as f32;
-                        let to_dip = dips_scale(hwnd);
-                        let x = x_px * to_dip;
-                        let y = y_px * to_dip;
-                        if state.text_widget.update_drag(x, y) {
-                            let _ = InvalidateRect(Some(hwnd), None, false);
-                        }
-
-                        if state.text_widget.is_drag_moving() {
-                            if let Ok(h) = LoadCursorW(None, IDC_ARROW) {
-                                let _ = SetCursor(Some(h));
-                            }
-                        }
+                    // Continue manual drag (selection or preview drop position)
+                    let x_px = xi as f32;
+                    let y_px = yi as f32;
+                    let to_dip = dips_scale(hwnd);
+                    let x = x_px * to_dip;
+                    let y = y_px * to_dip;
+                    if state.text_widget.update_drag(x, y) {
+                        let _ = InvalidateRect(Some(hwnd), None, false);
                     }
                 }
                 LRESULT(0)

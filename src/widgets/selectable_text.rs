@@ -55,12 +55,6 @@ pub struct SelectableText {
     // Original drag-down location in UTF-16 units (for extending by word/paragraph)
     drag_origin16: u32,
 
-    // Drag-to-move state
-    drag_moving: bool,
-    move_src_start16: u32,
-    move_src_end16: u32,
-    move_drop16: u32,
-
     // OLE drag-over preview caret position (UTF-16 index). When Some, draw a caret
     // at this position to indicate the drop location during OLE drag-over.
     ole_drop_preview16: Option<u32>,
@@ -99,10 +93,6 @@ impl SelectableText {
             ime_cursor16: 0,
             selection_mode: SelectionMode::Char,
             drag_origin16: 0,
-            drag_moving: false,
-            move_src_start16: 0,
-            move_src_end16: 0,
-            move_drop16: 0,
             ole_drop_preview16: None,
             ole_is_dragging: false,
         };
@@ -309,11 +299,10 @@ impl SelectableText {
                 }
             }
 
-            // Draw drop caret when dragging to move selected text and the drop target is outside the source range
-            if self.is_dragging && self.drag_moving {
-                let drop = self.snap_to_scalar_boundary(self.move_drop16);
-                let src_start = self.move_src_start16;
-                let src_end = self.move_src_end16;
+            // OLE drag-over preview caret
+            if let Some(drop) = self.ole_drop_preview16 {
+                let drop = self.snap_to_scalar_boundary(drop);
+                let (src_start, src_end) = self.selection_range();
                 if !(drop >= src_start && drop <= src_end) {
                     let mut x = 0.0f32;
                     let mut y = 0.0f32;
@@ -327,21 +316,6 @@ impl SelectableText {
                     };
                     rt.FillRectangle(&caret_rect, brush);
                 }
-            }
-
-            // OLE drag-over preview caret
-            if let Some(drop) = self.ole_drop_preview16 {
-                let mut x = 0.0f32;
-                let mut y = 0.0f32;
-                let mut m = DWRITE_HIT_TEST_METRICS::default();
-                layout.HitTestTextPosition(drop, false, &mut x, &mut y, &mut m)?;
-                let caret_rect = D2D_RECT_F {
-                    left: x,
-                    top: m.top,
-                    right: x + 1.0,
-                    bottom: m.top + m.height,
-                };
-                rt.FillRectangle(&caret_rect, brush);
             }
 
             Ok(())
@@ -380,9 +354,7 @@ impl SelectableText {
         let idx = self.snap_to_scalar_boundary(idx);
         self.drag_origin16 = idx;
 
-        // Always clear drag moving state when beginning a drag. This way we can
-        // accommodate changing the selection mode upon successive clicks.
-        self.drag_moving = false;
+        self.ole_is_dragging = false;
 
         // Drag-to-move applies only to Char mode. For Word/Paragraph clicks, always compute selection.
         match self.selection_mode {
@@ -391,10 +363,7 @@ impl SelectableText {
                 // switch to drag-to-move mode and keep the selection intact.
                 let (sel_start, sel_end) = self.selection_range();
                 if sel_end > sel_start && idx >= sel_start && idx < sel_end {
-                    self.drag_moving = true;
-                    self.move_src_start16 = sel_start;
-                    self.move_src_end16 = sel_end;
-                    self.move_drop16 = idx;
+                    self.ole_is_dragging = true;
                 } else {
                     self.selection_anchor = idx;
                     self.selection_active = idx;
@@ -423,14 +392,8 @@ impl SelectableText {
             return false;
         };
         let idx = self.snap_to_scalar_boundary(idx);
-        if self.drag_moving {
-            let old_drop = self.move_drop16;
-            self.move_drop16 = idx;
-            let changed = old_drop != self.move_drop16;
-            if changed {
-                self.force_blink();
-            }
-            changed
+        if self.ole_is_dragging {
+            false
         } else {
             let (old_a, old_b) = (self.selection_anchor, self.selection_active);
             match self.selection_mode {
@@ -464,49 +427,7 @@ impl SelectableText {
     }
 
     pub fn end_drag(&mut self, _idx: u32) {
-        if self.drag_moving {
-            let src_start = self.move_src_start16;
-            let src_end = self.move_src_end16;
-            let sel_len = src_end.saturating_sub(src_start);
-            let drop = self.snap_to_scalar_boundary(self.move_drop16);
-            // Cancel move if dropping inside the original selection (including at its edges)
-            if sel_len > 0 && (drop >= src_start && drop <= src_end) {
-                // Treat as click-through: collapse selection to the clicked point
-                self.drag_moving = false;
-                self.is_dragging = false;
-                self.selection_anchor = drop;
-                self.selection_active = drop;
-                self.force_blink();
-                return;
-            }
-
-            // Capture text to move from the original selection
-            let start_byte = self.utf16_index_to_byte(src_start);
-            let end_byte = self.utf16_index_to_byte(src_end);
-            let moved = self.text[start_byte..end_byte].to_string();
-
-            // First delete the original selection
-            self.selection_anchor = src_start;
-            self.selection_active = src_end;
-            let _ = self.insert_str(""); // updates layout/metrics and caret
-
-            // Compute final insertion point accounting for the deletion shift
-            let insert_at = if drop >= src_end {
-                drop.saturating_sub(sel_len)
-            } else {
-                drop
-            };
-
-            // Insert at the target
-            self.selection_anchor = insert_at;
-            self.selection_active = insert_at;
-            let _ = self.insert_str(&moved);
-
-            self.drag_moving = false;
-            self.is_dragging = false;
-        } else {
-            self.is_dragging = false;
-        }
+        self.is_dragging = false;
     }
 
     pub fn set_is_ole_dragging(&mut self, dragging: bool) {
@@ -610,13 +531,8 @@ impl SelectableText {
 
     /// Abort any ongoing manual drag/drag-move without altering selection or text.
     pub fn cancel_drag(&mut self) {
-        self.drag_moving = false;
         self.is_dragging = false;
         self.force_blink();
-    }
-
-    pub fn is_drag_moving(&self) -> bool {
-        self.drag_moving
     }
 
     /// Set or clear OLE drop preview caret. Returns true if it changed.
@@ -935,6 +851,47 @@ impl SelectableText {
         let start_byte = self.utf16_index_to_byte(start16);
         let end_byte = self.utf16_index_to_byte(end16);
         Some(self.text[start_byte..end_byte].to_string())
+    }
+
+    pub fn finish_ole_drop(&mut self, s: &str, internal_move: bool) -> Result<()> {
+        let (start16, end16) = self.selection_range();
+        let start_byte = self.utf16_index_to_byte(start16);
+        let end_byte = self.utf16_index_to_byte(end16);
+
+        if let Some(drop_idx16) = self.ole_drop_preview16 {
+            if drop_idx16 >= start16 && drop_idx16 <= end16 {
+                // Drop inside existing selection: replace
+                self.text.replace_range(start_byte..end_byte, s);
+
+                let end16 = start16 + Self::utf16_len_of_str(s);
+                self.selection_anchor = end16;
+                self.selection_active = end16;
+            } else {
+                // Drop outside existing selection: insert
+                if internal_move {
+                    // Delete original selection on successful MOVE drop
+                    self.text.replace_range(start_byte..end_byte, "");
+
+                    // Adjust drop index to account for deleted text
+                    let drop_idx16 = if drop_idx16 > end16 {
+                        drop_idx16 - (end16 - start16)
+                    } else {
+                        drop_idx16
+                    };
+                    self.move_caret_to(drop_idx16);
+                    self.insert_str(s)?;
+                } else {
+                    self.move_caret_to(drop_idx16);
+                    self.insert_str(s)?;
+                }
+            }
+        }
+
+        self.build_text_layout()?;
+        self.recalc_metrics()?;
+
+        self.force_blink();
+        Ok(())
     }
 
     pub fn insert_str(&mut self, s: &str) -> Result<()> {
