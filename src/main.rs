@@ -8,7 +8,10 @@ use glux::{
 use std::{ffi::c_void, sync::OnceLock};
 use windows::{
     Win32::{
-        Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+        Foundation::{
+            D2DERR_RECREATE_TARGET, GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, POINT,
+            RECT, WPARAM,
+        },
         Graphics::{
             Direct2D::{
                 Common::{D2D_SIZE_U, D2D1_ALPHA_MODE_UNKNOWN, D2D1_COLOR_F, D2D1_PIXEL_FORMAT},
@@ -31,19 +34,27 @@ use windows::{
                 ScreenToClient, UpdateWindow, VREFRESH,
             },
         },
-        System::LibraryLoader::GetModuleHandleW,
+        System::{
+            DataExchange::{
+                CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
+                OpenClipboard, SetClipboardData,
+            },
+            LibraryLoader::GetModuleHandleW,
+            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
+            Ole::CF_UNICODETEXT,
+        },
         UI::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
             Input::{
                 Ime::{
-                    CANDIDATEFORM, CFS_FORCE_POSITION, CFS_POINT, COMPOSITIONFORM, CPS_COMPLETE,
-                    GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW,
-                    ImmGetContext, ImmNotifyIME, ImmReleaseContext, ImmSetCandidateWindow,
-                    ImmSetCompositionWindow, NI_COMPOSITIONSTR,
+                    CANDIDATEFORM, CFS_FORCE_POSITION, CFS_POINT, CPS_COMPLETE, GCS_COMPSTR,
+                    GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW, ImmGetContext,
+                    ImmNotifyIME, ImmReleaseContext, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
                 },
                 KeyboardAndMouse::{
-                    GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_A, VK_BACK, VK_CONTROL,
-                    VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT,
+                    GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_A, VK_BACK, VK_C,
+                    VK_CONTROL, VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT, VK_V,
+                    VK_X,
                 },
             },
             WindowsAndMessaging::{
@@ -52,10 +63,10 @@ use windows::{
                 GetMessageW, HCURSOR, HTCLIENT, IDC_ARROW, IDC_IBEAM, LoadCursorW, MSG,
                 RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
-                WM_CHAR, WM_CREATE, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION,
-                WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN,
-                WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW,
-                WS_OVERLAPPEDWINDOW,
+                WM_CHAR, WM_COPY, WM_CREATE, WM_CUT, WM_DESTROY, WM_DISPLAYCHANGE,
+                WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_PASTE, WM_SETCURSOR,
+                WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -94,6 +105,70 @@ fn client_rect(hwnd: HWND) -> Result<RECT> {
 fn apply_dpi_to_rt(rt: &ID2D1HwndRenderTarget, hwnd: HWND) {
     let dpi = current_dpi(hwnd);
     unsafe { rt.SetDpi(dpi, dpi) };
+}
+
+// ===== Clipboard helpers (Unicode) =====
+fn set_clipboard_text(hwnd: HWND, s: &str) -> Result<()> {
+    unsafe {
+        if OpenClipboard(Some(hwnd)).is_ok() {
+            let _ = EmptyClipboard();
+            // Use CRLF per CF_UNICODETEXT expectations
+            let crlf = s.replace('\n', "\r\n");
+            let mut w: Vec<u16> = crlf.encode_utf16().collect();
+            w.push(0);
+            let bytes = (w.len() * 2) as usize;
+            let hmem: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, bytes)?;
+            if !hmem.is_invalid() {
+                let ptr = GlobalLock(hmem) as *mut u16;
+                if !ptr.is_null() {
+                    std::ptr::copy_nonoverlapping(w.as_ptr(), ptr, w.len());
+                    let _ = GlobalUnlock(hmem);
+                    if SetClipboardData(CF_UNICODETEXT.0.into(), Some(HANDLE(hmem.0))).is_err() {
+                        let _ = GlobalFree(Some(hmem));
+                    }
+                    // On success, ownership is transferred to the clipboard
+                } else {
+                    let _ = GlobalFree(Some(hmem));
+                }
+            }
+            let _ = CloseClipboard();
+        }
+    }
+    Ok(())
+}
+
+fn get_clipboard_text(hwnd: HWND) -> Option<String> {
+    unsafe {
+        if IsClipboardFormatAvailable(CF_UNICODETEXT.0.into()).is_ok() {
+            if OpenClipboard(Some(hwnd)).is_ok() {
+                let h = GetClipboardData(CF_UNICODETEXT.0.into());
+                if let Ok(h) = h {
+                    let hg = HGLOBAL(h.0);
+                    let ptr = GlobalLock(hg) as *const u16;
+                    if !ptr.is_null() {
+                        // Read until NUL terminator
+                        let mut out: Vec<u16> = Vec::new();
+                        let mut i = 0isize;
+                        loop {
+                            let v = *ptr.offset(i);
+                            if v == 0 {
+                                break;
+                            }
+                            out.push(v);
+                            i += 1;
+                        }
+                        let _ = GlobalUnlock(hg);
+                        let _ = CloseClipboard();
+                        let s = String::from_utf16_lossy(&out);
+                        // Normalize CRLF to LF for internal text
+                        return Some(s.replace("\r\n", "\n"));
+                    }
+                }
+                let _ = CloseClipboard();
+            }
+        }
+        None
+    }
 }
 
 struct AppState {
@@ -465,6 +540,35 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 }
                 LRESULT(0)
             }
+            WM_COPY => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    if let Some(s) = state.text_widget.selected_text() {
+                        set_clipboard_text(hwnd, &s);
+                    }
+                }
+                LRESULT(0)
+            }
+            WM_CUT => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    if let Some(s) = state.text_widget.selected_text() {
+                        set_clipboard_text(hwnd, &s);
+                        let _ = state.text_widget.insert_str("");
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                    }
+                }
+                LRESULT(0)
+            }
+            WM_PASTE => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    if !state.text_widget.is_composing() {
+                        if let Some(s) = get_clipboard_text(hwnd) {
+                            let _ = state.text_widget.insert_str(&s);
+                            let _ = InvalidateRect(Some(hwnd), None, false);
+                        }
+                    }
+                }
+                LRESULT(0)
+            }
             WM_CHAR => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     // Suppress WM_CHAR while IME composition is active to avoid duplicate input
@@ -541,6 +645,27 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         }
                         x if x == VK_A.0 as u32 && ctrl_down => {
                             state.text_widget.select_all();
+                            true
+                        }
+                        x if x == VK_C.0 as u32 && ctrl_down => {
+                            if let Some(s) = state.text_widget.selected_text() {
+                                set_clipboard_text(hwnd, &s);
+                            }
+                            true
+                        }
+                        x if x == VK_X.0 as u32 && ctrl_down => {
+                            if let Some(s) = state.text_widget.selected_text() {
+                                set_clipboard_text(hwnd, &s);
+                                let _ = state.text_widget.insert_str("");
+                            }
+                            true
+                        }
+                        x if x == VK_V.0 as u32 && ctrl_down => {
+                            if !state.text_widget.is_composing() {
+                                if let Some(s) = get_clipboard_text(hwnd) {
+                                    let _ = state.text_widget.insert_str(&s);
+                                }
+                            }
                             true
                         }
                         _ => false,

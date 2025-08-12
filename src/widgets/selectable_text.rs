@@ -527,6 +527,17 @@ impl SelectableText {
         self.selection_active = len16;
     }
 
+    /// Return the current selected text, if any.
+    pub fn selected_text(&self) -> Option<String> {
+        let (start16, end16) = self.selection_range();
+        if start16 == end16 {
+            return None;
+        }
+        let start_byte = self.utf16_index_to_byte(start16);
+        let end_byte = self.utf16_index_to_byte(end16);
+        Some(self.text[start_byte..end_byte].to_string())
+    }
+
     pub fn insert_str(&mut self, s: &str) -> Result<()> {
         let (start16, end16) = self.selection_range();
         if s.is_empty() && start16 == end16 {
