@@ -186,7 +186,6 @@ pub fn start_text_drag(text: &str, allow_move: bool) -> windows::core::Result<DR
         let hr = DoDragDrop(&data, &src, DROPEFFECT(allowed), &mut effect);
         // DoDragDrop returns DRAGDROP_S_DROP, DRAGDROP_S_CANCEL, or error; we ignore hr and return effect
         let _ = hr; // suppress unused
-        println!("DragDrop result: {:?}", hr);
         Ok(effect)
     }
 }

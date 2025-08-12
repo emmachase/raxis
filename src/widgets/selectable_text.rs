@@ -60,6 +60,11 @@ pub struct SelectableText {
     move_src_start16: u32,
     move_src_end16: u32,
     move_drop16: u32,
+
+    // OLE drag-over preview caret position (UTF-16 index). When Some, draw a caret
+    // at this position to indicate the drop location during OLE drag-over.
+    ole_drop_preview16: Option<u32>,
+    ole_is_dragging: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -98,6 +103,8 @@ impl SelectableText {
             move_src_start16: 0,
             move_src_end16: 0,
             move_drop16: 0,
+            ole_drop_preview16: None,
+            ole_is_dragging: false,
         };
         s.recompute_text_boundaries();
         s
@@ -304,7 +311,7 @@ impl SelectableText {
 
             // Draw drop caret when dragging to move selected text and the drop target is outside the source range
             if self.is_dragging && self.drag_moving {
-                let drop = self.move_drop16;
+                let drop = self.snap_to_scalar_boundary(self.move_drop16);
                 let src_start = self.move_src_start16;
                 let src_end = self.move_src_end16;
                 if !(drop >= src_start && drop <= src_end) {
@@ -320,6 +327,21 @@ impl SelectableText {
                     };
                     rt.FillRectangle(&caret_rect, brush);
                 }
+            }
+
+            // OLE drag-over preview caret
+            if let Some(drop) = self.ole_drop_preview16 {
+                let mut x = 0.0f32;
+                let mut y = 0.0f32;
+                let mut m = DWRITE_HIT_TEST_METRICS::default();
+                layout.HitTestTextPosition(drop, false, &mut x, &mut y, &mut m)?;
+                let caret_rect = D2D_RECT_F {
+                    left: x,
+                    top: m.top,
+                    right: x + 1.0,
+                    bottom: m.top + m.height,
+                };
+                rt.FillRectangle(&caret_rect, brush);
             }
 
             Ok(())
@@ -487,6 +509,14 @@ impl SelectableText {
         }
     }
 
+    pub fn set_is_ole_dragging(&mut self, dragging: bool) {
+        self.ole_is_dragging = dragging;
+    }
+
+    pub fn is_ole_dragging(&self) -> bool {
+        self.ole_is_dragging
+    }
+
     // ===== IME support =====
     pub fn is_composing(&self) -> bool {
         self.ime_text.is_some()
@@ -587,6 +617,26 @@ impl SelectableText {
 
     pub fn is_drag_moving(&self) -> bool {
         self.drag_moving
+    }
+
+    /// Set or clear OLE drop preview caret. Returns true if it changed.
+    pub fn set_ole_drop_preview(&mut self, idx: Option<u32>) -> bool {
+        if self.ole_drop_preview16 != idx {
+            self.ole_drop_preview16 = idx.map(|i| self.snap_to_scalar_boundary(i));
+            self.force_blink();
+            true
+        } else {
+            false
+        }
+    }
+
+    /// Move caret (anchor and active) to an absolute UTF-16 index.
+    pub fn move_caret_to(&mut self, idx16: u32) {
+        let idx = self.snap_to_scalar_boundary(idx16);
+        self.selection_anchor = idx;
+        self.selection_active = idx;
+        self.clamp_sel_to_len();
+        self.force_blink();
     }
 
     pub fn metric_bounds(&self) -> RectDIP {
