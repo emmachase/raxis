@@ -3,8 +3,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, IDWriteFactory,
-    IDWriteTextFormat, IDWriteTextLayout,
+    DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE,
+    IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
@@ -54,6 +54,12 @@ pub struct SelectableText {
     selection_mode: SelectionMode,
     // Original drag-down location in UTF-16 units (for extending by word/paragraph)
     drag_origin16: u32,
+
+    // Drag-to-move state
+    drag_moving: bool,
+    move_src_start16: u32,
+    move_src_end16: u32,
+    move_drop16: u32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -88,6 +94,10 @@ impl SelectableText {
             ime_cursor16: 0,
             selection_mode: SelectionMode::Char,
             drag_origin16: 0,
+            drag_moving: false,
+            move_src_start16: 0,
+            move_src_end16: 0,
+            move_drop16: 0,
         };
         s.recompute_text_boundaries();
         s
@@ -292,6 +302,26 @@ impl SelectableText {
                 }
             }
 
+            // Draw drop caret when dragging to move selected text and the drop target is outside the source range
+            if self.is_dragging && self.drag_moving {
+                let drop = self.move_drop16;
+                let src_start = self.move_src_start16;
+                let src_end = self.move_src_end16;
+                if !(drop >= src_start && drop <= src_end) {
+                    let mut x = 0.0f32;
+                    let mut y = 0.0f32;
+                    let mut m = DWRITE_HIT_TEST_METRICS::default();
+                    layout.HitTestTextPosition(drop, false, &mut x, &mut y, &mut m)?;
+                    let caret_rect = D2D_RECT_F {
+                        left: x,
+                        top: m.top,
+                        right: x + 1.0,
+                        bottom: m.top + m.height,
+                    };
+                    rt.FillRectangle(&caret_rect, brush);
+                }
+            }
+
             Ok(())
         }
     }
@@ -327,10 +357,26 @@ impl SelectableText {
     pub fn begin_drag(&mut self, idx: u32) {
         let idx = self.snap_to_scalar_boundary(idx);
         self.drag_origin16 = idx;
+
+        // Always clear drag moving state when beginning a drag. This way we can
+        // accommodate changing the selection mode upon successive clicks.
+        self.drag_moving = false;
+
+        // Drag-to-move applies only to Char mode. For Word/Paragraph clicks, always compute selection.
         match self.selection_mode {
             SelectionMode::Char => {
-                self.selection_anchor = idx;
-                self.selection_active = idx;
+                // If there is an existing non-empty selection and the drag starts inside it,
+                // switch to drag-to-move mode and keep the selection intact.
+                let (sel_start, sel_end) = self.selection_range();
+                if sel_end > sel_start && idx >= sel_start && idx < sel_end {
+                    self.drag_moving = true;
+                    self.move_src_start16 = sel_start;
+                    self.move_src_end16 = sel_end;
+                    self.move_drop16 = idx;
+                } else {
+                    self.selection_anchor = idx;
+                    self.selection_active = idx;
+                }
             }
             SelectionMode::Word => {
                 let (ws, we) = self.word_range_at(idx);
@@ -351,40 +397,94 @@ impl SelectableText {
         if !self.is_dragging {
             return false;
         }
-        let Ok(idx) = self.hit_test_index(x_dip, y_dip) else { return false };
+        let Ok(idx) = self.hit_test_index(x_dip, y_dip) else {
+            return false;
+        };
         let idx = self.snap_to_scalar_boundary(idx);
-        let (old_a, old_b) = (self.selection_anchor, self.selection_active);
-        match self.selection_mode {
-            SelectionMode::Char => {
-                self.selection_active = idx;
+        if self.drag_moving {
+            let old_drop = self.move_drop16;
+            self.move_drop16 = idx;
+            let changed = old_drop != self.move_drop16;
+            if changed {
+                self.force_blink();
             }
-            SelectionMode::Word => {
-                let a = self.drag_origin16.min(idx);
-                let b = self.drag_origin16.max(idx);
-                let start = self.word_start_at(a);
-                let end = self.word_end_at(b);
-                self.selection_anchor = start;
-                self.selection_active = end;
+            changed
+        } else {
+            let (old_a, old_b) = (self.selection_anchor, self.selection_active);
+            match self.selection_mode {
+                SelectionMode::Char => {
+                    self.selection_active = idx;
+                }
+                SelectionMode::Word => {
+                    let a = self.drag_origin16.min(idx);
+                    let b = self.drag_origin16.max(idx);
+                    let start = self.word_start_at(a);
+                    let end = self.word_end_at(b);
+                    self.selection_anchor = start;
+                    self.selection_active = end;
+                }
+                SelectionMode::Paragraph => {
+                    let a = self.drag_origin16.min(idx);
+                    let b = self.drag_origin16.max(idx);
+                    let (ps, _) = self.paragraph_range_at(a);
+                    let (_, pe) = self.paragraph_range_at(b);
+                    self.selection_anchor = ps;
+                    self.selection_active = pe;
+                }
             }
-            SelectionMode::Paragraph => {
-                let a = self.drag_origin16.min(idx);
-                let b = self.drag_origin16.max(idx);
-                let (ps, _) = self.paragraph_range_at(a);
-                let (_, pe) = self.paragraph_range_at(b);
-                self.selection_anchor = ps;
-                self.selection_active = pe;
+            self.clamp_sel_to_len();
+            let changed = self.selection_anchor != old_a || self.selection_active != old_b;
+            if changed {
+                self.force_blink();
             }
+            changed
         }
-        self.clamp_sel_to_len();
-        let changed = self.selection_anchor != old_a || self.selection_active != old_b;
-        if changed {
-            self.force_blink();
-        }
-        changed
     }
 
     pub fn end_drag(&mut self, _idx: u32) {
-        self.is_dragging = false;
+        if self.drag_moving {
+            let src_start = self.move_src_start16;
+            let src_end = self.move_src_end16;
+            let sel_len = src_end.saturating_sub(src_start);
+            let drop = self.snap_to_scalar_boundary(self.move_drop16);
+            // Cancel move if dropping inside the original selection (including at its edges)
+            if sel_len > 0 && (drop >= src_start && drop <= src_end) {
+                // Treat as click-through: collapse selection to the clicked point
+                self.drag_moving = false;
+                self.is_dragging = false;
+                self.selection_anchor = drop;
+                self.selection_active = drop;
+                self.force_blink();
+                return;
+            }
+
+            // Capture text to move from the original selection
+            let start_byte = self.utf16_index_to_byte(src_start);
+            let end_byte = self.utf16_index_to_byte(src_end);
+            let moved = self.text[start_byte..end_byte].to_string();
+
+            // First delete the original selection
+            self.selection_anchor = src_start;
+            self.selection_active = src_end;
+            let _ = self.insert_str(""); // updates layout/metrics and caret
+
+            // Compute final insertion point accounting for the deletion shift
+            let insert_at = if drop >= src_end {
+                drop.saturating_sub(sel_len)
+            } else {
+                drop
+            };
+
+            // Insert at the target
+            self.selection_anchor = insert_at;
+            self.selection_active = insert_at;
+            let _ = self.insert_str(&moved);
+
+            self.drag_moving = false;
+            self.is_dragging = false;
+        } else {
+            self.is_dragging = false;
+        }
     }
 
     // ===== IME support =====
@@ -476,6 +576,10 @@ impl SelectableText {
 
     pub fn is_dragging(&self) -> bool {
         self.is_dragging
+    }
+
+    pub fn is_drag_moving(&self) -> bool {
+        self.drag_moving
     }
 
     pub fn metric_bounds(&self) -> RectDIP {

@@ -535,6 +535,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 
                         state.last_click_time = now;
                         state.last_click_pos = POINT { x: xi, y: yi };
+
                         // Ensure we receive keyboard input
                         let _ = SetFocus(Some(hwnd));
                         let _ = SetCapture(hwnd);
@@ -553,6 +554,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         let y = y_px * to_dip;
                         if state.text_widget.update_drag(x, y) {
                             let _ = InvalidateRect(Some(hwnd), None, false);
+                        }
+
+                        if state.text_widget.is_drag_moving() {
+                            if let Ok(h) = LoadCursorW(None, IDC_ARROW) {
+                                let _ = SetCursor(Some(h));
+                            }
                         }
                     }
                 }
