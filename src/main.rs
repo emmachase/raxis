@@ -173,7 +173,7 @@ fn get_clipboard_text(hwnd: HWND) -> Option<String> {
 
 struct AppState {
     d2d_factory: ID2D1Factory,
-    dwrite_factory: IDWriteFactory,
+    _dwrite_factory: IDWriteFactory,
     _text_format: IDWriteTextFormat,
     render_target: Option<ID2D1HwndRenderTarget>,
     black_brush: Option<ID2D1SolidColorBrush>,
@@ -223,7 +223,7 @@ impl AppState {
 
             Ok(Self {
                 d2d_factory,
-                dwrite_factory,
+                _dwrite_factory: dwrite_factory,
                 _text_format: text_format,
                 render_target: None,
                 black_brush: None,
