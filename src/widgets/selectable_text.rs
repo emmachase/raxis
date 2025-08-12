@@ -294,6 +294,11 @@ impl SelectableText {
         }
     }
 
+    fn force_blink(&mut self) {
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+    }
+
     // Drag/select helpers
     pub fn begin_drag(&mut self, idx: u32) {
         let idx = self.snap_to_scalar_boundary(idx);
@@ -301,13 +306,14 @@ impl SelectableText {
         self.selection_active = idx;
         self.is_dragging = true;
 
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
     }
 
     pub fn update_drag_index(&mut self, idx: u32) -> bool {
         if self.is_dragging && idx != self.selection_active {
             self.selection_active = self.snap_to_scalar_boundary(idx);
+
+            self.force_blink();
             return true;
         }
         false
@@ -316,9 +322,6 @@ impl SelectableText {
     pub fn end_drag(&mut self, idx: u32) {
         self.selection_active = self.snap_to_scalar_boundary(idx);
         self.is_dragging = false;
-
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
     }
 
     // ===== IME support =====
@@ -335,24 +338,21 @@ impl SelectableText {
 
         self.ime_text = Some(String::new());
         self.ime_cursor16 = 0;
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
         self.build_text_layout().unwrap();
     }
 
     pub fn ime_update(&mut self, s: String, cursor16: u32) {
         self.ime_text = Some(s);
         self.ime_cursor16 = cursor16;
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
         self.build_text_layout().unwrap();
     }
 
     pub fn ime_commit(&mut self, s: String) -> Result<()> {
         // Commit replaces current selection with final string.
         self.insert_str(&s)?;
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
         self.build_text_layout().unwrap();
         Ok(())
     }
@@ -360,8 +360,7 @@ impl SelectableText {
     pub fn ime_end(&mut self) {
         self.ime_text = None;
         self.ime_cursor16 = 0;
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
         self.build_text_layout().unwrap();
     }
 
@@ -631,16 +630,14 @@ impl SelectableText {
         self.build_text_layout()?;
         self.recalc_metrics()?;
 
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
         Ok(())
     }
 
     pub fn backspace(&mut self) -> Result<()> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
-            self.caret_blink_timer = 0.0;
-            self.caret_visible = true;
+            self.force_blink();
             return self.insert_str("");
         }
         if start16 == 0 {
@@ -656,16 +653,14 @@ impl SelectableText {
         self.build_text_layout()?;
         self.recalc_metrics()?;
 
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
         Ok(())
     }
 
     pub fn delete_forward(&mut self) -> Result<()> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
-            self.caret_blink_timer = 0.0;
-            self.caret_visible = true;
+            self.force_blink();
             return self.insert_str("");
         }
         let total16 = self.text.encode_utf16().count() as u32;
@@ -681,113 +676,75 @@ impl SelectableText {
         self.build_text_layout()?;
         self.recalc_metrics()?;
 
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.force_blink();
         Ok(())
+    }
+
+    fn move_to_target(&mut self, target: u32, extend: bool) {
+        // Don't blink if we're already at the target
+        if self.selection_active == target && (extend || self.selection_anchor == target) {
+            return;
+        }
+
+        self.selection_active = target;
+        if !extend {
+            self.selection_anchor = target;
+        }
+        self.clamp_sel_to_len();
+
+        self.force_blink();
     }
 
     pub fn move_left(&mut self, extend: bool) {
         let (start16, end16) = self.selection_range();
-        if !extend && start16 != end16 {
-            self.selection_active = start16;
-            self.selection_anchor = start16;
+        let target = if !extend && start16 != end16 {
+            start16
+        } else {
+            self.prev_scalar_index(self.selection_active)
+        };
 
-            self.caret_blink_timer = 0.0;
-            self.caret_visible = true;
-            return;
-        }
-        let target = self.prev_scalar_index(self.selection_active);
-        self.selection_active = target;
-        if !extend {
-            self.selection_anchor = self.selection_active;
-        }
-        self.clamp_sel_to_len();
-
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.move_to_target(target, extend);
     }
 
     pub fn move_right(&mut self, extend: bool) {
         let (start16, end16) = self.selection_range();
-        if !extend && start16 != end16 {
-            self.selection_active = end16;
-            self.selection_anchor = end16;
+        let target = if !extend && start16 != end16 {
+            end16
+        } else {
+            self.next_scalar_index(self.selection_active)
+        };
 
-            self.caret_blink_timer = 0.0;
-            self.caret_visible = true;
-            return;
-        }
-        let target = self.next_scalar_index(self.selection_active);
-        self.selection_active = target;
-        if !extend {
-            self.selection_anchor = self.selection_active;
-        }
-        self.clamp_sel_to_len();
-
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.move_to_target(target, extend);
     }
 
     pub fn move_word_left(&mut self, extend: bool) {
         let (start16, end16) = self.selection_range();
-        if !extend && start16 != end16 {
-            self.selection_active = start16;
-            self.selection_anchor = start16;
+        let target = if !extend && start16 != end16 {
+            start16
+        } else {
+            self.prev_word_index(self.selection_active)
+        };
 
-            self.caret_blink_timer = 0.0;
-            self.caret_visible = true;
-            return;
-        }
-        let target = self.prev_word_index(self.selection_active);
-        self.selection_active = target;
-        if !extend {
-            self.selection_anchor = self.selection_active;
-        }
-        self.clamp_sel_to_len();
-
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.move_to_target(target, extend);
     }
 
     pub fn move_word_right(&mut self, extend: bool) {
         let (start16, end16) = self.selection_range();
-        if !extend && start16 != end16 {
-            self.selection_active = end16;
-            self.selection_anchor = end16;
+        let target = if !extend && start16 != end16 {
+            end16
+        } else {
+            self.next_word_index(self.selection_active)
+        };
 
-            self.caret_blink_timer = 0.0;
-            self.caret_visible = true;
-            return;
-        }
-        let target = self.next_word_index(self.selection_active);
-        self.selection_active = target;
-        if !extend {
-            self.selection_anchor = self.selection_active;
-        }
-        self.clamp_sel_to_len();
-
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.move_to_target(target, extend);
     }
 
     pub fn move_to_start(&mut self, extend: bool) {
-        self.selection_active = 0;
-        if !extend {
-            self.selection_anchor = 0;
-        }
-
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.move_to_target(0, extend);
     }
 
     pub fn move_to_end(&mut self, extend: bool) {
         let total16 = self.text.encode_utf16().count() as u32;
-        self.selection_active = total16;
-        if !extend {
-            self.selection_anchor = total16;
-        }
-
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.move_to_target(total16, extend);
     }
 }
