@@ -620,11 +620,19 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let ctrl_down = GetKeyState(VK_CONTROL.0 as i32) < 0;
                     let handled = match vk {
                         x if x == VK_LEFT.0 as u32 => {
-                            state.text_widget.move_left(shift_down);
+                            if ctrl_down {
+                                state.text_widget.move_word_left(shift_down);
+                            } else {
+                                state.text_widget.move_left(shift_down);
+                            }
                             true
                         }
                         x if x == VK_RIGHT.0 as u32 => {
-                            state.text_widget.move_right(shift_down);
+                            if ctrl_down {
+                                state.text_widget.move_word_right(shift_down);
+                            } else {
+                                state.text_widget.move_right(shift_down);
+                            }
                             true
                         }
                         x if x == VK_HOME.0 as u32 => {

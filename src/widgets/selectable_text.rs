@@ -296,6 +296,7 @@ impl SelectableText {
 
     // Drag/select helpers
     pub fn begin_drag(&mut self, idx: u32) {
+        let idx = self.snap_to_scalar_boundary(idx);
         self.selection_anchor = idx;
         self.selection_active = idx;
         self.is_dragging = true;
@@ -306,14 +307,14 @@ impl SelectableText {
 
     pub fn update_drag_index(&mut self, idx: u32) -> bool {
         if self.is_dragging && idx != self.selection_active {
-            self.selection_active = idx;
+            self.selection_active = self.snap_to_scalar_boundary(idx);
             return true;
         }
         false
     }
 
     pub fn end_drag(&mut self, idx: u32) {
-        self.selection_active = idx;
+        self.selection_active = self.snap_to_scalar_boundary(idx);
         self.is_dragging = false;
 
         self.caret_blink_timer = 0.0;
@@ -462,6 +463,89 @@ impl SelectableText {
             out.push(acc16);
         }
         out
+    }
+
+    fn word_boundaries(&self) -> Vec<u32> {
+        // Returns UTF-16 code unit indices at each word boundary (including 0 and end)
+        let mut out: Vec<u32> = Vec::with_capacity(self.text.len().max(1));
+        let mut acc16: u32 = 0;
+        out.push(0);
+        for seg in self.text.split_word_bounds() {
+            acc16 += seg.encode_utf16().count() as u32;
+            out.push(acc16);
+        }
+        out
+    }
+
+    fn word_starts_utf16(&self) -> Vec<u32> {
+        // UTF-16 indices at the start of each Unicode word (skips whitespace/punctuation segments)
+        let mut out: Vec<u32> = Vec::new();
+        let mut acc16: u32 = 0;
+        let mut words = self.text.unicode_words().peekable();
+        for seg in self.text.split_word_bounds() {
+            let seg_start = acc16;
+            acc16 += seg.encode_utf16().count() as u32;
+            if let Some(next_word) = words.peek() {
+                if *next_word == seg {
+                    out.push(seg_start);
+                    let _ = words.next();
+                }
+            }
+        }
+        out
+    }
+
+    fn word_ranges_utf16(&self) -> Vec<(u32, u32)> {
+        // UTF-16 [start, end) ranges for each Unicode word
+        let mut out: Vec<(u32, u32)> = Vec::new();
+        let mut acc16: u32 = 0;
+        let mut words = self.text.unicode_words().peekable();
+        for seg in self.text.split_word_bounds() {
+            let seg_start = acc16;
+            let seg_len16 = seg.encode_utf16().count() as u32;
+            acc16 += seg_len16;
+            if let Some(next_word) = words.peek() {
+                if *next_word == seg {
+                    out.push((seg_start, seg_start + seg_len16));
+                    let _ = words.next();
+                }
+            }
+        }
+        out
+    }
+
+    fn prev_word_index(&self, idx16: u32) -> u32 {
+        // Move to the start of the current word if inside it; if at a word start,
+        // move to the start of the previous word. If before the first word, return 0.
+        let mut prev = 0u32;
+        for s in self.word_starts_utf16() {
+            if s >= idx16 {
+                return prev;
+            }
+            prev = s;
+        }
+        prev
+    }
+
+    fn next_word_index(&self, idx16: u32) -> u32 {
+        // Prefer the end of the current word; if in whitespace, jump to end of the next word.
+        let ranges = self.word_ranges_utf16();
+        for (i, (start, end)) in ranges.iter().cloned().enumerate() {
+            if idx16 < end && idx16 >= start {
+                return end; // inside current word: go to its end (before trailing whitespace)
+            }
+            if idx16 < start {
+                return end; // in whitespace before this word: go to its end
+            }
+            if idx16 == end {
+                // exactly at end of a word: go to end of next word if any
+                if let Some((_, next_end)) = ranges.get(i + 1).cloned() {
+                    return next_end;
+                }
+            }
+        }
+        // No next movement; clamp to end
+        self.text.encode_utf16().count() as u32
     }
 
     fn prev_scalar_index(&self, idx16: u32) -> u32 {
@@ -636,6 +720,42 @@ impl SelectableText {
             return;
         }
         let target = self.next_scalar_index(self.selection_active);
+        self.selection_active = target;
+        if !extend {
+            self.selection_anchor = self.selection_active;
+        }
+        self.clamp_sel_to_len();
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+    }
+
+    pub fn move_word_left(&mut self, extend: bool) {
+        let (start16, end16) = self.selection_range();
+        if !extend && start16 != end16 {
+            self.selection_active = start16;
+            self.selection_anchor = start16;
+            return;
+        }
+        let target = self.prev_word_index(self.selection_active);
+        self.selection_active = target;
+        if !extend {
+            self.selection_anchor = self.selection_active;
+        }
+        self.clamp_sel_to_len();
+
+        self.caret_blink_timer = 0.0;
+        self.caret_visible = true;
+    }
+
+    pub fn move_word_right(&mut self, extend: bool) {
+        let (start16, end16) = self.selection_range();
+        if !extend && start16 != end16 {
+            self.selection_active = end16;
+            self.selection_anchor = end16;
+            return;
+        }
+        let target = self.next_word_index(self.selection_active);
         self.selection_active = target;
         if !extend {
             self.selection_anchor = self.selection_active;
