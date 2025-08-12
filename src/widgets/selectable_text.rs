@@ -602,23 +602,40 @@ impl SelectableText {
         }
         self.utf16_boundaries = boundaries;
 
-        // Recompute word starts and ranges in UTF-16
+        // Recompute word-like ranges in UTF-16 using Unicode word boundaries
+        // and add separate selectable ranges for punctuation/symbol runs.
+        // - unicode_words() yields proper words per UAX#29 (good for CJK, etc.)
+        // - split_word_bounds() yields segments including punctuation and whitespace
         let mut starts: Vec<u32> = Vec::new();
         let mut ranges: Vec<(u32, u32)> = Vec::new();
-        let mut acc16w: u32 = 0;
+        let mut acc16: u32 = 0;
         let mut words = self.text.unicode_words().peekable();
         for seg in self.text.split_word_bounds() {
-            let seg_start = acc16w;
+            let seg_start = acc16;
             let seg_len16 = seg.encode_utf16().count() as u32;
-            acc16w += seg_len16;
+            acc16 += seg_len16;
+
+            // Skip pure-whitespace segments
+            if seg.chars().all(|c| c.is_whitespace()) {
+                continue;
+            }
+
+            // If this segment is the next Unicode word, record it as a word range
             if let Some(next_word) = words.peek() {
                 if *next_word == seg {
                     starts.push(seg_start);
                     ranges.push((seg_start, seg_start + seg_len16));
                     let _ = words.next();
+                    continue;
                 }
             }
+
+            // Otherwise, treat this non-whitespace segment (punct/symbol run)
+            // as its own selectable block, kept distinct from adjacent words.
+            starts.push(seg_start);
+            ranges.push((seg_start, seg_start + seg_len16));
         }
+
         self.word_starts_utf16 = starts;
         self.word_ranges_utf16 = ranges;
     }
