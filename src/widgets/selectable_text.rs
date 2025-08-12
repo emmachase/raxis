@@ -465,18 +465,6 @@ impl SelectableText {
         out
     }
 
-    fn word_boundaries(&self) -> Vec<u32> {
-        // Returns UTF-16 code unit indices at each word boundary (including 0 and end)
-        let mut out: Vec<u32> = Vec::with_capacity(self.text.len().max(1));
-        let mut acc16: u32 = 0;
-        out.push(0);
-        for seg in self.text.split_word_bounds() {
-            acc16 += seg.encode_utf16().count() as u32;
-            out.push(acc16);
-        }
-        out
-    }
-
     fn word_starts_utf16(&self) -> Vec<u32> {
         // UTF-16 indices at the start of each Unicode word (skips whitespace/punctuation segments)
         let mut out: Vec<u32> = Vec::new();
@@ -651,6 +639,8 @@ impl SelectableText {
     pub fn backspace(&mut self) -> Result<()> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
+            self.caret_blink_timer = 0.0;
+            self.caret_visible = true;
             return self.insert_str("");
         }
         if start16 == 0 {
@@ -674,6 +664,8 @@ impl SelectableText {
     pub fn delete_forward(&mut self) -> Result<()> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
+            self.caret_blink_timer = 0.0;
+            self.caret_visible = true;
             return self.insert_str("");
         }
         let total16 = self.text.encode_utf16().count() as u32;
@@ -699,6 +691,9 @@ impl SelectableText {
         if !extend && start16 != end16 {
             self.selection_active = start16;
             self.selection_anchor = start16;
+
+            self.caret_blink_timer = 0.0;
+            self.caret_visible = true;
             return;
         }
         let target = self.prev_scalar_index(self.selection_active);
@@ -717,6 +712,9 @@ impl SelectableText {
         if !extend && start16 != end16 {
             self.selection_active = end16;
             self.selection_anchor = end16;
+
+            self.caret_blink_timer = 0.0;
+            self.caret_visible = true;
             return;
         }
         let target = self.next_scalar_index(self.selection_active);
@@ -735,6 +733,9 @@ impl SelectableText {
         if !extend && start16 != end16 {
             self.selection_active = start16;
             self.selection_anchor = start16;
+
+            self.caret_blink_timer = 0.0;
+            self.caret_visible = true;
             return;
         }
         let target = self.prev_word_index(self.selection_active);
@@ -753,6 +754,9 @@ impl SelectableText {
         if !extend && start16 != end16 {
             self.selection_active = end16;
             self.selection_anchor = end16;
+
+            self.caret_blink_timer = 0.0;
+            self.caret_visible = true;
             return;
         }
         let target = self.next_word_index(self.selection_active);
