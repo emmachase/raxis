@@ -4,10 +4,10 @@ use windows::{
     Win32::{
         Foundation::{
             DRAGDROP_S_CANCEL, DRAGDROP_S_DROP, DRAGDROP_S_USEDEFAULTCURSORS, DV_E_FORMATETC,
-            E_NOTIMPL, HWND, S_OK,
+            E_NOTIMPL, S_OK,
         },
         System::{
-            Com::{IAdviseSink, IDataObject, IDataObject_Impl, STGMEDIUM, TYMED, TYMED_HGLOBAL},
+            Com::{IAdviseSink, IDataObject, IDataObject_Impl, STGMEDIUM, TYMED_HGLOBAL},
             Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
             Ole::{
                 DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, DoDragDrop, IDropSource,

@@ -146,6 +146,8 @@ impl DropTarget {
                 let x = (p.x as f32) * to_dip;
                 let y = (p.y as f32) * to_dip;
                 if let Ok(idx16) = state.text_widget.hit_test_index(x, y) {
+                    state.text_widget.set_ole_drop_preview(Some(idx16));
+
                     // Request CF_UNICODETEXT via HGLOBAL
                     let fmt = FORMATETC {
                         cfFormat: CF_UNICODETEXT.0,
@@ -175,17 +177,11 @@ impl DropTarget {
                             // If we dropped from our own drag, remove the selection
                             let internal_move = state.text_widget.is_ole_dragging()
                                 && (effect.0 & DROPEFFECT_MOVE.0) != 0;
-                            // if  {
-                            //     // Delete original selection on successful MOVE drop
-                            //     let _ = state.text_widget.insert_str("");
-                            // }
 
                             // Normalize CRLF to LF for internal text
                             s = s.replace("\r\n", "\n");
 
                             state.text_widget.finish_ole_drop(&s, internal_move)?;
-                            // state.text_widget.move_caret_to(idx16);
-                            // let _ = state.text_widget.insert_str(&s);
                         }
                         let _ = ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
                     }
