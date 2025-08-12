@@ -1,7 +1,7 @@
 // #![windows_subsystem = "windows"]
 
-use glux::dragdrop::start_text_drag;
-use glux::{
+use brickbox::dragdrop::start_text_drag;
+use brickbox::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
     widgets::{

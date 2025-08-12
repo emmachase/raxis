@@ -3,6 +3,17 @@
 version = 4
 
 [[package]]
+name = "brickbox"
+version = "0.1.0"
+dependencies = [
+ "const_format",
+ "unicode-segmentation",
+ "windows",
+ "windows-core",
+ "windows-numerics",
+]
+
+[[package]]
 name = "const_format"
 version = "0.2.34"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -20,17 +31,6 @@ dependencies = [
  "proc-macro2",
  "quote",
  "unicode-xid",
-]
-
-[[package]]
-name = "glux"
-version = "0.1.0"
-dependencies = [
- "const_format",
- "unicode-segmentation",
- "windows",
- "windows-core",
- "windows-numerics",
 ]
 
 [[package]]
