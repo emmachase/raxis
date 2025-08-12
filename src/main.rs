@@ -543,7 +543,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             WM_COPY => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     if let Some(s) = state.text_widget.selected_text() {
-                        set_clipboard_text(hwnd, &s);
+                        let _ = set_clipboard_text(hwnd, &s);
                     }
                 }
                 LRESULT(0)
@@ -551,7 +551,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             WM_CUT => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     if let Some(s) = state.text_widget.selected_text() {
-                        set_clipboard_text(hwnd, &s);
+                        let _ = set_clipboard_text(hwnd, &s);
                         let _ = state.text_widget.insert_str("");
                         let _ = InvalidateRect(Some(hwnd), None, false);
                     }
@@ -657,13 +657,13 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         }
                         x if x == VK_C.0 as u32 && ctrl_down => {
                             if let Some(s) = state.text_widget.selected_text() {
-                                set_clipboard_text(hwnd, &s);
+                                let _ = set_clipboard_text(hwnd, &s);
                             }
                             true
                         }
                         x if x == VK_X.0 as u32 && ctrl_down => {
                             if let Some(s) = state.text_widget.selected_text() {
-                                set_clipboard_text(hwnd, &s);
+                                let _ = set_clipboard_text(hwnd, &s);
                                 let _ = state.text_widget.insert_str("");
                             }
                             true
