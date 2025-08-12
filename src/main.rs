@@ -1,5 +1,6 @@
 // #![windows_subsystem = "windows"]
 
+use glux::dragdrop::start_text_drag;
 use glux::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
@@ -9,6 +10,7 @@ use glux::{
     },
 };
 use std::{ffi::c_void, sync::OnceLock};
+use windows::Win32::System::Com::CoUninitialize;
 use windows::{
     Win32::{
         Foundation::{
@@ -38,13 +40,14 @@ use windows::{
             },
         },
         System::{
+            Com::CoInitialize,
             DataExchange::{
                 CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
                 OpenClipboard, SetClipboardData,
             },
             LibraryLoader::GetModuleHandleW,
             Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
-            Ole::CF_UNICODETEXT,
+            Ole::{CF_UNICODETEXT, DROPEFFECT_MOVE, OleInitialize, OleUninitialize},
         },
         UI::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
@@ -64,12 +67,13 @@ use windows::{
                 self as WAM, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
                 GetMessageTime, GetMessageW, GetSystemMetrics, HCURSOR, HTCLIENT, IDC_ARROW,
-                IDC_IBEAM, LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK,
-                SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos,
-                ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_COPY, WM_CREATE, WM_CUT,
-                WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
-                WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-                WM_PAINT, WM_PASTE, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                IDC_IBEAM, LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CXDRAG,
+                SM_CYDOUBLECLK, SM_CYDRAG, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
+                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+                WM_CHAR, WM_COPY, WM_CREATE, WM_CUT, WM_DESTROY, WM_DISPLAYCHANGE,
+                WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_PASTE, WM_SETCURSOR,
+                WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -547,8 +551,36 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             WM_MOUSEMOVE => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     if state.text_widget.is_dragging() {
-                        let x_px = (lparam.0 & 0xFFFF) as i16 as i32 as f32;
-                        let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32 as f32;
+                        // Current mouse in pixels
+                        let xi = (lparam.0 & 0xFFFF) as i16 as i32;
+                        let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+
+                        // If this is a drag-move and we've exceeded the system drag threshold,
+                        // escalate to OLE DoDragDrop with CF_UNICODETEXT.
+                        if state.text_widget.is_drag_moving() {
+                            let dx = (xi - state.last_click_pos.x).unsigned_abs();
+                            let dy = (yi - state.last_click_pos.y).unsigned_abs();
+                            let w = GetSystemMetrics(SM_CXDRAG) as u32 / 2;
+                            let h = GetSystemMetrics(SM_CYDRAG) as u32 / 2;
+                            if dx > w || dy > h {
+                                if let Some(s) = state.text_widget.selected_text() {
+                                    // Hand control to OLE DnD
+                                    let _ = ReleaseCapture();
+                                    state.text_widget.cancel_drag();
+                                    let effect = start_text_drag(&s, true).unwrap_or_default();
+                                    if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
+                                        // Delete original selection on successful MOVE drop
+                                        let _ = state.text_widget.insert_str("");
+                                    }
+                                    let _ = InvalidateRect(Some(hwnd), None, false);
+                                    return LRESULT(0);
+                                }
+                            }
+                        }
+
+                        // Continue manual drag (selection or preview drop position)
+                        let x_px = xi as f32;
+                        let y_px = yi as f32;
                         let to_dip = dips_scale(hwnd);
                         let x = x_px * to_dip;
                         let y = y_px * to_dip;
@@ -849,6 +881,11 @@ fn main() -> Result<()> {
         // Opt-in to Per-Monitor V2 DPI awareness for crisp rendering on high-DPI displays
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
 
+        let _ = CoInitialize(None);
+
+        // Initialize OLE for drag-and-drop
+        let _ = OleInitialize(None);
+
         let hinstance = GetModuleHandleW(None)?;
         let class_name = PCWSTR(w!("DWriteSampleWindow").as_ptr());
 
@@ -895,6 +932,10 @@ fn main() -> Result<()> {
             let _ = TranslateMessage(&msg);
             DispatchMessageW(&msg);
         }
+        // Uninitialize OLE
+        OleUninitialize();
+        // Uninitialize COM
+        CoUninitialize();
     }
     Ok(())
 }

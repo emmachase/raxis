@@ -4,6 +4,7 @@ pub mod gfx;
 pub mod math;
 pub mod util;
 pub mod widgets;
+pub mod dragdrop;
 
 pub fn current_dpi(hwnd: HWND) -> f32 {
     unsafe { GetDpiForWindow(hwnd) as f32 }

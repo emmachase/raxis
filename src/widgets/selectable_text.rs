@@ -578,6 +578,13 @@ impl SelectableText {
         self.is_dragging
     }
 
+    /// Abort any ongoing manual drag/drag-move without altering selection or text.
+    pub fn cancel_drag(&mut self) {
+        self.drag_moving = false;
+        self.is_dragging = false;
+        self.force_blink();
+    }
+
     pub fn is_drag_moving(&self) -> bool {
         self.drag_moving
     }

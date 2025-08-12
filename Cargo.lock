@@ -29,6 +29,7 @@ dependencies = [
  "const_format",
  "unicode-segmentation",
  "windows",
+ "windows-core",
  "windows-numerics",
 ]
 

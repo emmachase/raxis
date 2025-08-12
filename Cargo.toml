@@ -23,10 +23,14 @@ windows = { version = "0.61.3", features = [
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
     "Win32_System_Ole",
+    "Win32_System_Com",
+    "Win32_System_SystemServices",
+    "Win32_System_Com_StructuredStorage",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Input_Ime",
     "Win32_UI_HiDpi",
 ] }
+windows-core = "0.61.2"
 windows-numerics = "0.2.0"
 
 [profile.release]
