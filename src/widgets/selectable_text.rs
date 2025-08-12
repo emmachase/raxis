@@ -426,8 +426,13 @@ impl SelectableText {
         }
     }
 
-    pub fn end_drag(&mut self, _idx: u32) {
+    pub fn end_drag(&mut self, idx: u32) {
         self.is_dragging = false;
+
+        if self.drag_origin16 == idx {
+            self.selection_anchor = idx;
+            self.selection_active = idx;
+        }
     }
 
     pub fn set_is_ole_dragging(&mut self, dragging: bool) {
