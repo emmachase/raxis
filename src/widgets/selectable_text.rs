@@ -3,7 +3,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_HIT_TEST_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, IDWriteFactory,
+    DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, IDWriteFactory,
     IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
@@ -49,6 +49,18 @@ pub struct SelectableText {
     // composition anchor position (start of current selection) with underline.
     ime_text: Option<String>,
     ime_cursor16: u32, // caret within ime_text in UTF-16 code units
+
+    // Selection behavior
+    selection_mode: SelectionMode,
+    // Original drag-down location in UTF-16 units (for extending by word/paragraph)
+    drag_origin16: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectionMode {
+    Char,
+    Word,
+    Paragraph,
 }
 
 impl SelectableText {
@@ -74,6 +86,8 @@ impl SelectableText {
             word_ranges_utf16: Vec::new(),
             ime_text: None,
             ime_cursor16: 0,
+            selection_mode: SelectionMode::Char,
+            drag_origin16: 0,
         };
         s.recompute_text_boundaries();
         s
@@ -312,25 +326,64 @@ impl SelectableText {
     // Drag/select helpers
     pub fn begin_drag(&mut self, idx: u32) {
         let idx = self.snap_to_scalar_boundary(idx);
-        self.selection_anchor = idx;
-        self.selection_active = idx;
+        self.drag_origin16 = idx;
+        match self.selection_mode {
+            SelectionMode::Char => {
+                self.selection_anchor = idx;
+                self.selection_active = idx;
+            }
+            SelectionMode::Word => {
+                let (ws, we) = self.word_range_at(idx);
+                self.selection_anchor = ws;
+                self.selection_active = we;
+            }
+            SelectionMode::Paragraph => {
+                let (ps, pe) = self.paragraph_range_at(idx);
+                self.selection_anchor = ps;
+                self.selection_active = pe;
+            }
+        }
         self.is_dragging = true;
-
         self.force_blink();
     }
 
-    pub fn update_drag_index(&mut self, idx: u32) -> bool {
-        if self.is_dragging && idx != self.selection_active {
-            self.selection_active = self.snap_to_scalar_boundary(idx);
-
-            self.force_blink();
-            return true;
+    pub fn update_drag(&mut self, x_dip: f32, y_dip: f32) -> bool {
+        if !self.is_dragging {
+            return false;
         }
-        false
+        let Ok(idx) = self.hit_test_index(x_dip, y_dip) else { return false };
+        let idx = self.snap_to_scalar_boundary(idx);
+        let (old_a, old_b) = (self.selection_anchor, self.selection_active);
+        match self.selection_mode {
+            SelectionMode::Char => {
+                self.selection_active = idx;
+            }
+            SelectionMode::Word => {
+                let a = self.drag_origin16.min(idx);
+                let b = self.drag_origin16.max(idx);
+                let start = self.word_start_at(a);
+                let end = self.word_end_at(b);
+                self.selection_anchor = start;
+                self.selection_active = end;
+            }
+            SelectionMode::Paragraph => {
+                let a = self.drag_origin16.min(idx);
+                let b = self.drag_origin16.max(idx);
+                let (ps, _) = self.paragraph_range_at(a);
+                let (_, pe) = self.paragraph_range_at(b);
+                self.selection_anchor = ps;
+                self.selection_active = pe;
+            }
+        }
+        self.clamp_sel_to_len();
+        let changed = self.selection_anchor != old_a || self.selection_active != old_b;
+        if changed {
+            self.force_blink();
+        }
+        changed
     }
 
-    pub fn end_drag(&mut self, idx: u32) {
-        self.selection_active = self.snap_to_scalar_boundary(idx);
+    pub fn end_drag(&mut self, _idx: u32) {
         self.is_dragging = false;
     }
 
@@ -429,9 +482,113 @@ impl SelectableText {
         self.metric_bounds
     }
 
+    /// Select the word containing or following the given UTF-16 index.
+    pub fn select_word_at(&mut self, idx16: u32) {
+        let (s, e) = self.word_range_at(idx16);
+        self.selection_anchor = self.snap_to_scalar_boundary(s);
+        self.selection_active = self.snap_to_scalar_boundary(e);
+        self.force_blink();
+    }
+
+    /// Select the entire wrapped line containing the given UTF-16 index.
+    /// This uses DirectWrite line metrics to honor wrapping and explicit newlines.
+    pub fn select_line_at(&mut self, idx16: u32) {
+        unsafe {
+            let layout = match self.layout.as_ref() {
+                Some(l) => l,
+                None => return,
+            };
+            // Query required line metrics count (expected to return an error but set count)
+            let mut needed: u32 = 0;
+            let _ = layout.GetLineMetrics(None, &mut needed);
+            if needed == 0 {
+                return;
+            }
+            let mut lines = vec![DWRITE_LINE_METRICS::default(); needed as usize];
+            let mut actual: u32 = 0;
+            let _ = layout.GetLineMetrics(Some(&mut lines), &mut actual);
+            if actual == 0 {
+                return;
+            }
+            let mut pos: u32 = 0;
+            for m in lines.iter().take(actual as usize) {
+                let line_start = pos;
+                let line_end_no_newline = pos.saturating_add(m.length);
+                let line_consumed = m.length.saturating_add(m.newlineLength);
+                let line_total_end = pos.saturating_add(line_consumed);
+                // Consider the newline as part of hit for containment test,
+                // but exclude it from the selected range.
+                if idx16 < line_total_end {
+                    self.selection_anchor = self.snap_to_scalar_boundary(line_start);
+                    self.selection_active = self.snap_to_scalar_boundary(line_end_no_newline);
+                    self.force_blink();
+                    return;
+                }
+                pos = line_total_end;
+            }
+            // If not found, clamp to end
+            self.selection_anchor = self.snap_to_scalar_boundary(pos);
+            self.selection_active = self.snap_to_scalar_boundary(pos);
+            self.force_blink();
+        }
+    }
+
     // ===== Editing helpers =====
     fn utf16_len_of_str(s: &str) -> u32 {
         s.encode_utf16().count() as u32
+    }
+
+    fn byte_to_utf16_index(&self, byte_idx: usize) -> u32 {
+        let s = &self.text[..byte_idx];
+        Self::utf16_len_of_str(s)
+    }
+
+    fn word_range_at(&self, idx16: u32) -> (u32, u32) {
+        for (ws, we) in &self.word_ranges_utf16 {
+            if idx16 >= *ws && idx16 < *we {
+                return (*ws, *we);
+            }
+            if idx16 < *ws {
+                return (*ws, *we);
+            }
+        }
+        // Fallback: last word or empty
+        if let Some(&(s, e)) = self.word_ranges_utf16.last() {
+            (s, e)
+        } else {
+            (0, 0)
+        }
+    }
+
+    fn word_start_at(&self, idx16: u32) -> u32 {
+        self.word_range_at(idx16).0
+    }
+
+    fn word_end_at(&self, idx16: u32) -> u32 {
+        self.word_range_at(idx16).1
+    }
+
+    fn paragraph_range_at(&self, idx16: u32) -> (u32, u32) {
+        // Find byte index equivalent to idx16
+        let byte_idx = self.utf16_index_to_byte(idx16);
+        let bytes = self.text.as_bytes();
+        let mut start_byte = 0usize;
+        if byte_idx > 0 {
+            if let Some(pos) = bytes[..byte_idx].iter().rposition(|&c| c == b'\n') {
+                start_byte = pos + 1;
+            }
+        }
+        let mut end_byte = bytes.len();
+        if let Some(off) = bytes[byte_idx..].iter().position(|&c| c == b'\n') {
+            end_byte = byte_idx + off; // exclude newline
+        }
+        let start16 = self.byte_to_utf16_index(start_byte);
+        let end16 = self.byte_to_utf16_index(end_byte);
+        (start16, end16)
+    }
+
+    pub fn set_selection_mode(&mut self, mode: SelectionMode) {
+        self.selection_mode = mode;
     }
 
     fn recompute_text_boundaries(&mut self) {
