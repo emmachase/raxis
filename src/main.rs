@@ -61,16 +61,15 @@ use windows::{
                 },
             },
             WindowsAndMessaging::{
-                self as WAM, CREATESTRUCTW, CS_DBLCLKS, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT,
-                CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect,
-                GetCursorPos, GetMessageTime, GetMessageW, GetSystemMetrics, HCURSOR, HTCLIENT,
-                IDC_ARROW, IDC_IBEAM, LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK,
-                SM_CYDOUBLECLK, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
-                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
-                WM_CHAR, WM_COPY, WM_CREATE, WM_CUT, WM_DESTROY, WM_DISPLAYCHANGE,
-                WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
-                WM_LBUTTONDBLCLK, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_PASTE,
-                WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                self as WAM, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
+                DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
+                GetMessageTime, GetMessageW, GetSystemMetrics, HCURSOR, HTCLIENT, IDC_ARROW,
+                IDC_IBEAM, LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK,
+                SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos,
+                ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_COPY, WM_CREATE, WM_CUT,
+                WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+                WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+                WM_PAINT, WM_PASTE, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -192,10 +191,10 @@ struct AppState {
     // For combining UTF-16 surrogate pairs from WM_CHAR
     pending_high_surrogate: Option<u16>,
 
-    // Mouse multi-click tracking (for triple-click line selection)
+    // Mouse multi-click tracking (running click count within time/rect)
     last_click_time: u32,
     last_click_pos: POINT,
-    last_click_was_double: bool,
+    click_count: u32,
 }
 
 impl AppState {
@@ -243,7 +242,7 @@ impl AppState {
                 pending_high_surrogate: None,
                 last_click_time: 0,
                 last_click_pos: POINT { x: 0, y: 0 },
-                last_click_was_double: false,
+                click_count: 0,
             })
         }
     }
@@ -501,7 +500,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
                     if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
-                        // Detect triple-click: a click following a double-click within time/area
+                        // Compute running click count within system double-click time/rect
                         let now = GetMessageTime() as u32;
                         let thresh = GetDoubleClickTime();
                         let dx = (xi - state.last_click_pos.x).unsigned_abs();
@@ -511,76 +510,32 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         let within_rect = dx <= w && dy <= h;
                         let within_time = now.wrapping_sub(state.last_click_time) <= thresh;
 
-                        if state.last_click_was_double && within_time && within_rect {
-                            // Triple click: paragraph selection mode
-                            if state.text_widget.is_composing() {
-                                let himc = ImmGetContext(hwnd);
-                                if !himc.is_invalid() {
-                                    let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
-                                }
-                            }
-                            state
-                                .text_widget
-                                .set_selection_mode(SelectionMode::Paragraph);
-                            state.text_widget.begin_drag(idx);
-                            state.last_click_was_double = false; // reset
-                            state.last_click_time = now;
-                            state.last_click_pos = POINT { x: xi, y: yi };
-                            let _ = SetFocus(Some(hwnd));
-                            let _ = SetCapture(hwnd);
-                            let _ = InvalidateRect(Some(hwnd), None, false);
-                            return LRESULT(0);
+                        if within_time && within_rect {
+                            state.click_count = state.click_count.saturating_add(1);
+                        } else {
+                            state.click_count = 1;
                         }
 
-                        // Otherwise: begin drag as a normal single click
+                        // Complete composition before altering selection
                         if state.text_widget.is_composing() {
                             let himc = ImmGetContext(hwnd);
                             if !himc.is_invalid() {
-                                // Notify IME to complete composition so that we can move the cursor
-                                // to the clicked position.
                                 let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
                             }
                         }
 
-                        state.text_widget.set_selection_mode(SelectionMode::Char);
+                        // Selection mode by click count
+                        let mode = match state.click_count {
+                            1 => SelectionMode::Char,
+                            x if x % 2 == 0 => SelectionMode::Word,
+                            _ => SelectionMode::Paragraph,
+                        };
+                        state.text_widget.set_selection_mode(mode);
                         state.text_widget.begin_drag(idx);
-                        state.last_click_was_double = false;
+
                         state.last_click_time = now;
                         state.last_click_pos = POINT { x: xi, y: yi };
                         // Ensure we receive keyboard input
-                        let _ = SetFocus(Some(hwnd));
-                        let _ = SetCapture(hwnd);
-                        let _ = InvalidateRect(Some(hwnd), None, false);
-                    }
-                }
-                LRESULT(0)
-            }
-            WM_LBUTTONDBLCLK => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    // Extract mouse position in client pixels
-                    let xi = (lparam.0 & 0xFFFF) as i16 as i32;
-                    let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-                    let x_px = xi as f32;
-                    let y_px = yi as f32;
-                    let to_dip = dips_scale(hwnd);
-                    let x = x_px * to_dip;
-                    let y = y_px * to_dip;
-                    if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
-                        if state.text_widget.is_composing() {
-                            let himc = ImmGetContext(hwnd);
-                            if !himc.is_invalid() {
-                                let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
-                            }
-                        }
-                        // Enter word selection mode and begin drag at this word
-                        let current = state.text_widget.caret_active16();
-                        state.text_widget.end_drag(current);
-                        state.text_widget.set_selection_mode(SelectionMode::Word);
-                        state.text_widget.begin_drag(idx);
-                        // Track double-click for potential triple-click detection
-                        state.last_click_was_double = true;
-                        state.last_click_time = GetMessageTime() as u32;
-                        state.last_click_pos = POINT { x: xi, y: yi };
                         let _ = SetFocus(Some(hwnd));
                         let _ = SetCapture(hwnd);
                         let _ = InvalidateRect(Some(hwnd), None, false);
@@ -891,7 +846,7 @@ fn main() -> Result<()> {
         let class_name = PCWSTR(w!("DWriteSampleWindow").as_ptr());
 
         let wc = WNDCLASSW {
-            style: CS_HREDRAW | CS_VREDRAW | CS_DBLCLKS,
+            style: CS_HREDRAW | CS_VREDRAW,
             lpfnWndProc: Some(wndproc),
             hInstance: hinstance.into(),
             hCursor: LoadCursorW(None, IDC_ARROW)?,
