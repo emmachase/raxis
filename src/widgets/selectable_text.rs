@@ -58,7 +58,7 @@ pub struct SelectableText {
     // OLE drag-over preview caret position (UTF-16 index). When Some, draw a caret
     // at this position to indicate the drop location during OLE drag-over.
     ole_drop_preview16: Option<u32>,
-    ole_is_dragging: bool,
+    can_drag_drop: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -94,7 +94,7 @@ impl SelectableText {
             selection_mode: SelectionMode::Char,
             drag_origin16: 0,
             ole_drop_preview16: None,
-            ole_is_dragging: false,
+            can_drag_drop: false,
         };
         s.recompute_text_boundaries();
         s
@@ -354,7 +354,7 @@ impl SelectableText {
         let idx = self.snap_to_scalar_boundary(idx);
         self.drag_origin16 = idx;
 
-        self.ole_is_dragging = false;
+        self.can_drag_drop = false;
 
         // Drag-to-move applies only to Char mode. For Word/Paragraph clicks, always compute selection.
         match self.selection_mode {
@@ -363,7 +363,7 @@ impl SelectableText {
                 // switch to drag-to-move mode and keep the selection intact.
                 let (sel_start, sel_end) = self.selection_range();
                 if sel_end > sel_start && idx >= sel_start && idx < sel_end {
-                    self.ole_is_dragging = true;
+                    self.can_drag_drop = true;
                 } else {
                     self.selection_anchor = idx;
                     self.selection_active = idx;
@@ -392,7 +392,7 @@ impl SelectableText {
             return false;
         };
         let idx = self.snap_to_scalar_boundary(idx);
-        if self.ole_is_dragging {
+        if self.can_drag_drop {
             false
         } else {
             let (old_a, old_b) = (self.selection_anchor, self.selection_active);
@@ -429,18 +429,19 @@ impl SelectableText {
     pub fn end_drag(&mut self, idx: u32) {
         self.is_dragging = false;
 
-        if self.drag_origin16 == idx {
+        if self.drag_origin16 == idx && self.can_drag_drop {
+            // Click through to deselect at cursor
             self.selection_anchor = idx;
             self.selection_active = idx;
         }
     }
 
-    pub fn set_is_ole_dragging(&mut self, dragging: bool) {
-        self.ole_is_dragging = dragging;
+    pub fn set_can_drag_drop(&mut self, dragging: bool) {
+        self.can_drag_drop = dragging;
     }
 
-    pub fn is_ole_dragging(&self) -> bool {
-        self.ole_is_dragging
+    pub fn can_drag_drop(&self) -> bool {
+        self.can_drag_drop
     }
 
     // ===== IME support =====

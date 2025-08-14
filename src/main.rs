@@ -175,7 +175,7 @@ impl DropTarget {
                             let mut s = String::from_utf16_lossy(&out);
 
                             // If we dropped from our own drag, remove the selection
-                            let internal_move = state.text_widget.is_ole_dragging()
+                            let internal_move = state.text_widget.can_drag_drop()
                                 && (effect.0 & DROPEFFECT_MOVE.0) != 0;
 
                             // Normalize CRLF to LF for internal text
@@ -745,7 +745,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let xi = (lparam.0 & 0xFFFF) as i16 as i32;
                     let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
 
-                    if state.text_widget.is_ole_dragging() {
+                    if state.text_widget.can_drag_drop() {
                         // If we've exceeded the system drag threshold,
                         // escalate to OLE DoDragDrop with CF_UNICODETEXT.
                         let dx = (xi - state.last_click_pos.x).unsigned_abs();
@@ -762,7 +762,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                     // Delete original selection on successful MOVE drop
                                     let _ = state.text_widget.insert_str("");
                                 }
-                                state.text_widget.set_is_ole_dragging(false);
+                                state.text_widget.set_can_drag_drop(false);
                                 let _ = InvalidateRect(Some(hwnd), None, false);
                                 return LRESULT(0);
                             }
