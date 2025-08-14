@@ -29,7 +29,8 @@ pub const fn hash(module_path: &'static str, file: &'static str, line: u32, colu
 #[macro_export]
 macro_rules! w_id {
     () => {{
-        const UNIQ: u64 = $crate::hash(module_path!(), file!(), line!(), column!());
-        const_format::concatcp!("uniq_", UNIQ)
+        $crate::util::unique::hash(module_path!(), file!(), line!(), column!())
+        // const UNIQ: u64 =
+        // const_format::concatcp!("uniq_", UNIQ)
     }};
 }

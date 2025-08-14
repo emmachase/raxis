@@ -1,10 +1,11 @@
 use windows::Win32::{Foundation::HWND, UI::HiDpi::GetDpiForWindow};
 
+pub mod dragdrop;
 pub mod gfx;
+pub mod layout;
 pub mod math;
 pub mod util;
 pub mod widgets;
-pub mod dragdrop;
 
 pub fn current_dpi(hwnd: HWND) -> f32 {
     unsafe { GetDpiForWindow(hwnd) as f32 }

@@ -1,6 +1,12 @@
 // #![windows_subsystem = "windows"]
 
 use raxis::dragdrop::start_text_drag;
+use raxis::layout::model::{
+    HorizontalAlignment, Sizing, TextElementContent, UIElement, VerticalAlignment,
+};
+use raxis::layout::scroll_manager::NoScrollStateManager;
+use raxis::layout::{self, OwnedUITree};
+use raxis::w_id;
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
@@ -10,6 +16,9 @@ use raxis::{
     },
 };
 use std::{ffi::c_void, sync::OnceLock};
+use windows::Win32::Graphics::DirectWrite::{
+    DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING,
+};
 use windows::Win32::System::Com::{
     CoUninitialize, DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM, TYMED_HGLOBAL,
 };
@@ -31,9 +40,7 @@ use windows::{
             },
             DirectWrite::{
                 DWRITE_FACTORY_TYPE_SHARED, DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_WEIGHT_REGULAR, DWRITE_PARAGRAPH_ALIGNMENT_CENTER,
-                DWRITE_TEXT_ALIGNMENT_CENTER, DWriteCreateFactory, IDWriteFactory,
-                IDWriteTextFormat,
+                DWRITE_FONT_WEIGHT_REGULAR, DWriteCreateFactory, IDWriteFactory, IDWriteTextFormat,
             },
             Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo},
             Dxgi::Common::DXGI_FORMAT_UNKNOWN,
@@ -376,6 +383,8 @@ struct AppState {
     timing_info: DWM_TIMING_INFO,
     spinner: Spinner,
 
+    ui_tree: OwnedUITree,
+
     // Selectable text widget encapsulating layout, selection, and bounds
     text_widget: SelectableText,
 
@@ -411,8 +420,8 @@ impl AppState {
                 72.0,
                 PCWSTR(w!("en-us").as_ptr()),
             )?;
-            text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)?;
-            text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)?;
+            text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
+            text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
 
             let spinner = Spinner::new(6.0, 200.0, 1.6);
 
@@ -422,6 +431,82 @@ impl AppState {
                 text_format.clone(),
                 TEXT.to_string(),
             );
+
+            let mut ui_tree = OwnedUITree::new();
+
+            let root = ui_tree.insert(UIElement {
+                id: Some(w_id!()),
+
+                background_color: Some(0xFF0000FF),
+
+                width: Sizing::Fixed { px: 800.0 },
+                height: Sizing::Fixed { px: 200.0 },
+
+                child_gap: 10.0,
+
+                ..Default::default()
+            });
+
+            let child = ui_tree.insert(UIElement {
+                id: Some(w_id!()),
+
+                background_color: Some(0x00FF00FF),
+
+                width: Sizing::grow(),
+                height: Sizing::grow(),
+
+                ..Default::default()
+            });
+            ui_tree[root].children.push(child);
+
+            let child = ui_tree.insert(UIElement {
+                id: Some(w_id!()),
+
+                background_color: Some(0xFFFF00FF),
+
+                horizontal_alignment: HorizontalAlignment::Center,
+
+                width: Sizing::grow(),
+                height: Sizing::grow(),
+
+                ..Default::default()
+            });
+            ui_tree[root].children.push(child);
+
+            let child2 = ui_tree.insert(UIElement {
+                id: Some(w_id!()),
+                background_color: Some(0x00FFFFFF),
+
+                vertical_alignment: VerticalAlignment::Center,
+
+                content: Some(TextElementContent {
+                    layout: dwrite_factory
+                        .CreateTextLayout(
+                            &w!("Hello, World!").as_wide(),
+                            Some(&text_format),
+                            f32::INFINITY,
+                            f32::INFINITY,
+                        )
+                        .ok(),
+                }),
+
+                color: Some(0x6030F0FF),
+
+                ..Default::default()
+            });
+            ui_tree[child].children.push(child2);
+
+            let child = ui_tree.insert(UIElement {
+                id: Some(w_id!()),
+
+                background_color: Some(0x00FFFFFF),
+
+                width: Sizing::grow(),
+                height: Sizing::grow(),
+
+                ..Default::default()
+            });
+            ui_tree[root].children.push(child);
 
             Ok(Self {
                 d2d_factory,
@@ -433,6 +518,7 @@ impl AppState {
                 timing_info: DWM_TIMING_INFO::default(),
                 spinner,
                 text_widget,
+                ui_tree,
                 drop_target: None,
                 pending_high_surrogate: None,
                 last_click_time: 0,
@@ -549,6 +635,13 @@ impl AppState {
                     / self.timing_info.rateCompose.uiNumerator as f32;
                 self.spinner.update(dt);
                 self.spinner.draw(d2d_factory, rt, brush)?;
+
+                let root = self.ui_tree.keys().next().unwrap();
+                self.ui_tree[root].width = Sizing::fixed(rc_dip.width_dip);
+
+                let mut ss = NoScrollStateManager {};
+                layout::layout(&mut self.ui_tree, root, &mut ss);
+                layout::paint(&rt, brush, &mut self.ui_tree, root, &mut ss, 0.0, 0.0);
 
                 // Spinner drawn above uses the current brush color.
 
