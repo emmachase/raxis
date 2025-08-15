@@ -429,8 +429,10 @@ impl AppState {
                 background_color: Some(0xFFFF00FF),
 
                 scroll: Some(ScrollConfig {
-                    horizontal: Some(true),
+                    // horizontal: Some(true),
                     vertical: Some(true),
+
+                    sticky_right: Some(true),
 
                     ..Default::default()
                 }),

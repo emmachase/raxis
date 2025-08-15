@@ -95,18 +95,23 @@ impl Widget for SelectableText {
 
             let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
 
-            super::Limits {
+            let lim = super::Limits {
                 min: super::Size {
                     width: min_width,
                     height: max_metrics.height,
                 },
                 max: super::Size {
-                    width: max_metrics.width,
+                    width: max_metrics.widthIncludingTrailingWhitespace,
                     height: max_metrics.height,
                 },
-            }
+            };
+
+            lim
         } else {
-            available
+            super::Limits {
+                min: available.min,
+                max: available.min,
+            }
         }
     }
 
@@ -150,14 +155,14 @@ impl Widget for SelectableText {
                 }
             }
             super::Event::MouseButtonUp { x, y, click_count } => {
-                if let Ok(idx) = self.hit_test_index(x, y) {
+                if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
                     self.end_drag(idx);
                 } else {
                     self.end_drag(0);
                 }
             }
             super::Event::MouseMove { x, y } => {
-                if self.update_drag(x, y) {
+                if self.update_drag(x - x_dip, y - y_dip) {
                     let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
                 }
             }
@@ -436,6 +441,13 @@ impl SelectableText {
 
             // Normal rendering: selection, base text, caret
             self.draw_selection(layout, rt, bounds, brush)?;
+
+            brush.SetColor(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            });
             rt.DrawTextLayout(
                 Vector2 {
                     X: bounds.x_dip,

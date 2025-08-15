@@ -9,11 +9,13 @@ use crate::{gfx::RectDIP, layout::model::UIElement};
 pub mod selectable_text;
 pub mod spinner;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Size {
     pub width: f32,
     pub height: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Limits {
     pub min: Size,
     pub max: Size,
