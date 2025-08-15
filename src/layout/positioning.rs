@@ -257,12 +257,11 @@ pub fn position_elements(
                             }
                             VerticalAlignment::Center => {
                                 slots[c].y = content_start_y
-                                    + (available_height - slots[c].computed_height) / 2.0;
+                                    + (available_height - slots[c].computed_height).max(0.0) / 2.0;
                             }
                             VerticalAlignment::Bottom => {
-                                slots[c].y = slots[key].y + slots[key].computed_height
-                                    - slots[key].padding.bottom
-                                    - slots[c].computed_height;
+                                slots[c].y = content_start_y
+                                    + (available_height - slots[c].computed_height).max(0.0);
                             }
                         }
 
@@ -297,12 +296,11 @@ pub fn position_elements(
                             }
                             HorizontalAlignment::Center => {
                                 slots[c].x = content_start_x
-                                    + (available_width - slots[c].computed_width) / 2.0;
+                                    + (available_width - slots[c].computed_width).max(0.0) / 2.0;
                             }
                             HorizontalAlignment::Right => {
-                                slots[c].x = slots[key].x + slots[key].computed_width
-                                    - slots[key].padding.right
-                                    - slots[c].computed_width;
+                                slots[c].x = content_start_x
+                                    + (available_width - slots[c].computed_width).max(0.0);
                             }
                         }
 

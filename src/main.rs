@@ -433,6 +433,7 @@ impl AppState {
                     vertical: Some(true),
 
                     sticky_right: Some(true),
+                    sticky_bottom: Some(true),
 
                     ..Default::default()
                 }),

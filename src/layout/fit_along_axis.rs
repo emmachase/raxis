@@ -108,22 +108,33 @@ pub fn fit_along_axis(slots: UITree<'_>, root: UIKey, axis: Axis) {
                         panic!("ElementContent is not a Widget");
                     };
 
-                let Limits { min, max } = widget.limits(Limits {
-                    min: Size {
-                        width: 0.0,
-                        height: 0.0,
-                    },
-                    max: Size {
-                        width: f32::INFINITY,
-                        height: f32::INFINITY,
-                    },
-                });
-
                 if x_axis {
+                    let Limits { min, max } = widget.limits(Limits {
+                        min: Size {
+                            width: 0.0,
+                            height: 0.0,
+                        },
+                        max: Size {
+                            width: f32::INFINITY,
+                            height: f32::INFINITY,
+                        },
+                    });
+
                     let element = &mut slots[key];
                     element.computed_width = max.width;
                     element.min_width = min.width;
                 } else {
+                    let Limits { min, max } = widget.limits(Limits {
+                        min: Size {
+                            width: 0.0,
+                            height: 0.0,
+                        },
+                        max: Size {
+                            width: element!().computed_width,
+                            height: f32::INFINITY,
+                        },
+                    });
+
                     let element = &mut slots[key];
                     element.computed_height = max.height;
                     element.min_height = min.height;
