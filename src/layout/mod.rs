@@ -13,6 +13,7 @@ use crate::{
         positioning::position_elements,
         scroll_manager::ScrollStateManager,
     },
+    widgets::Renderer,
 };
 
 pub mod model;
@@ -93,8 +94,9 @@ pub const DEFAULT_SCROLLBAR_SIZE: f32 = 16.0;
 pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 
 pub fn paint(
-    rt: &ID2D1HwndRenderTarget,
-    brush: &ID2D1SolidColorBrush,
+    // rt: &ID2D1HwndRenderTarget,
+    // brush: &ID2D1SolidColorBrush,
+    renderer: &Renderer,
     slots: UITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
@@ -123,13 +125,15 @@ pub fn paint(
                 };
 
                 unsafe {
-                    rt.PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                    renderer
+                        .render_target
+                        .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 }
             }
 
             if let Some(color) = element.background_color {
                 unsafe {
-                    brush.SetColor(&D2D1_COLOR_F {
+                    renderer.brush.SetColor(&D2D1_COLOR_F {
                         r: (0xFF & (color >> 24)) as f32 / 255.0,
                         g: (0xFF & (color >> 16)) as f32 / 255.0,
                         b: (0xFF & (color >> 8)) as f32 / 255.0,
@@ -142,7 +146,7 @@ pub fn paint(
                         right: x + width,
                         bottom: y + height,
                     };
-                    rt.FillRectangle(&rect, brush);
+                    renderer.render_target.FillRectangle(&rect, renderer.brush);
                 }
             }
 
@@ -154,22 +158,22 @@ pub fn paint(
                         let color = element.color.unwrap_or(0x000000FF);
 
                         unsafe {
-                            brush.SetColor(&D2D1_COLOR_F {
+                            renderer.brush.SetColor(&D2D1_COLOR_F {
                                 r: (0xFF & (color >> 24)) as f32 / 255.0,
                                 g: (0xFF & (color >> 16)) as f32 / 255.0,
                                 b: (0xFF & (color >> 8)) as f32 / 255.0,
                                 a: (0xFF & color) as f32 / 255.0,
                             });
-                            rt.DrawTextLayout(
+                            renderer.render_target.DrawTextLayout(
                                 Vector2 { X: x, Y: y },
                                 layout.as_ref().unwrap(),
-                                brush,
+                                renderer.brush,
                                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
                             );
                         }
                     }
                     ElementContent::Widget(widget) => {
-                        widget.paint(rt, brush, bounds, 1.0 / 240.0 /* TODO: dt */);
+                        widget.paint(renderer, bounds, 1.0 / 240.0 /* TODO: dt */);
                     }
                 }
             }
@@ -200,39 +204,39 @@ pub fn paint(
                 {
                     unsafe {
                         // Draw track
-                        brush.SetColor(&D2D1_COLOR_F {
+                        renderer.brush.SetColor(&D2D1_COLOR_F {
                             r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
                             g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
                             b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
                             a: (0xFF & scrollbar_track_color) as f32 / 255.0,
                         });
 
-                        rt.FillRectangle(
+                        renderer.render_target.FillRectangle(
                             &D2D_RECT_F {
                                 left: track_rect.x_dip,
                                 top: track_rect.y_dip,
                                 right: track_rect.x_dip + track_rect.width_dip,
                                 bottom: track_rect.y_dip + track_rect.height_dip,
                             },
-                            brush,
+                            renderer.brush,
                         );
 
                         // Draw thumb
-                        brush.SetColor(&D2D1_COLOR_F {
+                        renderer.brush.SetColor(&D2D1_COLOR_F {
                             r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
                             g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
                             b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
                             a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
                         });
 
-                        rt.FillRectangle(
+                        renderer.render_target.FillRectangle(
                             &D2D_RECT_F {
                                 left: thumb_rect.x_dip,
                                 top: thumb_rect.y_dip,
                                 right: thumb_rect.x_dip + thumb_rect.width_dip,
                                 bottom: thumb_rect.y_dip + thumb_rect.height_dip,
                             },
-                            brush,
+                            renderer.brush,
                         );
                     }
                 }
@@ -245,45 +249,45 @@ pub fn paint(
                 {
                     unsafe {
                         // Draw track
-                        brush.SetColor(&D2D1_COLOR_F {
+                        renderer.brush.SetColor(&D2D1_COLOR_F {
                             r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
                             g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
                             b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
                             a: (0xFF & scrollbar_track_color) as f32 / 255.0,
                         });
 
-                        rt.FillRectangle(
+                        renderer.render_target.FillRectangle(
                             &D2D_RECT_F {
                                 left: track_rect.x_dip,
                                 top: track_rect.y_dip,
                                 right: track_rect.x_dip + track_rect.width_dip,
                                 bottom: track_rect.y_dip + track_rect.height_dip,
                             },
-                            brush,
+                            renderer.brush,
                         );
 
                         // Draw thumb
-                        brush.SetColor(&D2D1_COLOR_F {
+                        renderer.brush.SetColor(&D2D1_COLOR_F {
                             r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
                             g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
                             b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
                             a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
                         });
 
-                        rt.FillRectangle(
+                        renderer.render_target.FillRectangle(
                             &D2D_RECT_F {
                                 left: thumb_rect.x_dip,
                                 top: thumb_rect.y_dip,
                                 right: thumb_rect.x_dip + thumb_rect.width_dip,
                                 bottom: thumb_rect.y_dip + thumb_rect.height_dip,
                             },
-                            brush,
+                            renderer.brush,
                         );
                     }
                 }
 
                 unsafe {
-                    rt.PopAxisAlignedClip();
+                    renderer.render_target.PopAxisAlignedClip();
                 }
             }
         }),

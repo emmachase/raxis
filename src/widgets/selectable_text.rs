@@ -23,7 +23,7 @@ use windows_numerics::Vector2;
 
 use crate::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::gfx::RectDIP;
-use crate::widgets::Widget;
+use crate::widgets::{Renderer, Widget};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
@@ -237,16 +237,10 @@ impl Widget for SelectableText {
         }
     }
 
-    fn paint(
-        &mut self,
-        render_target: &ID2D1HwndRenderTarget,
-        brush: &ID2D1SolidColorBrush,
-        bounds: RectDIP,
-        dt: f64,
-    ) {
+    fn paint(&mut self, renderer: &Renderer, bounds: RectDIP, dt: f64) {
         self.update_bounds(bounds).expect("update bounds failed");
 
-        self.draw(render_target, brush, bounds, dt)
+        self.draw(renderer.render_target, renderer.brush, bounds, dt)
             .expect("draw failed");
     }
 }

@@ -1,13 +1,18 @@
 use windows::Win32::Graphics::Direct2D::{
-    ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
+    Common::D2D1_COLOR_F, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
 };
 use windows_numerics::Vector2;
 
-use crate::{gfx::circle_arc::CircleArc, math::easing::Easing};
+use crate::{
+    gfx::circle_arc::CircleArc,
+    math::easing::Easing,
+    widgets::{Renderer, Widget},
+};
 
 // A simple spinner widget built on top of CircleArc. It animates the arc fill
 // between 10% and 90% while the start angle rotates slowly. It encapsulates its
 // own animation state to avoid leaking logic into callers.
+#[derive(Debug)]
 pub struct Spinner {
     // layout
     center: Vector2,
@@ -26,11 +31,52 @@ pub struct Spinner {
     is_growing: bool,   // true: growing (10%->90%), false: shrinking (90%->10%)
 }
 
+impl Widget for Spinner {
+    fn limits(&self, _available: super::Limits) -> super::Limits {
+        super::Limits {
+            min: super::Size {
+                width: self.radius * 2.0,
+                height: self.radius * 2.0,
+            },
+            max: super::Size {
+                width: self.radius * 2.0,
+                height: self.radius * 2.0,
+            },
+        }
+    }
+
+    fn paint(
+        &mut self, // TODO: this shouldnt need to be mut right
+        renderer: &Renderer,
+        bounds: crate::gfx::RectDIP,
+        dt: f64,
+    ) {
+        let center = Vector2 {
+            X: bounds.x_dip + bounds.width_dip * 0.5,
+            Y: bounds.y_dip + bounds.height_dip * 0.5,
+        };
+        // let radius = bounds.width_dip.min(bounds.height_dip) * 0.5;
+        // self.set_layout(center, radius);
+        self.center = center;
+        self.update(dt as f32);
+        let _ = self.draw(renderer.factory, renderer.render_target, renderer.brush);
+    }
+
+    fn update(
+        &mut self,
+        _hwnd: windows::Win32::Foundation::HWND,
+        _event: super::Event,
+        _bounds: crate::gfx::RectDIP,
+    ) {
+        // Nothing to do
+    }
+}
+
 impl Spinner {
-    pub fn new(stroke: f32, base_speed_dps: f32, grow_period_s: f32) -> Self {
+    pub fn new(stroke: f32, base_speed_dps: f32, grow_period_s: f32, radius: f32) -> Self {
         Self {
             center: Vector2 { X: 0.0, Y: 0.0 },
-            radius: 0.0,
+            radius,
             stroke,
             base_speed_dps,
             grow_period_s,
@@ -40,11 +86,6 @@ impl Spinner {
             phase_elapsed: 0.0,
             is_growing: true,
         }
-    }
-
-    pub fn set_layout(&mut self, center: Vector2, radius: f32) {
-        self.center = center;
-        self.radius = radius;
     }
 
     // Symmetric configuration via a single value: max = 1 - extent.
@@ -109,9 +150,21 @@ impl Spinner {
             (end - 360.0 * fill_frac, end)
         };
 
-        let arc = CircleArc::new(self.center, self.radius, begin_deg, end_deg);
+        let arc = CircleArc::new(
+            self.center,
+            self.radius - self.stroke * 0.5,
+            begin_deg,
+            end_deg,
+        );
         let geom = arc.paint(factory)?;
         unsafe {
+            brush.SetColor(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            });
+
             rt.DrawGeometry(&geom, brush, self.stroke, None);
         }
         Ok(())

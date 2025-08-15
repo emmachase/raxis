@@ -1,7 +1,7 @@
 use smol_str::SmolStr;
 use windows::Win32::{
     Foundation::HWND,
-    Graphics::Direct2D::{ID2D1HwndRenderTarget, ID2D1SolidColorBrush},
+    Graphics::Direct2D::{ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush},
 };
 
 use crate::{gfx::RectDIP, layout::model::UIElement};
@@ -37,13 +37,18 @@ pub enum Event {
     Char { text: SmolStr },
 }
 
+pub struct Renderer<'a> {
+    pub factory: &'a ID2D1Factory,
+    pub render_target: &'a ID2D1HwndRenderTarget,
+    pub brush: &'a ID2D1SolidColorBrush,
+}
+
 pub trait Widget: std::fmt::Debug {
     fn limits(&self, available: Limits) -> Limits;
 
     fn paint(
         &mut self, // TODO: this shouldnt need to be mut right
-        render_target: &ID2D1HwndRenderTarget,
-        brush: &ID2D1SolidColorBrush,
+        renderer: &Renderer,
         bounds: RectDIP,
         dt: f64,
     );

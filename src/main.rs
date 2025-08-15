@@ -7,7 +7,7 @@ use raxis::layout::model::{
 use raxis::layout::scroll_manager::{ScrollPosition, ScrollStateManager};
 use raxis::layout::{self, OwnedUITree, compute_scrollbar_geom};
 use raxis::w_id;
-use raxis::widgets::{Event, Widget};
+use raxis::widgets::{Event, Renderer, Widget};
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
@@ -337,8 +337,7 @@ struct AppState {
 
     clock: f64,
     timing_info: DWM_TIMING_INFO,
-    spinner: Spinner,
-
+    // spinner: Spinner,
     ui_tree: OwnedUITree,
     scroll_state_manager: ScrollStateManager,
 
@@ -384,7 +383,7 @@ impl AppState {
             text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
             text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
 
-            let spinner = Spinner::new(6.0, 200.0, 1.6);
+            let spinner = Spinner::new(6.0, 200.0, 1.6, 64.0);
 
             // Build selectable text widget using shared DWrite factory/format
             let text_widget = SelectableText::new(
@@ -447,7 +446,7 @@ impl AppState {
             });
             ui_tree[root].children.push(child);
 
-            let child2 = ui_tree.insert(UIElement {
+            let text_widget_ui_key = ui_tree.insert(UIElement {
                 id: Some(w_id!()),
                 background_color: Some(0x00FFFFFF),
 
@@ -469,7 +468,31 @@ impl AppState {
 
                 ..Default::default()
             });
-            ui_tree[child].children.push(child2);
+            ui_tree[child].children.push(text_widget_ui_key);
+
+            let spinner_ui_key = ui_tree.insert(UIElement {
+                id: Some(w_id!()),
+                background_color: Some(0x00FFFFFF),
+
+                vertical_alignment: VerticalAlignment::Center,
+
+                // content: Some(ElementContent::Text {
+                //     layout: dwrite_factory
+                //         .CreateTextLayout(
+                //             &w!("Hello, World!").as_wide(),
+                //             Some(&text_format),
+                //             f32::INFINITY,
+                //             f32::INFINITY,
+                //         )
+                //         .ok(),
+                // }),
+                content: Some(ElementContent::Widget(Box::new(spinner))),
+
+                color: Some(0x6030F0FF),
+
+                ..Default::default()
+            });
+            ui_tree[child].children.push(spinner_ui_key);
 
             let child = ui_tree.insert(UIElement {
                 id: Some(w_id!()),
@@ -494,8 +517,6 @@ impl AppState {
                 black_brush: None,
                 clock: 0.0,
                 timing_info: DWM_TIMING_INFO::default(),
-                spinner,
-                // text_widget,
                 ui_tree,
                 scroll_state_manager: ScrollStateManager::default(),
                 drop_target: None,
@@ -504,7 +525,7 @@ impl AppState {
                 last_click_pos: POINT { x: 0, y: 0 },
                 click_count: 0,
                 scroll_drag: None,
-                text_widget_ui_key: child2,
+                text_widget_ui_key,
             })
         }
     }
@@ -606,16 +627,16 @@ impl AppState {
                 // let _ = self.text_widget.update_bounds(rc_dip);
                 // let _ = self.text_widget.draw(rt, brush, dt);
 
-                let center = Vector2 {
-                    X: 100.0 * to_dip,
-                    Y: 100.0 * to_dip,
-                };
-                let radius = 64.0 * to_dip;
-                self.spinner.set_layout(center, radius);
-                let dt = self.timing_info.rateCompose.uiDenominator as f32
-                    / self.timing_info.rateCompose.uiNumerator as f32;
-                self.spinner.update(dt);
-                self.spinner.draw(d2d_factory, rt, brush)?;
+                // let center = Vector2 {
+                //     X: 100.0 * to_dip,
+                //     Y: 100.0 * to_dip,
+                // };
+                // let radius = 64.0 * to_dip;
+                // self.spinner.set_layout(center, radius);
+                // let dt = self.timing_info.rateCompose.uiDenominator as f32
+                //     / self.timing_info.rateCompose.uiNumerator as f32;
+                // self.spinner.update(dt);
+                // self.spinner.draw(d2d_factory, rt, brush)?;
 
                 let root = self.ui_tree.keys().next().unwrap();
                 self.ui_tree[root].width = Sizing::fixed(rc_dip.width_dip);
@@ -623,8 +644,13 @@ impl AppState {
 
                 layout::layout(&mut self.ui_tree, root, &mut self.scroll_state_manager);
                 layout::paint(
-                    &rt,
-                    brush,
+                    // &rt,
+                    // brush,
+                    &Renderer {
+                        factory: &self.d2d_factory,
+                        render_target: &rt,
+                        brush: &brush,
+                    },
                     &mut self.ui_tree,
                     root,
                     &mut self.scroll_state_manager,
