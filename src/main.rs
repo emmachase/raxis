@@ -2,9 +2,9 @@
 
 use raxis::dragdrop::start_text_drag;
 use raxis::layout::model::{
-    HorizontalAlignment, Sizing, TextElementContent, UIElement, VerticalAlignment,
+    HorizontalAlignment, ScrollConfig, Sizing, TextElementContent, UIElement, VerticalAlignment,
 };
-use raxis::layout::scroll_manager::NoScrollStateManager;
+use raxis::layout::scroll_manager::{NoScrollStateManager, ScrollStateManagerImpl};
 use raxis::layout::{self, OwnedUITree};
 use raxis::w_id;
 use raxis::{
@@ -384,6 +384,7 @@ struct AppState {
     spinner: Spinner,
 
     ui_tree: OwnedUITree,
+    scroll_state_manager: ScrollStateManagerImpl,
 
     // Selectable text widget encapsulating layout, selection, and bounds
     text_widget: SelectableText,
@@ -437,7 +438,7 @@ impl AppState {
             let root = ui_tree.insert(UIElement {
                 id: Some(w_id!()),
 
-                background_color: Some(0xFF0000FF),
+                background_color: Some(0xFF000044),
 
                 width: Sizing::Fixed { px: 800.0 },
                 height: Sizing::Fixed { px: 200.0 },
@@ -452,7 +453,10 @@ impl AppState {
 
                 background_color: Some(0x00FF00FF),
 
-                width: Sizing::grow(),
+                width: Sizing::Grow {
+                    min: 32.0,
+                    max: f32::INFINITY,
+                },
                 height: Sizing::grow(),
 
                 ..Default::default()
@@ -463,6 +467,13 @@ impl AppState {
                 id: Some(w_id!()),
 
                 background_color: Some(0xFFFF00FF),
+
+                scroll: Some(ScrollConfig {
+                    horizontal: Some(true),
+                    vertical: Some(true),
+
+                    ..Default::default()
+                }),
 
                 horizontal_alignment: HorizontalAlignment::Center,
 
@@ -501,7 +512,10 @@ impl AppState {
 
                 background_color: Some(0x00FFFFFF),
 
-                width: Sizing::grow(),
+                width: Sizing::Grow {
+                    min: 32.0,
+                    max: f32::INFINITY,
+                },
                 height: Sizing::grow(),
 
                 ..Default::default()
@@ -519,6 +533,7 @@ impl AppState {
                 spinner,
                 text_widget,
                 ui_tree,
+                scroll_state_manager: ScrollStateManagerImpl::default(),
                 drop_target: None,
                 pending_high_surrogate: None,
                 last_click_time: 0,
@@ -638,10 +653,18 @@ impl AppState {
 
                 let root = self.ui_tree.keys().next().unwrap();
                 self.ui_tree[root].width = Sizing::fixed(rc_dip.width_dip);
+                self.ui_tree[root].height = Sizing::fixed(rc_dip.height_dip);
 
-                let mut ss = NoScrollStateManager {};
-                layout::layout(&mut self.ui_tree, root, &mut ss);
-                layout::paint(&rt, brush, &mut self.ui_tree, root, &mut ss, 0.0, 0.0);
+                layout::layout(&mut self.ui_tree, root, &mut self.scroll_state_manager);
+                layout::paint(
+                    &rt,
+                    brush,
+                    &mut self.ui_tree,
+                    root,
+                    &mut self.scroll_state_manager,
+                    0.0,
+                    0.0,
+                );
 
                 // Spinner drawn above uses the current brush color.
 
