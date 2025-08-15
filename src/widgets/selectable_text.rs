@@ -12,12 +12,10 @@ use windows::Win32::UI::Input::Ime::{
     CPS_COMPLETE, ImmGetContext, ImmNotifyIME, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetDoubleClickTime, GetKeyState, SetCapture, SetFocus, VK_A, VK_BACK, VK_C, VK_CONTROL,
-    VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT, VK_V, VK_X,
+    GetKeyState, SetCapture, SetFocus, VK_A, VK_BACK, VK_C, VK_CONTROL, VK_DELETE, VK_END, VK_HOME,
+    VK_LEFT, VK_RIGHT, VK_SHIFT, VK_V, VK_X,
 };
-use windows::Win32::UI::WindowsAndMessaging::{
-    GetMessageTime, GetSystemMetrics, SM_CXDOUBLECLK, SM_CYDOUBLECLK, STRSAFE_E_INSUFFICIENT_BUFFER,
-};
+use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
 use windows_numerics::Vector2;
 
@@ -115,17 +113,7 @@ impl Widget for SelectableText {
         }
     }
 
-    fn update(
-        &mut self,
-        hwnd: HWND,
-        event: super::Event,
-        RectDIP {
-            x_dip,
-            y_dip,
-            width_dip,
-            height_dip,
-        }: RectDIP,
-    ) {
+    fn update(&mut self, hwnd: HWND, event: super::Event, RectDIP { x_dip, y_dip, .. }: RectDIP) {
         match event {
             super::Event::MouseButtonDown { x, y, click_count } => {
                 if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
@@ -154,7 +142,7 @@ impl Widget for SelectableText {
                     }
                 }
             }
-            super::Event::MouseButtonUp { x, y, click_count } => {
+            super::Event::MouseButtonUp { x, y, .. } => {
                 if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
                     self.end_drag(idx);
                 } else {

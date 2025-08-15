@@ -2,7 +2,6 @@ use slotmap::SlotMap;
 use windows::Win32::Graphics::Direct2D::{
     Common::{D2D_RECT_F, D2D1_COLOR_F},
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-    ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
 };
 use windows_numerics::Vector2;
 
