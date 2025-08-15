@@ -72,11 +72,7 @@ fn wrap_text(slots: UITree<'_>, root: UIKey) {
     });
 }
 
-pub fn layout<SS: ScrollStateManager>(
-    slots: UITree<'_>,
-    root: UIKey,
-    scroll_state_manager: &mut SS,
-) {
+pub fn layout(slots: UITree<'_>, root: UIKey, scroll_state_manager: &mut ScrollStateManager) {
     set_parent_references(slots, root);
     propagate_inherited_properties(slots, root);
 
@@ -91,17 +87,17 @@ pub fn layout<SS: ScrollStateManager>(
     position_elements(slots, root, scroll_state_manager);
 }
 
-const DEFAULT_SCROLLBAR_TRACK_COLOR: u32 = 0x00000033;
-const DEFAULT_SCROLLBAR_THUMB_COLOR: u32 = 0x00000055;
-const DEFAULT_SCROLLBAR_SIZE: f32 = 16.0;
-const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
+pub const DEFAULT_SCROLLBAR_TRACK_COLOR: u32 = 0x00000033;
+pub const DEFAULT_SCROLLBAR_THUMB_COLOR: u32 = 0x00000055;
+pub const DEFAULT_SCROLLBAR_SIZE: f32 = 16.0;
+pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 
-pub fn paint<SS: ScrollStateManager>(
+pub fn paint(
     rt: &ID2D1HwndRenderTarget,
     brush: &ID2D1SolidColorBrush,
     slots: UITree<'_>,
     root: UIKey,
-    scroll_state_manager: &mut SS,
+    scroll_state_manager: &mut ScrollStateManager,
     offset_x: f32,
     offset_y: f32,
 ) {
@@ -171,66 +167,28 @@ pub fn paint<SS: ScrollStateManager>(
         },
         Some(&mut |slots: UITree<'_>, key, _parent| {
             let element = &slots[key];
-            let x = element.x + offset_x;
-            let y = element.y + offset_y;
-            let width = element.computed_width;
-            let height = element.computed_height;
 
             let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
             let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
 
             if has_scroll_x || has_scroll_y {
                 // Draw Scrollbars
-                // Get scroll position for scrollable elements
-                let scroll_x = if has_scroll_x && let Some(id) = element.id {
-                    scroll_state_manager.get_scroll_position(id).x
-                } else {
-                    0.0
-                };
-                let scroll_y = if has_scroll_y && let Some(id) = element.id {
-                    scroll_state_manager.get_scroll_position(id).y
-                } else {
-                    0.0
-                };
-
-                let content_width = element.computed_content_width;
-                let content_height = element.computed_content_height;
-
-                let max_scroll_x = (content_width - element.computed_width).max(0.0);
-                let max_scroll_y = (content_height - element.computed_height).max(0.0);
 
                 // Get scrollbar appearance from element
                 let scroll_config = element.scroll.as_ref().unwrap();
-                let scrollbar_size = scroll_config
-                    .scrollbar_size
-                    .unwrap_or(DEFAULT_SCROLLBAR_SIZE);
                 let scrollbar_track_color = scroll_config
                     .scrollbar_track_color
                     .unwrap_or(DEFAULT_SCROLLBAR_TRACK_COLOR);
                 let scrollbar_thumb_color = scroll_config
                     .scrollbar_thumb_color
                     .unwrap_or(DEFAULT_SCROLLBAR_THUMB_COLOR);
-                let scrollbar_min_thumb_size = scroll_config
-                    .scrollbar_min_thumb_size
-                    .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
 
-                // Draw vertical scrollbar if needed
-                if has_scroll_y && element.computed_content_height > element.computed_height {
-                    // Calculate the visible portion ratio (viewport height / content height)
-                    let visible_ratio = (element.computed_height / content_height).min(1.0);
-
-                    // Calculate the scrollbar min thumb height
-                    let thumb_height = (height * visible_ratio).max(scrollbar_min_thumb_size);
-
-                    // Calculate thumb position, clamp to viewport
-                    let effective_scroll_y = scroll_y.clamp(0.0, max_scroll_y);
-                    let scroll_progress = if max_scroll_y > 0.0 {
-                        effective_scroll_y / max_scroll_y
-                    } else {
-                        0.0
-                    };
-                    let thumb_y = y + (height - thumb_height) * scroll_progress;
-
+                if let Some(ScrollbarGeom {
+                    track_rect,
+                    thumb_rect,
+                    ..
+                }) = compute_scrollbar_geom(&element, Axis::X, scroll_state_manager)
+                {
                     unsafe {
                         // Draw track
                         brush.SetColor(&D2D1_COLOR_F {
@@ -242,10 +200,10 @@ pub fn paint<SS: ScrollStateManager>(
 
                         rt.FillRectangle(
                             &D2D_RECT_F {
-                                left: x + width - scrollbar_size,
-                                top: y,
-                                right: x + width,
-                                bottom: y + height,
+                                left: track_rect.x_dip,
+                                top: track_rect.y_dip,
+                                right: track_rect.x_dip + track_rect.width_dip,
+                                bottom: track_rect.y_dip + track_rect.height_dip,
                             },
                             brush,
                         );
@@ -260,33 +218,22 @@ pub fn paint<SS: ScrollStateManager>(
 
                         rt.FillRectangle(
                             &D2D_RECT_F {
-                                left: x + width - scrollbar_size,
-                                top: thumb_y,
-                                right: x + width,
-                                bottom: thumb_y + thumb_height,
+                                left: thumb_rect.x_dip,
+                                top: thumb_rect.y_dip,
+                                right: thumb_rect.x_dip + thumb_rect.width_dip,
+                                bottom: thumb_rect.y_dip + thumb_rect.height_dip,
                             },
                             brush,
                         );
                     }
                 }
 
-                // Horizontal scrollbar
-                if has_scroll_x && element.computed_content_width > element.computed_width {
-                    // Calculate the visible portion ratio (viewport width / content width)
-                    let visible_ratio = (element.computed_width / content_width).min(1.0);
-
-                    // Calculate the scrollbar min thumb width
-                    let thumb_width = (width * visible_ratio).max(scrollbar_min_thumb_size);
-
-                    // Calculate thumb position, clamp to viewport
-                    let effective_scroll_x = scroll_x.clamp(0.0, max_scroll_x);
-                    let scroll_progress = if max_scroll_x > 0.0 {
-                        effective_scroll_x / max_scroll_x
-                    } else {
-                        0.0
-                    };
-                    let thumb_x = x + (width - thumb_width) * scroll_progress;
-
+                if let Some(ScrollbarGeom {
+                    track_rect,
+                    thumb_rect,
+                    ..
+                }) = compute_scrollbar_geom(&element, Axis::Y, scroll_state_manager)
+                {
                     unsafe {
                         // Draw track
                         brush.SetColor(&D2D1_COLOR_F {
@@ -298,10 +245,10 @@ pub fn paint<SS: ScrollStateManager>(
 
                         rt.FillRectangle(
                             &D2D_RECT_F {
-                                left: x,
-                                top: y + height - scrollbar_size,
-                                right: x + width,
-                                bottom: y + height,
+                                left: track_rect.x_dip,
+                                top: track_rect.y_dip,
+                                right: track_rect.x_dip + track_rect.width_dip,
+                                bottom: track_rect.y_dip + track_rect.height_dip,
                             },
                             brush,
                         );
@@ -316,10 +263,10 @@ pub fn paint<SS: ScrollStateManager>(
 
                         rt.FillRectangle(
                             &D2D_RECT_F {
-                                left: thumb_x,
-                                top: y + height - scrollbar_size,
-                                right: thumb_x + thumb_width,
-                                bottom: y + height,
+                                left: thumb_rect.x_dip,
+                                top: thumb_rect.y_dip,
+                                right: thumb_rect.x_dip + thumb_rect.width_dip,
+                                bottom: thumb_rect.y_dip + thumb_rect.height_dip,
                             },
                             brush,
                         );
@@ -332,4 +279,134 @@ pub fn paint<SS: ScrollStateManager>(
             }
         }),
     );
+}
+
+// ===== Reusable scrollbar geometry helpers =====
+
+#[derive(Clone, Copy, Debug)]
+pub struct ScrollbarGeom {
+    pub axis: Axis,
+    pub track_rect: RectDIP,
+    pub thumb_rect: RectDIP,
+    // Run length along the scroll axis that the thumb can travel
+    pub range: f32,
+    // Track start coordinate along the scroll axis (x for X, y for Y)
+    pub track_start: f32,
+    // Maximum scroll value for this axis (content - viewport)
+    pub max_scroll: f32,
+}
+
+pub fn compute_scrollbar_geom(
+    element: &UIElement,
+    axis: Axis,
+    scroll_state_manager: &ScrollStateManager,
+) -> Option<ScrollbarGeom> {
+    let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
+    let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
+    let id = element.id?;
+    let sc = element.scroll.as_ref()?;
+
+    match axis {
+        Axis::Y if has_scroll_y => {
+            let width = element.computed_width;
+            let height = element.computed_height;
+            let content_height = element.computed_content_height;
+            let max_scroll_y = (content_height - height).max(0.0);
+            if !(content_height > height) {
+                return None;
+            }
+
+            let scrollbar_size = sc.scrollbar_size.unwrap_or(DEFAULT_SCROLLBAR_SIZE);
+            let scrollbar_min_thumb_size = sc
+                .scrollbar_min_thumb_size
+                .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
+
+            let visible_ratio = (height / content_height).min(1.0);
+            let thumb_len = (height * visible_ratio).max(scrollbar_min_thumb_size);
+            let range = (height - thumb_len).max(0.0);
+
+            let scroll_y = scroll_state_manager.get_scroll_position(id).y;
+            let effective_scroll_y = scroll_y.clamp(0.0, max_scroll_y);
+            let progress = if max_scroll_y > 0.0 {
+                effective_scroll_y / max_scroll_y
+            } else {
+                0.0
+            };
+
+            let x = element.x;
+            let y = element.y;
+            let track_rect = RectDIP {
+                x_dip: x + width - scrollbar_size,
+                y_dip: y,
+                width_dip: scrollbar_size,
+                height_dip: height,
+            };
+            let thumb_rect = RectDIP {
+                x_dip: x + width - scrollbar_size,
+                y_dip: y + range * progress,
+                width_dip: scrollbar_size,
+                height_dip: thumb_len,
+            };
+
+            Some(ScrollbarGeom {
+                axis,
+                track_rect,
+                thumb_rect,
+                range,
+                track_start: y,
+                max_scroll: max_scroll_y,
+            })
+        }
+        Axis::X if has_scroll_x => {
+            let width = element.computed_width;
+            let height = element.computed_height;
+            let content_width = element.computed_content_width;
+            let max_scroll_x = (content_width - width).max(0.0);
+            if !(content_width > width) {
+                return None;
+            }
+
+            let scrollbar_size = sc.scrollbar_size.unwrap_or(DEFAULT_SCROLLBAR_SIZE);
+            let scrollbar_min_thumb_size = sc
+                .scrollbar_min_thumb_size
+                .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
+
+            let visible_ratio = (width / content_width).min(1.0);
+            let thumb_len = (width * visible_ratio).max(scrollbar_min_thumb_size);
+            let range = (width - thumb_len).max(0.0);
+
+            let scroll_x = scroll_state_manager.get_scroll_position(id).x;
+            let effective_scroll_x = scroll_x.clamp(0.0, max_scroll_x);
+            let progress = if max_scroll_x > 0.0 {
+                effective_scroll_x / max_scroll_x
+            } else {
+                0.0
+            };
+
+            let x = element.x;
+            let y = element.y;
+            let track_rect = RectDIP {
+                x_dip: x,
+                y_dip: y + height - scrollbar_size,
+                width_dip: width,
+                height_dip: scrollbar_size,
+            };
+            let thumb_rect = RectDIP {
+                x_dip: x + range * progress,
+                y_dip: y + height - scrollbar_size,
+                width_dip: thumb_len,
+                height_dip: scrollbar_size,
+            };
+
+            Some(ScrollbarGeom {
+                axis,
+                track_rect,
+                thumb_rect,
+                range,
+                track_start: x,
+                max_scroll: max_scroll_x,
+            })
+        }
+        _ => None,
+    }
 }

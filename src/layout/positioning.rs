@@ -5,10 +5,10 @@ use crate::layout::{
     visitors,
 };
 
-pub fn position_elements<SS: ScrollStateManager>(
+pub fn position_elements(
     slots: UITree<'_>,
     root: UIKey,
-    scroll_state_manager: &mut SS,
+    scroll_state_manager: &mut ScrollStateManager,
 ) {
     // Clone root id_map to allow easy lookup while mutably borrowing slots in closures
     let root_id_map = slots[root].id_map.clone();

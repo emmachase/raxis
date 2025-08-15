@@ -14,106 +14,16 @@ pub struct ScrollMetadata {
     previous_content_dimensions: (f32, f32),
 }
 
-pub trait ScrollStateManager {
-    fn get_scroll_position(&self, element_id: u64) -> ScrollPosition;
-    fn set_scroll_position(&mut self, element_id: u64, position: ScrollPosition);
-    fn update_scroll_position(
-        &mut self,
-        element_id: u64,
-        delta_x: f32,
-        delta_y: f32,
-    ) -> ScrollPosition;
-    fn apply_scroll_limits(
-        &mut self,
-        element_id: u64,
-        min_x: f32,
-        min_y: f32,
-        max_x: f32,
-        max_y: f32,
-    );
-    fn update_scroll_metadata(
-        &mut self,
-        element_id: u64,
-        current_position: ScrollPosition,
-        max_scroll_x: f32,
-        max_scroll_y: f32,
-        content_width: f32,
-        content_height: f32,
-    );
-    fn was_at_bottom(&self, element_id: u64) -> bool;
-    fn was_at_right(&self, element_id: u64) -> bool;
-    fn get_previous_content_dimensions(&self, element_id: u64) -> (f32, f32);
-
-    // TODO: add eviction policy
-}
-
 #[derive(Clone, Default)]
-pub struct NoScrollStateManager {}
-
-impl ScrollStateManager for NoScrollStateManager {
-    fn get_scroll_position(&self, _element_id: u64) -> ScrollPosition {
-        ScrollPosition { x: 0.0, y: 0.0 }
-    }
-
-    fn set_scroll_position(&mut self, _element_id: u64, _position: ScrollPosition) {
-        // Do nothing
-    }
-
-    fn update_scroll_position(
-        &mut self,
-        _element_id: u64,
-        _delta_x: f32,
-        _delta_y: f32,
-    ) -> ScrollPosition {
-        ScrollPosition { x: 0.0, y: 0.0 }
-    }
-
-    fn apply_scroll_limits(
-        &mut self,
-        _element_id: u64,
-        _min_x: f32,
-        _min_y: f32,
-        _max_x: f32,
-        _max_y: f32,
-    ) {
-        // Do nothing
-    }
-
-    fn update_scroll_metadata(
-        &mut self,
-        _element_id: u64,
-        _current_position: ScrollPosition,
-        _max_scroll_x: f32,
-        _max_scroll_y: f32,
-        _content_width: f32,
-        _content_height: f32,
-    ) {
-        // Do nothing
-    }
-
-    fn was_at_bottom(&self, _element_id: u64) -> bool {
-        false
-    }
-
-    fn was_at_right(&self, _element_id: u64) -> bool {
-        false
-    }
-
-    fn get_previous_content_dimensions(&self, _element_id: u64) -> (f32, f32) {
-        (0.0, 0.0)
-    }
-}
-
-#[derive(Clone, Default)]
-pub struct ScrollStateManagerImpl {
+pub struct ScrollStateManager {
     scroll_metadata: HashMap<u64, ScrollMetadata>,
 }
 
 /// The threshold in pixels (dips) for considering a scroll position to be at the bottom or right of the scrollable area.
 pub const SCROLL_SNAP_THRESHOLD: f32 = 5.0;
 
-impl ScrollStateManager for ScrollStateManagerImpl {
-    fn get_scroll_position(&self, element_id: u64) -> ScrollPosition {
+impl ScrollStateManager {
+    pub fn get_scroll_position(&self, element_id: u64) -> ScrollPosition {
         self.scroll_metadata
             .get(&element_id)
             .cloned()
@@ -121,7 +31,7 @@ impl ScrollStateManager for ScrollStateManagerImpl {
             .position
     }
 
-    fn set_scroll_position(&mut self, element_id: u64, position: ScrollPosition) {
+    pub fn set_scroll_position(&mut self, element_id: u64, position: ScrollPosition) {
         self.scroll_metadata
             .entry(element_id)
             .and_modify(|metadata| metadata.position = position)
@@ -132,7 +42,7 @@ impl ScrollStateManager for ScrollStateManagerImpl {
             });
     }
 
-    fn update_scroll_position(
+    pub fn update_scroll_position(
         &mut self,
         element_id: u64,
         delta_x: f32,
@@ -155,7 +65,7 @@ impl ScrollStateManager for ScrollStateManagerImpl {
             .position
     }
 
-    fn apply_scroll_limits(
+    pub fn apply_scroll_limits(
         &mut self,
         element_id: u64,
         min_x: f32,
@@ -171,7 +81,7 @@ impl ScrollStateManager for ScrollStateManagerImpl {
             });
     }
 
-    fn update_scroll_metadata(
+    pub fn update_scroll_metadata(
         &mut self,
         element_id: u64,
         current_position: ScrollPosition,
@@ -199,21 +109,21 @@ impl ScrollStateManager for ScrollStateManagerImpl {
             });
     }
 
-    fn was_at_bottom(&self, element_id: u64) -> bool {
+    pub fn was_at_bottom(&self, element_id: u64) -> bool {
         self.scroll_metadata
             .get(&element_id)
             .map(|metadata| metadata.was_at_bottom)
             .unwrap_or(false)
     }
 
-    fn was_at_right(&self, element_id: u64) -> bool {
+    pub fn was_at_right(&self, element_id: u64) -> bool {
         self.scroll_metadata
             .get(&element_id)
             .map(|metadata| metadata.was_at_right)
             .unwrap_or(false)
     }
 
-    fn get_previous_content_dimensions(&self, element_id: u64) -> (f32, f32) {
+    pub fn get_previous_content_dimensions(&self, element_id: u64) -> (f32, f32) {
         self.scroll_metadata
             .get(&element_id)
             .map(|metadata| metadata.previous_content_dimensions)

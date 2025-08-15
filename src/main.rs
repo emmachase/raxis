@@ -2,10 +2,11 @@
 
 use raxis::dragdrop::start_text_drag;
 use raxis::layout::model::{
-    HorizontalAlignment, ScrollConfig, Sizing, TextElementContent, UIElement, VerticalAlignment,
+    Axis, HorizontalAlignment, ScrollConfig, Sizing, TextElementContent, UIElement,
+    VerticalAlignment,
 };
-use raxis::layout::scroll_manager::{NoScrollStateManager, ScrollStateManagerImpl};
-use raxis::layout::{self, OwnedUITree};
+use raxis::layout::scroll_manager::{ScrollPosition, ScrollStateManager};
+use raxis::layout::{self, OwnedUITree, compute_scrollbar_geom};
 use raxis::w_id;
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
@@ -15,6 +16,7 @@ use raxis::{
         spinner::Spinner,
     },
 };
+use slotmap::DefaultKey;
 use std::{ffi::c_void, sync::OnceLock};
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -102,6 +104,20 @@ unsafe impl Sync for SafeCursor {}
 static IBEAM_CURSOR: OnceLock<Option<SafeCursor>> = OnceLock::new();
 
 const TEXT: &str = "Hello, בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ.  DirectWrite! こんにちは 😍";
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DragAxis {
+    Horizontal,
+    Vertical,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct ScrollDragState {
+    element_id: u64,
+    axis: DragAxis,
+    // Offset within the thumb (along the drag axis) where the pointer grabbed, in DIPs
+    grab_offset: f32,
+}
 
 // ===== OLE Drop Target implementation =====
 #[implement(IDropTarget)]
@@ -384,7 +400,7 @@ struct AppState {
     spinner: Spinner,
 
     ui_tree: OwnedUITree,
-    scroll_state_manager: ScrollStateManagerImpl,
+    scroll_state_manager: ScrollStateManager,
 
     // Selectable text widget encapsulating layout, selection, and bounds
     text_widget: SelectableText,
@@ -399,6 +415,9 @@ struct AppState {
     last_click_time: u32,
     last_click_pos: POINT,
     click_count: u32,
+
+    // Active scrollbar dragging state (if any)
+    scroll_drag: Option<ScrollDragState>,
 }
 
 impl AppState {
@@ -533,12 +552,13 @@ impl AppState {
                 spinner,
                 text_widget,
                 ui_tree,
-                scroll_state_manager: ScrollStateManagerImpl::default(),
+                scroll_state_manager: ScrollStateManager::default(),
                 drop_target: None,
                 pending_high_surrogate: None,
                 last_click_time: 0,
                 last_click_pos: POINT { x: 0, y: 0 },
                 click_count: 0,
+                scroll_drag: None,
             })
         }
     }
@@ -695,6 +715,75 @@ impl AppState {
         }
         Ok(())
     }
+
+    // Depth-first traversal: visit children first (post-order for scrollbar z-order),
+    // then compute scrollbar thumb rects for hit-testing and return the last (topmost) hit.
+    fn hit_test_scrollbar_thumb(&self, x: f32, y: f32) -> Option<ScrollDragState> {
+        fn dfs(
+            state: &AppState,
+            key: DefaultKey,
+            x: f32,
+            y: f32,
+            out: &mut Option<ScrollDragState>,
+        ) {
+            let element = &state.ui_tree[key];
+            // Recurse into children first
+            let children: Vec<DefaultKey> = element.children.clone();
+            for child in children {
+                dfs(state, child, x, y, out);
+            }
+
+            // Then evaluate current element so it overrides children (matches z-order in paint)
+            if element.id.is_none() {
+                return;
+            }
+
+            // Use centralized geometry helpers for hit-testing
+            if let Some(geom) =
+                compute_scrollbar_geom(element, Axis::Y, &state.scroll_state_manager)
+            {
+                let tr = geom.thumb_rect;
+                if x >= tr.x_dip
+                    && x < tr.x_dip + tr.width_dip
+                    && y >= tr.y_dip
+                    && y < tr.y_dip + tr.height_dip
+                {
+                    let grab_offset = y - tr.y_dip;
+                    *out = Some(ScrollDragState {
+                        element_id: element.id.unwrap(),
+                        axis: DragAxis::Vertical,
+                        grab_offset,
+                    });
+                }
+            }
+
+            if let Some(geom) =
+                compute_scrollbar_geom(element, Axis::X, &state.scroll_state_manager)
+            {
+                let tr = geom.thumb_rect;
+                if x >= tr.x_dip
+                    && x < tr.x_dip + tr.width_dip
+                    && y >= tr.y_dip
+                    && y < tr.y_dip + tr.height_dip
+                {
+                    let grab_offset = x - tr.x_dip;
+                    *out = Some(ScrollDragState {
+                        element_id: element.id.unwrap(),
+                        axis: DragAxis::Horizontal,
+                        grab_offset,
+                    });
+                }
+            }
+        }
+
+        let root = match self.ui_tree.keys().next() {
+            Some(k) => k,
+            None => return None,
+        };
+        let mut result = None;
+        dfs(self, root, x, y, &mut result);
+        result
+    }
 }
 
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
@@ -810,6 +899,17 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let to_dip = dips_scale(hwnd);
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
+                    // First, check scrollbar thumb hit-testing
+                    if state.scroll_drag.is_none() {
+                        if let Some(drag) = state.hit_test_scrollbar_thumb(x, y) {
+                            state.scroll_drag = Some(drag);
+                            // Ensure we receive keyboard input and mouse moves
+                            let _ = SetFocus(Some(hwnd));
+                            let _ = SetCapture(hwnd);
+                            let _ = InvalidateRect(Some(hwnd), None, false);
+                            return LRESULT(0);
+                        }
+                    }
                     if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
                         // Compute running click count within system double-click time/rect
                         let now = GetMessageTime() as u32;
@@ -861,6 +961,71 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let xi = (lparam.0 & 0xFFFF) as i16 as i32;
                     let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
 
+                    // Handle scrollbar dragging if active
+                    if let Some(drag) = state.scroll_drag {
+                        let to_dip = dips_scale(hwnd);
+                        let x = (xi as f32) * to_dip;
+                        let y = (yi as f32) * to_dip;
+
+                        // Find element by id
+                        let mut found_key: Option<DefaultKey> = None;
+                        for k in state.ui_tree.keys() {
+                            if state.ui_tree[k].id == Some(drag.element_id) {
+                                found_key = Some(k);
+                                break;
+                            }
+                        }
+
+                        if let Some(k) = found_key {
+                            let el = &state.ui_tree[k];
+                            let axis = match drag.axis {
+                                DragAxis::Vertical => Axis::Y,
+                                DragAxis::Horizontal => Axis::X,
+                            };
+                            if let Some(geom) =
+                                compute_scrollbar_geom(el, axis, &state.scroll_state_manager)
+                            {
+                                let pos_along = match drag.axis {
+                                    DragAxis::Vertical => y,
+                                    DragAxis::Horizontal => x,
+                                };
+                                let rel = (pos_along - geom.track_start - drag.grab_offset)
+                                    .clamp(0.0, geom.range);
+                                let progress = if geom.range > 0.0 {
+                                    rel / geom.range
+                                } else {
+                                    0.0
+                                };
+                                let new_scroll = progress * geom.max_scroll;
+                                let cur = state
+                                    .scroll_state_manager
+                                    .get_scroll_position(drag.element_id);
+                                match drag.axis {
+                                    DragAxis::Vertical => {
+                                        state.scroll_state_manager.set_scroll_position(
+                                            drag.element_id,
+                                            ScrollPosition {
+                                                x: cur.x,
+                                                y: new_scroll,
+                                            },
+                                        );
+                                    }
+                                    DragAxis::Horizontal => {
+                                        state.scroll_state_manager.set_scroll_position(
+                                            drag.element_id,
+                                            ScrollPosition {
+                                                x: new_scroll,
+                                                y: cur.y,
+                                            },
+                                        );
+                                    }
+                                }
+                                let _ = InvalidateRect(Some(hwnd), None, false);
+                            }
+                        }
+                        return LRESULT(0);
+                    }
+
                     if state.text_widget.can_drag_drop() {
                         // If we've exceeded the system drag threshold,
                         // escalate to OLE DoDragDrop with CF_UNICODETEXT.
@@ -899,6 +1064,11 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_LBUTTONUP => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    if state.scroll_drag.take().is_some() {
+                        let _ = ReleaseCapture();
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                        return LRESULT(0);
+                    }
                     let x_px = (lparam.0 & 0xFFFF) as i16 as i32 as f32;
                     let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32 as f32;
                     let to_dip = dips_scale(hwnd);
