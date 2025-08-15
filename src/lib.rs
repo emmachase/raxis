@@ -1,5 +1,6 @@
 use windows::Win32::{Foundation::HWND, UI::HiDpi::GetDpiForWindow};
 
+pub mod clipboard;
 pub mod dragdrop;
 pub mod gfx;
 pub mod layout;

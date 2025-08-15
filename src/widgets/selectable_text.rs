@@ -1,3 +1,4 @@
+use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::{D2D_RECT_F, D2D1_COLOR_F};
 use windows::Win32::Graphics::Direct2D::{
     D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
@@ -6,11 +7,23 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE,
     IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
-use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
+use windows::Win32::Graphics::Gdi::InvalidateRect;
+use windows::Win32::UI::Input::Ime::{
+    CPS_COMPLETE, ImmGetContext, ImmNotifyIME, NI_COMPOSITIONSTR,
+};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    GetDoubleClickTime, GetKeyState, SetCapture, SetFocus, VK_A, VK_BACK, VK_C, VK_CONTROL,
+    VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT, VK_V, VK_X,
+};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetMessageTime, GetSystemMetrics, SM_CXDOUBLECLK, SM_CYDOUBLECLK, STRSAFE_E_INSUFFICIENT_BUFFER,
+};
 use windows::core::Result;
 use windows_numerics::Vector2;
 
+use crate::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::gfx::RectDIP;
+use crate::widgets::Widget;
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
@@ -20,6 +33,7 @@ const BLINK_TIME: f64 = 0.5;
 ///
 /// It encapsulates selection state, hit-testing, and cached layout bounds
 /// for cursor hit-testing.
+#[derive(Debug, Clone)]
 pub struct SelectableText {
     // DirectWrite objects (shared/cloneable COM interfaces)
     dwrite_factory: IDWriteFactory,
@@ -66,6 +80,170 @@ pub enum SelectionMode {
     Char,
     Word,
     Paragraph,
+}
+
+impl Widget for SelectableText {
+    fn limits(&self, available: super::Limits) -> super::Limits {
+        if let Some(layout) = &self.layout {
+            unsafe {
+                layout.SetMaxWidth(available.max.width).unwrap();
+                layout.SetMaxHeight(available.max.height).unwrap();
+            }
+
+            let mut max_metrics = DWRITE_TEXT_METRICS::default();
+            unsafe { layout.GetMetrics(&mut max_metrics).unwrap() };
+
+            let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
+
+            super::Limits {
+                min: super::Size {
+                    width: min_width,
+                    height: max_metrics.height,
+                },
+                max: super::Size {
+                    width: max_metrics.width,
+                    height: max_metrics.height,
+                },
+            }
+        } else {
+            available
+        }
+    }
+
+    fn update(
+        &mut self,
+        hwnd: HWND,
+        event: super::Event,
+        RectDIP {
+            x_dip,
+            y_dip,
+            width_dip,
+            height_dip,
+        }: RectDIP,
+    ) {
+        match event {
+            super::Event::MouseButtonDown { x, y, click_count } => {
+                if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
+                    unsafe {
+                        // Complete composition before altering selection
+                        if self.is_composing() {
+                            let himc = ImmGetContext(hwnd);
+                            if !himc.is_invalid() {
+                                let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
+                            }
+                        }
+
+                        // Selection mode by click count
+                        let mode = match click_count {
+                            1 => SelectionMode::Char,
+                            x if x % 2 == 0 => SelectionMode::Word,
+                            _ => SelectionMode::Paragraph,
+                        };
+                        self.set_selection_mode(mode);
+                        self.begin_drag(idx);
+
+                        // Ensure we receive keyboard input
+                        let _ = SetFocus(Some(hwnd));
+                        let _ = SetCapture(hwnd);
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                    }
+                }
+            }
+            super::Event::MouseButtonUp { x, y, click_count } => {
+                if let Ok(idx) = self.hit_test_index(x, y) {
+                    self.end_drag(idx);
+                } else {
+                    self.end_drag(0);
+                }
+            }
+            super::Event::MouseMove { x, y } => {
+                if self.update_drag(x, y) {
+                    let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
+                }
+            }
+            super::Event::KeyDown { key } => {
+                let shift_down = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
+                let ctrl_down = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
+                let _handled = match key {
+                    x if x == VK_LEFT.0 as u32 => {
+                        if ctrl_down {
+                            self.move_word_left(shift_down);
+                        } else {
+                            self.move_left(shift_down);
+                        }
+                        true
+                    }
+                    x if x == VK_RIGHT.0 as u32 => {
+                        if ctrl_down {
+                            self.move_word_right(shift_down);
+                        } else {
+                            self.move_right(shift_down);
+                        }
+                        true
+                    }
+                    x if x == VK_HOME.0 as u32 => {
+                        self.move_to_start(shift_down);
+                        true
+                    }
+                    x if x == VK_END.0 as u32 => {
+                        self.move_to_end(shift_down);
+                        true
+                    }
+                    x if x == VK_BACK.0 as u32 => {
+                        let _ = self.backspace();
+                        true
+                    }
+                    x if x == VK_DELETE.0 as u32 => {
+                        let _ = self.delete_forward();
+                        true
+                    }
+                    x if x == VK_A.0 as u32 && ctrl_down => {
+                        self.select_all();
+                        true
+                    }
+                    x if x == VK_C.0 as u32 && ctrl_down => {
+                        if let Some(s) = self.selected_text() {
+                            let _ = set_clipboard_text(hwnd, &s);
+                        }
+                        true
+                    }
+                    x if x == VK_X.0 as u32 && ctrl_down => {
+                        if let Some(s) = self.selected_text() {
+                            let _ = set_clipboard_text(hwnd, &s);
+                            let _ = self.insert_str("");
+                        }
+                        true
+                    }
+                    x if x == VK_V.0 as u32 && ctrl_down => {
+                        if !self.is_composing() {
+                            if let Some(s) = get_clipboard_text(hwnd) {
+                                let _ = self.insert_str(&s);
+                            }
+                        }
+                        true
+                    }
+                    _ => false,
+                };
+            }
+            super::Event::KeyUp { key: _ } => {}
+            super::Event::Char { text } => {
+                let _ = self.insert_str(text.as_str());
+            }
+        }
+    }
+
+    fn paint(
+        &mut self,
+        render_target: &ID2D1HwndRenderTarget,
+        brush: &ID2D1SolidColorBrush,
+        bounds: RectDIP,
+        dt: f64,
+    ) {
+        self.update_bounds(bounds).expect("update bounds failed");
+
+        self.draw(render_target, brush, bounds, dt)
+            .expect("draw failed");
+    }
 }
 
 impl SelectableText {
@@ -170,6 +348,7 @@ impl SelectableText {
         &self,
         layout: &IDWriteTextLayout,
         rt: &ID2D1HwndRenderTarget,
+        bounds: RectDIP,
         brush: &ID2D1SolidColorBrush,
     ) -> Result<()> {
         unsafe {
@@ -209,10 +388,10 @@ impl SelectableText {
                                 });
                                 for m in runs.iter().take(actual as usize) {
                                     let rect = D2D_RECT_F {
-                                        left: m.left,
-                                        top: m.top,
-                                        right: m.left + m.width,
-                                        bottom: m.top + m.height,
+                                        left: bounds.x_dip + m.left,
+                                        top: bounds.y_dip + m.top,
+                                        right: bounds.x_dip + m.left + m.width,
+                                        bottom: bounds.y_dip + m.top + m.height,
                                     };
                                     rt.FillRectangle(&rect, brush);
                                 }
@@ -238,10 +417,16 @@ impl SelectableText {
         &mut self,
         rt: &ID2D1HwndRenderTarget,
         brush: &ID2D1SolidColorBrush,
+        bounds: RectDIP,
         dt: f64,
     ) -> Result<()> {
         unsafe {
             let layout = self.layout.as_ref().expect("layout not built");
+
+            // {
+            //     layout.SetMaxWidth(bounds.width_dip).unwrap();
+            //     layout.SetMaxHeight(bounds.height_dip).unwrap();
+            // }
 
             self.caret_blink_timer += dt;
             if self.caret_blink_timer >= BLINK_TIME {
@@ -250,9 +435,12 @@ impl SelectableText {
             }
 
             // Normal rendering: selection, base text, caret
-            self.draw_selection(layout, rt, brush)?;
+            self.draw_selection(layout, rt, bounds, brush)?;
             rt.DrawTextLayout(
-                Vector2 { X: 0.0, Y: 0.0 },
+                Vector2 {
+                    X: bounds.x_dip,
+                    Y: bounds.y_dip,
+                },
                 layout,
                 brush,
                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
@@ -270,10 +458,10 @@ impl SelectableText {
                     let mut m = DWRITE_HIT_TEST_METRICS::default();
                     layout.HitTestTextPosition(ime_caret_pos, false, &mut x, &mut y, &mut m)?;
                     let caret_rect = D2D_RECT_F {
-                        left: x,
-                        top: m.top,
-                        right: x + 1.0,
-                        bottom: m.top + m.height,
+                        left: bounds.x_dip + x,
+                        top: bounds.y_dip + m.top,
+                        right: bounds.x_dip + x + 1.0,
+                        bottom: bounds.y_dip + m.top + m.height,
                     };
                     rt.FillRectangle(&caret_rect, brush);
                 } else {
@@ -289,10 +477,10 @@ impl SelectableText {
                             &mut m,
                         )?;
                         let caret_rect = D2D_RECT_F {
-                            left: x,
-                            top: m.top,
-                            right: x + 1.0,
-                            bottom: m.top + m.height,
+                            left: bounds.x_dip + x,
+                            top: bounds.y_dip + m.top,
+                            right: bounds.x_dip + x + 1.0,
+                            bottom: bounds.y_dip + m.top + m.height,
                         };
                         rt.FillRectangle(&caret_rect, brush);
                     }
@@ -309,10 +497,10 @@ impl SelectableText {
                     let mut m = DWRITE_HIT_TEST_METRICS::default();
                     layout.HitTestTextPosition(drop, false, &mut x, &mut y, &mut m)?;
                     let caret_rect = D2D_RECT_F {
-                        left: x,
-                        top: m.top,
-                        right: x + 1.0,
-                        bottom: m.top + m.height,
+                        left: bounds.x_dip + x,
+                        top: bounds.y_dip + m.top,
+                        right: bounds.x_dip + x + 1.0,
+                        bottom: bounds.y_dip + m.top + m.height,
                     };
                     rt.FillRectangle(&caret_rect, brush);
                 }

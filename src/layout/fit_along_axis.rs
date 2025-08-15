@@ -1,7 +1,10 @@
-use crate::layout::{
-    UITree,
-    model::{Axis, Direction, Sizing, UIElement, UIKey},
-    visitors,
+use crate::{
+    layout::{
+        UITree,
+        model::{Axis, Direction, ElementContent, Sizing, UIElement, UIKey},
+        visitors,
+    },
+    widgets::{Limits, Size},
 };
 
 pub fn fit_along_axis(slots: UITree<'_>, root: UIKey, axis: Axis) {
@@ -34,64 +37,97 @@ pub fn fit_along_axis(slots: UITree<'_>, root: UIKey, axis: Axis) {
             };
         }
 
-        if element.is_text_element() {
-            if x_axis {
-                // Max width is infinite for now, this will get adjusted during the Text Wrap phase
-                let metrics = unsafe {
+        if slots[key].content.is_some() {
+            if matches!(
+                element!().content.as_ref().unwrap(),
+                ElementContent::Text { .. }
+            ) {
+                if x_axis {
+                    // Max width is infinite for now, this will get adjusted during the Text Wrap phase
+                    let metrics = unsafe {
+                        let layout = element!()
+                            .content
+                            .as_ref()
+                            .unwrap()
+                            .unwrap_text()
+                            .as_ref()
+                            .unwrap();
+
+                        layout.SetMaxWidth(f32::INFINITY).unwrap();
+
+                        let mut metrics =
+                            windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
+
+                        layout.GetMetrics(&mut metrics).unwrap();
+
+                        metrics
+                    };
+
+                    element!().computed_width = metrics.width + axis_padding;
+
                     let layout = element!()
                         .content
                         .as_ref()
                         .unwrap()
-                        .layout
+                        .unwrap_text()
                         .as_ref()
                         .unwrap();
 
-                    layout.SetMaxWidth(f32::INFINITY).unwrap();
+                    // Minimum width
+                    let min_base = unsafe { layout.DetermineMinWidth().unwrap() };
+                    element!().min_width = min_base + axis_padding;
+                } else {
+                    let metrics = unsafe {
+                        let layout = element!()
+                            .content
+                            .as_ref()
+                            .unwrap()
+                            .unwrap_text()
+                            .as_ref()
+                            .unwrap();
 
-                    let mut metrics =
-                        windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
+                        let mut metrics =
+                            windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
 
-                    layout.GetMetrics(&mut metrics).unwrap();
+                        layout.GetMetrics(&mut metrics).unwrap();
 
-                    metrics
-                };
+                        metrics
+                    };
 
-                element!().computed_width = metrics.width + axis_padding;
-
-                // Minimum width
-                let min_base = unsafe {
-                    element!()
-                        .content
-                        .as_ref()
-                        .unwrap()
-                        .layout
-                        .as_ref()
-                        .unwrap()
-                        .DetermineMinWidth()
-                        .unwrap()
-                };
-                element!().min_width = min_base + axis_padding;
+                    // Sum of wrapped line heights
+                    element!().computed_height = metrics.height + axis_padding;
+                    element!().min_height = metrics.height + axis_padding;
+                }
             } else {
-                let metrics = unsafe {
-                    let layout = element!()
-                        .content
-                        .as_ref()
-                        .unwrap()
-                        .layout
-                        .as_ref()
-                        .unwrap();
+                // Widget sizing
+                // let widget = element!().content.as_ref().unwrap().unwrap_widget();
+                let widget =
+                    if let ElementContent::Widget(widget) = element!().content.as_ref().unwrap() {
+                        widget
+                    } else {
+                        panic!("ElementContent is not a Widget");
+                    };
 
-                    let mut metrics =
-                        windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
+                let Limits { min, max } = widget.limits(Limits {
+                    min: Size {
+                        width: 0.0,
+                        height: 0.0,
+                    },
+                    max: Size {
+                        width: f32::INFINITY,
+                        height: f32::INFINITY,
+                    },
+                });
 
-                    layout.GetMetrics(&mut metrics).unwrap();
-
-                    metrics
-                };
-
-                // Sum of wrapped line heights
-                element!().computed_height = metrics.height + axis_padding;
-                element!().min_height = metrics.height + axis_padding;
+                if x_axis {
+                    let element = &mut slots[key];
+                    element.computed_width = max.width;
+                    element.min_width = min.width;
+                } else {
+                    let element = &mut slots[key];
+                    element.computed_height = max.height;
+                    element.min_height = min.height;
+                }
             }
         } else {
             // Container sizing

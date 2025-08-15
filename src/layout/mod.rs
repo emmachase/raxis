@@ -9,7 +9,7 @@ use windows_numerics::Vector2;
 use crate::{
     gfx::RectDIP,
     layout::{
-        model::{Axis, UIElement, UIKey},
+        model::{Axis, ElementContent, UIElement, UIKey},
         positioning::position_elements,
         scroll_manager::ScrollStateManager,
     },
@@ -53,20 +53,20 @@ fn propagate_inherited_properties(slots: UITree<'_>, root: UIKey) {
 
 fn wrap_text(slots: UITree<'_>, root: UIKey) {
     visitors::visit_bfs(slots, root, |slots, key, _parent| {
-        if slots[key].is_text_element() {
-            let element = &slots[key];
+        if let Some(content) = slots[key].content.as_ref() {
+            if let ElementContent::Text { layout, .. } = content {
+                let element = &slots[key];
 
-            let available_width =
-                element.computed_width - element.padding.left - element.padding.right;
+                let available_width =
+                    element.computed_width - element.padding.left - element.padding.right;
 
-            let content = slots[key].content.as_ref().unwrap();
-            unsafe {
-                content
-                    .layout
-                    .as_ref()
-                    .unwrap()
-                    .SetMaxWidth(available_width)
-                    .unwrap();
+                unsafe {
+                    layout
+                        .as_ref()
+                        .unwrap()
+                        .SetMaxWidth(available_width)
+                        .unwrap();
+                }
             }
         }
     });
@@ -105,7 +105,7 @@ pub fn paint(
         slots,
         root,
         |slots, key, _parent| {
-            let element = &slots[key];
+            let element = &mut slots[key];
             let x = element.x + offset_x;
             let y = element.y + offset_y;
             let width = element.computed_width;
@@ -146,22 +146,31 @@ pub fn paint(
                 }
             }
 
-            if let Some(layout) = element.content.as_ref().and_then(|c| c.layout.as_ref()) {
-                let color = element.color.unwrap_or(0x000000FF);
+            // if let Some(layout) = element.content.as_ref().and_then(|c| c.layout.as_ref()) {
+            let bounds = element.bounds();
+            if let Some(content) = element.content.as_mut() {
+                match content {
+                    ElementContent::Text { layout, .. } => {
+                        let color = element.color.unwrap_or(0x000000FF);
 
-                unsafe {
-                    brush.SetColor(&D2D1_COLOR_F {
-                        r: (0xFF & (color >> 24)) as f32 / 255.0,
-                        g: (0xFF & (color >> 16)) as f32 / 255.0,
-                        b: (0xFF & (color >> 8)) as f32 / 255.0,
-                        a: (0xFF & color) as f32 / 255.0,
-                    });
-                    rt.DrawTextLayout(
-                        Vector2 { X: x, Y: y },
-                        layout,
-                        brush,
-                        D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                    );
+                        unsafe {
+                            brush.SetColor(&D2D1_COLOR_F {
+                                r: (0xFF & (color >> 24)) as f32 / 255.0,
+                                g: (0xFF & (color >> 16)) as f32 / 255.0,
+                                b: (0xFF & (color >> 8)) as f32 / 255.0,
+                                a: (0xFF & color) as f32 / 255.0,
+                            });
+                            rt.DrawTextLayout(
+                                Vector2 { X: x, Y: y },
+                                layout.as_ref().unwrap(),
+                                brush,
+                                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+                            );
+                        }
+                    }
+                    ElementContent::Widget(widget) => {
+                        widget.paint(rt, brush, bounds, 1.0 / 240.0 /* TODO: dt */);
+                    }
                 }
             }
         },

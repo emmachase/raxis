@@ -5,6 +5,8 @@ use std::collections::HashMap;
 
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
+use crate::widgets::Widget;
+
 // ---------- Geometry & basic types ----------
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -13,14 +15,6 @@ pub struct BoxAmount {
     pub right: f32,
     pub bottom: f32,
     pub left: f32,
-}
-
-#[derive(Clone, Copy, Debug, Default, PartialEq)]
-pub struct Rect {
-    pub x: f32,
-    pub y: f32,
-    pub width: f32,
-    pub height: f32,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -228,25 +222,54 @@ pub struct ScrollConfig {
 
 // ---------- Element tree ----------
 
-#[derive(Clone, Debug, PartialEq)]
-pub struct TextElementContent {
-    /// Array of text spans that make up the text content
-    // pub spans: Vec<TextSpan>,
-    /// Processed text after wrapping, with spans and line heights together
-    // pub wrapped_lines: Vec<WrappedLine>,
+#[derive(Debug)]
+pub enum ElementContent {
+    Text {
+        /// Array of text spans that make up the text content
+        // pub spans: Vec<TextSpan>,
+        /// Processed text after wrapping, with spans and line heights together
+        // pub wrapped_lines: Vec<WrappedLine>,
 
-    /// Device layout
-    pub layout: Option<IDWriteTextLayout>,
+        /// Device layout
+        layout: Option<IDWriteTextLayout>,
+    },
+    Widget(Box<dyn Widget>),
+}
+
+impl ElementContent {
+    pub fn is_text(&self) -> bool {
+        matches!(self, ElementContent::Text { .. })
+    }
+
+    pub fn is_widget(&self) -> bool {
+        matches!(self, ElementContent::Widget { .. })
+    }
+
+    pub fn unwrap_text(&self) -> &Option<IDWriteTextLayout> {
+        if let ElementContent::Text { layout } = self {
+            layout
+        } else {
+            panic!("ElementContent is not a Text");
+        }
+    }
+
+    pub fn unwrap_widget(&mut self) -> &mut Box<dyn Widget> {
+        if let ElementContent::Widget(widget) = self {
+            widget
+        } else {
+            panic!("ElementContent is not a Widget");
+        }
+    }
 }
 
 pub type UIKey = slotmap::DefaultKey;
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Debug)]
 pub struct UIElement {
     pub parent: Option<UIKey>,
     pub children: Vec<UIKey>,
 
-    pub content: Option<TextElementContent>,
+    pub content: Option<ElementContent>,
 
     pub direction: Direction,
 
@@ -314,8 +337,8 @@ impl Default for UIElement {
     }
 }
 
-impl UIElement {
-    pub fn is_text_element(&self) -> bool {
-        self.content.is_some()
-    }
-}
+// impl UIElement {
+//     pub fn is_text_element(&self) -> bool {
+//         self.content.is_some()
+//     }
+// }

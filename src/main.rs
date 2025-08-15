@@ -2,12 +2,12 @@
 
 use raxis::dragdrop::start_text_drag;
 use raxis::layout::model::{
-    Axis, HorizontalAlignment, ScrollConfig, Sizing, TextElementContent, UIElement,
-    VerticalAlignment,
+    Axis, ElementContent, HorizontalAlignment, ScrollConfig, Sizing, UIElement, VerticalAlignment,
 };
 use raxis::layout::scroll_manager::{ScrollPosition, ScrollStateManager};
 use raxis::layout::{self, OwnedUITree, compute_scrollbar_geom};
 use raxis::w_id;
+use raxis::widgets::{Event, Widget};
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
@@ -25,6 +25,7 @@ use windows::Win32::System::Com::{
     CoUninitialize, DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM, TYMED_HGLOBAL,
 };
 use windows::Win32::System::Ole::ReleaseStgMedium;
+use windows::Win32::UI::WindowsAndMessaging::WM_KEYUP;
 use windows::{
     Win32::{
         Foundation::{
@@ -146,9 +147,10 @@ impl DropTarget {
                 let to_dip = dips_scale(self.hwnd);
                 let x = (p.x as f32) * to_dip;
                 let y = (p.y as f32) * to_dip;
-                if let Ok(idx16) = state.text_widget.hit_test_index(x, y) {
-                    state.text_widget.set_ole_drop_preview(Some(idx16));
-                }
+                // TODO
+                // if let Ok(idx16) = state.text_widget.hit_test_index(x, y) {
+                //     state.text_widget.set_ole_drop_preview(Some(idx16));
+                // }
                 let _ = InvalidateRect(Some(self.hwnd), None, false);
             }
         }
@@ -168,49 +170,50 @@ impl DropTarget {
                 let to_dip = dips_scale(self.hwnd);
                 let x = (p.x as f32) * to_dip;
                 let y = (p.y as f32) * to_dip;
-                if let Ok(idx16) = state.text_widget.hit_test_index(x, y) {
-                    state.text_widget.set_ole_drop_preview(Some(idx16));
+                // TODO
+                // if let Ok(idx16) = state.text_widget.hit_test_index(x, y) {
+                //     state.text_widget.set_ole_drop_preview(Some(idx16));
 
-                    // Request CF_UNICODETEXT via HGLOBAL
-                    let fmt = FORMATETC {
-                        cfFormat: CF_UNICODETEXT.0,
-                        ptd: std::ptr::null_mut(),
-                        dwAspect: DVASPECT_CONTENT.0 as u32,
-                        lindex: -1,
-                        tymed: TYMED_HGLOBAL.0 as u32,
-                    };
-                    if let Ok(mut medium) = data.GetData(&fmt) {
-                        let h = medium.u.hGlobal;
-                        let ptr = GlobalLock(h) as *const u16;
-                        if !ptr.is_null() {
-                            // Read until NUL
-                            let mut out: Vec<u16> = Vec::new();
-                            let mut i = 0isize;
-                            loop {
-                                let v = *ptr.offset(i);
-                                if v == 0 {
-                                    break;
-                                }
-                                out.push(v);
-                                i += 1;
-                            }
-                            let _ = GlobalUnlock(h);
-                            let mut s = String::from_utf16_lossy(&out);
+                //     // Request CF_UNICODETEXT via HGLOBAL
+                //     let fmt = FORMATETC {
+                //         cfFormat: CF_UNICODETEXT.0,
+                //         ptd: std::ptr::null_mut(),
+                //         dwAspect: DVASPECT_CONTENT.0 as u32,
+                //         lindex: -1,
+                //         tymed: TYMED_HGLOBAL.0 as u32,
+                //     };
+                //     if let Ok(mut medium) = data.GetData(&fmt) {
+                //         let h = medium.u.hGlobal;
+                //         let ptr = GlobalLock(h) as *const u16;
+                //         if !ptr.is_null() {
+                //             // Read until NUL
+                //             let mut out: Vec<u16> = Vec::new();
+                //             let mut i = 0isize;
+                //             loop {
+                //                 let v = *ptr.offset(i);
+                //                 if v == 0 {
+                //                     break;
+                //                 }
+                //                 out.push(v);
+                //                 i += 1;
+                //             }
+                //             let _ = GlobalUnlock(h);
+                //             let mut s = String::from_utf16_lossy(&out);
 
-                            // If we dropped from our own drag, remove the selection
-                            let internal_move = state.text_widget.can_drag_drop()
-                                && (effect.0 & DROPEFFECT_MOVE.0) != 0;
+                //             // If we dropped from our own drag, remove the selection
+                //             let internal_move = state.text_widget.can_drag_drop()
+                //                 && (effect.0 & DROPEFFECT_MOVE.0) != 0;
 
-                            // Normalize CRLF to LF for internal text
-                            s = s.replace("\r\n", "\n");
+                //             // Normalize CRLF to LF for internal text
+                //             s = s.replace("\r\n", "\n");
 
-                            state.text_widget.finish_ole_drop(&s, internal_move)?;
-                        }
-                        let _ = ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
-                    }
-                    state.text_widget.set_ole_drop_preview(None);
-                    let _ = InvalidateRect(Some(self.hwnd), None, false);
-                }
+                //             state.text_widget.finish_ole_drop(&s, internal_move)?;
+                //         }
+                //         let _ = ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
+                //     }
+                //     state.text_widget.set_ole_drop_preview(None);
+                //     let _ = InvalidateRect(Some(self.hwnd), None, false);
+                // }
             }
             Ok(())
         }
@@ -272,7 +275,8 @@ impl IDropTarget_Impl for DropTarget_Impl {
     fn DragLeave(&self) -> windows::core::Result<()> {
         unsafe {
             if let Some(state) = state_mut_from_hwnd(self.hwnd) {
-                state.text_widget.set_ole_drop_preview(None);
+                // TODO
+                // state.text_widget.set_ole_drop_preview(None);
                 let _ = InvalidateRect(Some(self.hwnd), None, false);
             }
         }
@@ -324,70 +328,6 @@ fn apply_dpi_to_rt(rt: &ID2D1HwndRenderTarget, hwnd: HWND) {
     unsafe { rt.SetDpi(dpi, dpi) };
 }
 
-// ===== Clipboard helpers (Unicode) =====
-fn set_clipboard_text(hwnd: HWND, s: &str) -> Result<()> {
-    unsafe {
-        if OpenClipboard(Some(hwnd)).is_ok() {
-            let _ = EmptyClipboard();
-            // Use CRLF per CF_UNICODETEXT expectations
-            let crlf = s.replace('\n', "\r\n");
-            let mut w: Vec<u16> = crlf.encode_utf16().collect();
-            w.push(0);
-            let bytes = (w.len() * 2) as usize;
-            let hmem: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, bytes)?;
-            if !hmem.is_invalid() {
-                let ptr = GlobalLock(hmem) as *mut u16;
-                if !ptr.is_null() {
-                    std::ptr::copy_nonoverlapping(w.as_ptr(), ptr, w.len());
-                    let _ = GlobalUnlock(hmem);
-                    if SetClipboardData(CF_UNICODETEXT.0.into(), Some(HANDLE(hmem.0))).is_err() {
-                        let _ = GlobalFree(Some(hmem));
-                    }
-                    // On success, ownership is transferred to the clipboard
-                } else {
-                    let _ = GlobalFree(Some(hmem));
-                }
-            }
-            let _ = CloseClipboard();
-        }
-    }
-    Ok(())
-}
-
-fn get_clipboard_text(hwnd: HWND) -> Option<String> {
-    unsafe {
-        if IsClipboardFormatAvailable(CF_UNICODETEXT.0.into()).is_ok() {
-            if OpenClipboard(Some(hwnd)).is_ok() {
-                let h = GetClipboardData(CF_UNICODETEXT.0.into());
-                if let Ok(h) = h {
-                    let hg = HGLOBAL(h.0);
-                    let ptr = GlobalLock(hg) as *const u16;
-                    if !ptr.is_null() {
-                        // Read until NUL terminator
-                        let mut out: Vec<u16> = Vec::new();
-                        let mut i = 0isize;
-                        loop {
-                            let v = *ptr.offset(i);
-                            if v == 0 {
-                                break;
-                            }
-                            out.push(v);
-                            i += 1;
-                        }
-                        let _ = GlobalUnlock(hg);
-                        let _ = CloseClipboard();
-                        let s = String::from_utf16_lossy(&out);
-                        // Normalize CRLF to LF for internal text
-                        return Some(s.replace("\r\n", "\n"));
-                    }
-                }
-                let _ = CloseClipboard();
-            }
-        }
-        None
-    }
-}
-
 struct AppState {
     d2d_factory: ID2D1Factory,
     _dwrite_factory: IDWriteFactory,
@@ -403,7 +343,8 @@ struct AppState {
     scroll_state_manager: ScrollStateManager,
 
     // Selectable text widget encapsulating layout, selection, and bounds
-    text_widget: SelectableText,
+    // text_widget: SelectableText,
+    text_widget_ui_key: DefaultKey,
 
     // Keep the window's OLE drop target alive for the lifetime of the window
     drop_target: Option<IDropTarget>,
@@ -509,16 +450,17 @@ impl AppState {
 
                 vertical_alignment: VerticalAlignment::Center,
 
-                content: Some(TextElementContent {
-                    layout: dwrite_factory
-                        .CreateTextLayout(
-                            &w!("Hello, World!").as_wide(),
-                            Some(&text_format),
-                            f32::INFINITY,
-                            f32::INFINITY,
-                        )
-                        .ok(),
-                }),
+                // content: Some(ElementContent::Text {
+                //     layout: dwrite_factory
+                //         .CreateTextLayout(
+                //             &w!("Hello, World!").as_wide(),
+                //             Some(&text_format),
+                //             f32::INFINITY,
+                //             f32::INFINITY,
+                //         )
+                //         .ok(),
+                // }),
+                content: Some(ElementContent::Widget(Box::new(text_widget))),
 
                 color: Some(0x6030F0FF),
 
@@ -550,7 +492,7 @@ impl AppState {
                 clock: 0.0,
                 timing_info: DWM_TIMING_INFO::default(),
                 spinner,
-                text_widget,
+                // text_widget,
                 ui_tree,
                 scroll_state_manager: ScrollStateManager::default(),
                 drop_target: None,
@@ -559,6 +501,7 @@ impl AppState {
                 last_click_pos: POINT { x: 0, y: 0 },
                 click_count: 0,
                 scroll_drag: None,
+                text_widget_ui_key: child2,
             })
         }
     }
@@ -657,8 +600,8 @@ impl AppState {
                     a: 1.0,
                 });
 
-                let _ = self.text_widget.update_bounds(rc_dip);
-                let _ = self.text_widget.draw(rt, brush, dt);
+                // let _ = self.text_widget.update_bounds(rc_dip);
+                // let _ = self.text_widget.draw(rt, brush, dt);
 
                 let center = Vector2 {
                     X: 100.0 * to_dip,
@@ -789,106 +732,106 @@ impl AppState {
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match msg {
-            WM_IME_STARTCOMPOSITION => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    state.text_widget.ime_begin();
-                    // Position IME window at current caret
-                    let to_dip = dips_scale(hwnd);
-                    if let Ok((x_dip, y_dip, h)) = state
-                        .text_widget
-                        .caret_pos_dip(state.text_widget.caret_active16())
-                    {
-                        let x_px = (x_dip / to_dip).round() as i32;
-                        let y_px = ((y_dip + h) / to_dip).round() as i32;
-                        let himc = ImmGetContext(hwnd);
-                        if !himc.is_invalid() {
-                            let cf = CANDIDATEFORM {
-                                dwStyle: CFS_POINT,
-                                ptCurrentPos: POINT { x: x_px, y: y_px },
-                                rcArea: RECT::default(),
-                                dwIndex: 0,
-                            };
-                            let _ = ImmSetCandidateWindow(himc, &cf);
+            // WM_IME_STARTCOMPOSITION => {
+            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
+            //         state.text_widget.ime_begin();
+            //         // Position IME window at current caret
+            //         let to_dip = dips_scale(hwnd);
+            //         if let Ok((x_dip, y_dip, h)) = state
+            //             .text_widget
+            //             .caret_pos_dip(state.text_widget.caret_active16())
+            //         {
+            //             let x_px = (x_dip / to_dip).round() as i32;
+            //             let y_px = ((y_dip + h) / to_dip).round() as i32;
+            //             let himc = ImmGetContext(hwnd);
+            //             if !himc.is_invalid() {
+            //                 let cf = CANDIDATEFORM {
+            //                     dwStyle: CFS_POINT,
+            //                     ptCurrentPos: POINT { x: x_px, y: y_px },
+            //                     rcArea: RECT::default(),
+            //                     dwIndex: 0,
+            //                 };
+            //                 let _ = ImmSetCandidateWindow(himc, &cf);
 
-                            let _ = ImmReleaseContext(hwnd, himc);
-                        }
-                    }
-                    let _ = InvalidateRect(Some(hwnd), None, false);
-                }
-                LRESULT(0)
-            }
-            WM_IME_COMPOSITION => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    let himc = ImmGetContext(hwnd);
-                    if !himc.is_invalid() {
-                        let flags = lparam.0 as u32;
+            //                 let _ = ImmReleaseContext(hwnd, himc);
+            //             }
+            //         }
+            //         let _ = InvalidateRect(Some(hwnd), None, false);
+            //     }
+            //     LRESULT(0)
+            // }
+            // WM_IME_COMPOSITION => {
+            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
+            //         let himc = ImmGetContext(hwnd);
+            //         if !himc.is_invalid() {
+            //             let flags = lparam.0 as u32;
 
-                        // Handle result string (committed text)
-                        if flags & GCS_RESULTSTR.0 != 0 {
-                            let bytes = ImmGetCompositionStringW(himc, GCS_RESULTSTR, None, 0);
-                            if bytes > 0 {
-                                let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
-                                let _ = ImmGetCompositionStringW(
-                                    himc,
-                                    GCS_RESULTSTR,
-                                    Some(buf.as_mut_ptr() as *mut _),
-                                    bytes as u32,
-                                );
-                                let s = String::from_utf16_lossy(&buf);
-                                let _ = state.text_widget.ime_commit(s);
-                            }
-                        }
+            //             // Handle result string (committed text)
+            //             if flags & GCS_RESULTSTR.0 != 0 {
+            //                 let bytes = ImmGetCompositionStringW(himc, GCS_RESULTSTR, None, 0);
+            //                 if bytes > 0 {
+            //                     let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
+            //                     let _ = ImmGetCompositionStringW(
+            //                         himc,
+            //                         GCS_RESULTSTR,
+            //                         Some(buf.as_mut_ptr() as *mut _),
+            //                         bytes as u32,
+            //                     );
+            //                     let s = String::from_utf16_lossy(&buf);
+            //                     let _ = state.text_widget.ime_commit(s);
+            //                 }
+            //             }
 
-                        // Handle ongoing composition string
-                        if flags & GCS_COMPSTR.0 != 0 {
-                            let bytes = ImmGetCompositionStringW(himc, GCS_COMPSTR, None, 0);
-                            let mut comp = String::new();
-                            if bytes > 0 {
-                                let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
-                                let _ = ImmGetCompositionStringW(
-                                    himc,
-                                    GCS_COMPSTR,
-                                    Some(buf.as_mut_ptr() as *mut _),
-                                    bytes as u32,
-                                );
-                                comp = String::from_utf16_lossy(&buf);
-                            }
-                            // Caret within comp string (UTF-16 units)
-                            let caret_units = {
-                                let v = ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0);
-                                if v < 0 { 0 } else { v as u32 }
-                            };
-                            state.text_widget.ime_update(comp, caret_units);
+            //             // Handle ongoing composition string
+            //             if flags & GCS_COMPSTR.0 != 0 {
+            //                 let bytes = ImmGetCompositionStringW(himc, GCS_COMPSTR, None, 0);
+            //                 let mut comp = String::new();
+            //                 if bytes > 0 {
+            //                     let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
+            //                     let _ = ImmGetCompositionStringW(
+            //                         himc,
+            //                         GCS_COMPSTR,
+            //                         Some(buf.as_mut_ptr() as *mut _),
+            //                         bytes as u32,
+            //                     );
+            //                     comp = String::from_utf16_lossy(&buf);
+            //                 }
+            //                 // Caret within comp string (UTF-16 units)
+            //                 let caret_units = {
+            //                     let v = ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0);
+            //                     if v < 0 { 0 } else { v as u32 }
+            //                 };
+            //                 state.text_widget.ime_update(comp, caret_units);
 
-                            // Reposition IME window at composition caret
-                            let to_dip = dips_scale(hwnd);
-                            if let Ok((x_dip, y_dip, h)) = state.text_widget.ime_caret_pos_dip() {
-                                let x_px = (x_dip / to_dip).round() as i32;
-                                let y_px = ((y_dip + h) / to_dip).round() as i32;
-                                let cf = CANDIDATEFORM {
-                                    dwStyle: CFS_FORCE_POSITION,
-                                    ptCurrentPos: POINT { x: x_px, y: y_px },
-                                    rcArea: RECT::default(),
-                                    dwIndex: 0,
-                                };
-                                let _ = ImmSetCandidateWindow(himc, &cf);
-                            }
+            //                 // Reposition IME window at composition caret
+            //                 let to_dip = dips_scale(hwnd);
+            //                 if let Ok((x_dip, y_dip, h)) = state.text_widget.ime_caret_pos_dip() {
+            //                     let x_px = (x_dip / to_dip).round() as i32;
+            //                     let y_px = ((y_dip + h) / to_dip).round() as i32;
+            //                     let cf = CANDIDATEFORM {
+            //                         dwStyle: CFS_FORCE_POSITION,
+            //                         ptCurrentPos: POINT { x: x_px, y: y_px },
+            //                         rcArea: RECT::default(),
+            //                         dwIndex: 0,
+            //                     };
+            //                     let _ = ImmSetCandidateWindow(himc, &cf);
+            //                 }
 
-                            let _ = InvalidateRect(Some(hwnd), None, false);
-                        }
+            //                 let _ = InvalidateRect(Some(hwnd), None, false);
+            //             }
 
-                        let _ = ImmReleaseContext(hwnd, himc);
-                    }
-                }
-                LRESULT(0)
-            }
-            WM_IME_ENDCOMPOSITION => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    state.text_widget.ime_end();
-                    let _ = InvalidateRect(Some(hwnd), None, false);
-                }
-                LRESULT(0)
-            }
+            //             let _ = ImmReleaseContext(hwnd, himc);
+            //         }
+            //     }
+            //     LRESULT(0)
+            // }
+            // WM_IME_ENDCOMPOSITION => {
+            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
+            //         state.text_widget.ime_end();
+            //         let _ = InvalidateRect(Some(hwnd), None, false);
+            //     }
+            //     LRESULT(0)
+            // }
             WM_LBUTTONDOWN => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     // Extract mouse position in client pixels
@@ -910,48 +853,47 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                             return LRESULT(0);
                         }
                     }
-                    if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
-                        // Compute running click count within system double-click time/rect
-                        let now = GetMessageTime() as u32;
-                        let thresh = GetDoubleClickTime();
-                        let dx = (xi - state.last_click_pos.x).unsigned_abs();
-                        let dy = (yi - state.last_click_pos.y).unsigned_abs();
-                        let w = GetSystemMetrics(SM_CXDOUBLECLK) as u32 / 2;
-                        let h = GetSystemMetrics(SM_CYDOUBLECLK) as u32 / 2;
-                        let within_rect = dx <= w && dy <= h;
-                        let within_time = now.wrapping_sub(state.last_click_time) <= thresh;
 
-                        if within_time && within_rect {
-                            state.click_count = state.click_count.saturating_add(1);
-                        } else {
-                            state.click_count = 1;
-                        }
+                    // Compute running click count within system double-click time/rect
+                    let now = GetMessageTime() as u32;
+                    let thresh = GetDoubleClickTime();
+                    let dx = (xi - state.last_click_pos.x).unsigned_abs();
+                    let dy = (yi - state.last_click_pos.y).unsigned_abs();
+                    let w = GetSystemMetrics(SM_CXDOUBLECLK) as u32 / 2;
+                    let h = GetSystemMetrics(SM_CYDOUBLECLK) as u32 / 2;
+                    let within_rect = dx <= w && dy <= h;
+                    let within_time = now.wrapping_sub(state.last_click_time) <= thresh;
 
-                        // Complete composition before altering selection
-                        if state.text_widget.is_composing() {
-                            let himc = ImmGetContext(hwnd);
-                            if !himc.is_invalid() {
-                                let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
-                            }
-                        }
-
-                        // Selection mode by click count
-                        let mode = match state.click_count {
-                            1 => SelectionMode::Char,
-                            x if x % 2 == 0 => SelectionMode::Word,
-                            _ => SelectionMode::Paragraph,
-                        };
-                        state.text_widget.set_selection_mode(mode);
-                        state.text_widget.begin_drag(idx);
-
-                        state.last_click_time = now;
-                        state.last_click_pos = POINT { x: xi, y: yi };
-
-                        // Ensure we receive keyboard input
-                        let _ = SetFocus(Some(hwnd));
-                        let _ = SetCapture(hwnd);
-                        let _ = InvalidateRect(Some(hwnd), None, false);
+                    if within_time && within_rect {
+                        state.click_count = state.click_count.saturating_add(1);
+                    } else {
+                        state.click_count = 1;
                     }
+
+                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
+
+                    let widget = state.ui_tree[state.text_widget_ui_key]
+                        .content
+                        .as_mut()
+                        .unwrap()
+                        .unwrap_widget();
+                    widget.update(
+                        hwnd,
+                        Event::MouseButtonDown {
+                            x,
+                            y,
+                            click_count: state.click_count,
+                        },
+                        bounds,
+                    );
+
+                    state.last_click_time = now;
+                    state.last_click_pos = POINT { x: xi, y: yi };
+
+                    // Ensure we receive keyboard input
+                    let _ = SetFocus(Some(hwnd));
+                    let _ = SetCapture(hwnd);
+                    let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
             }
@@ -1026,29 +968,30 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         return LRESULT(0);
                     }
 
-                    if state.text_widget.can_drag_drop() {
-                        // If we've exceeded the system drag threshold,
-                        // escalate to OLE DoDragDrop with CF_UNICODETEXT.
-                        let dx = (xi - state.last_click_pos.x).unsigned_abs();
-                        let dy = (yi - state.last_click_pos.y).unsigned_abs();
-                        let w = GetSystemMetrics(SM_CXDRAG) as u32 / 2;
-                        let h = GetSystemMetrics(SM_CYDRAG) as u32 / 2;
-                        if dx > w || dy > h {
-                            if let Some(s) = state.text_widget.selected_text() {
-                                // Hand control to OLE DnD
-                                let _ = ReleaseCapture();
-                                state.text_widget.cancel_drag();
-                                let effect = start_text_drag(&s, true).unwrap_or_default();
-                                if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
-                                    // Delete original selection on successful MOVE drop
-                                    let _ = state.text_widget.insert_str("");
-                                }
-                                state.text_widget.set_can_drag_drop(false);
-                                let _ = InvalidateRect(Some(hwnd), None, false);
-                                return LRESULT(0);
-                            }
-                        }
-                    }
+                    // TODO
+                    // if state.text_widget.can_drag_drop() {
+                    //     // If we've exceeded the system drag threshold,
+                    //     // escalate to OLE DoDragDrop with CF_UNICODETEXT.
+                    //     let dx = (xi - state.last_click_pos.x).unsigned_abs();
+                    //     let dy = (yi - state.last_click_pos.y).unsigned_abs();
+                    //     let w = GetSystemMetrics(SM_CXDRAG) as u32 / 2;
+                    //     let h = GetSystemMetrics(SM_CYDRAG) as u32 / 2;
+                    //     if dx > w || dy > h {
+                    //         if let Some(s) = state.text_widget.selected_text() {
+                    //             // Hand control to OLE DnD
+                    //             let _ = ReleaseCapture();
+                    //             state.text_widget.cancel_drag();
+                    //             let effect = start_text_drag(&s, true).unwrap_or_default();
+                    //             if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
+                    //                 // Delete original selection on successful MOVE drop
+                    //                 let _ = state.text_widget.insert_str("");
+                    //             }
+                    //             state.text_widget.set_can_drag_drop(false);
+                    //             let _ = InvalidateRect(Some(hwnd), None, false);
+                    //             return LRESULT(0);
+                    //         }
+                    //     }
+                    // }
 
                     // Continue manual drag (selection or preview drop position)
                     let x_px = xi as f32;
@@ -1056,9 +999,19 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let to_dip = dips_scale(hwnd);
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
-                    if state.text_widget.update_drag(x, y) {
-                        let _ = InvalidateRect(Some(hwnd), None, false);
-                    }
+                    // if state.text_widget.update_drag(x, y) {
+                    //     let _ = InvalidateRect(Some(hwnd), None, false);
+                    // }
+
+                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
+                    let widget = state.ui_tree[state.text_widget_ui_key]
+                        .content
+                        .as_mut()
+                        .unwrap()
+                        .unwrap_widget();
+                    // state
+                    //     .text_widget
+                    widget.update(hwnd, Event::MouseMove { x, y }, bounds);
                 }
                 LRESULT(0)
             }
@@ -1074,52 +1027,70 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let to_dip = dips_scale(hwnd);
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
-                    if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
-                        state.text_widget.end_drag(idx);
-                    } else {
-                        // Even on failure, ensure drag ends
-                        state.text_widget.end_drag(0);
-                    }
+                    // if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
+                    //     state.text_widget.end_drag(idx);
+                    // } else {
+                    //     // Even on failure, ensure drag ends
+                    //     state.text_widget.end_drag(0);
+                    // }
+
+                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
+                    let widget = state.ui_tree[state.text_widget_ui_key]
+                        .content
+                        .as_mut()
+                        .unwrap()
+                        .unwrap_widget();
+                    widget.update(
+                        hwnd,
+                        Event::MouseButtonUp {
+                            x,
+                            y,
+                            click_count: state.click_count,
+                        },
+                        bounds,
+                    );
+
                     let _ = ReleaseCapture();
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
             }
-            WM_COPY => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    if let Some(s) = state.text_widget.selected_text() {
-                        let _ = set_clipboard_text(hwnd, &s);
-                    }
-                }
-                LRESULT(0)
-            }
-            WM_CUT => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    if let Some(s) = state.text_widget.selected_text() {
-                        let _ = set_clipboard_text(hwnd, &s);
-                        let _ = state.text_widget.insert_str("");
-                        let _ = InvalidateRect(Some(hwnd), None, false);
-                    }
-                }
-                LRESULT(0)
-            }
-            WM_PASTE => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    if !state.text_widget.is_composing() {
-                        if let Some(s) = get_clipboard_text(hwnd) {
-                            let _ = state.text_widget.insert_str(&s);
-                            let _ = InvalidateRect(Some(hwnd), None, false);
-                        }
-                    }
-                }
-                LRESULT(0)
-            }
+            // WM_COPY => {
+            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
+            //         if let Some(s) = state.text_widget.selected_text() {
+            //             let _ = set_clipboard_text(hwnd, &s);
+            //         }
+            //     }
+            //     LRESULT(0)
+            // }
+            // WM_CUT => {
+            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
+            //         if let Some(s) = state.text_widget.selected_text() {
+            //             let _ = set_clipboard_text(hwnd, &s);
+            //             let _ = state.text_widget.insert_str("");
+            //             let _ = InvalidateRect(Some(hwnd), None, false);
+            //         }
+            //     }
+            //     LRESULT(0)
+            // }
+            // WM_PASTE => {
+            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
+            //         if !state.text_widget.is_composing() {
+            //             if let Some(s) = get_clipboard_text(hwnd) {
+            //                 let _ = state.text_widget.insert_str(&s);
+            //                 let _ = InvalidateRect(Some(hwnd), None, false);
+            //             }
+            //         }
+            //     }
+            //     LRESULT(0)
+            // }
             WM_CHAR => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     // Suppress WM_CHAR while IME composition is active to avoid duplicate input
-                    if state.text_widget.is_composing() {
-                        return LRESULT(0);
-                    }
+                    // TODO
+                    // if state.text_widget.is_composing() {
+                    //     return LRESULT(0);
+                    // }
                     let mut code = (wparam.0 & 0xFFFF) as u32;
                     // Handle CR -> LF
                     if code == 0x0D {
@@ -1152,7 +1123,21 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         }
                     }
                     if !to_insert.is_empty() {
-                        let _ = state.text_widget.insert_str(&to_insert);
+                        // let _ = state.text_widget.insert_str(&to_insert);
+                        let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
+                        let widget = state.ui_tree[state.text_widget_ui_key]
+                            .content
+                            .as_mut()
+                            .unwrap()
+                            .unwrap_widget();
+                        widget.update(
+                            hwnd,
+                            Event::Char {
+                                text: to_insert.into(),
+                            },
+                            bounds,
+                        );
+
                         let _ = InvalidateRect(Some(hwnd), None, false);
                     }
                 }
@@ -1161,72 +1146,38 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             WM_KEYDOWN => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     let vk = wparam.0 as u32;
-                    let shift_down = GetKeyState(VK_SHIFT.0 as i32) < 0;
-                    let ctrl_down = GetKeyState(VK_CONTROL.0 as i32) < 0;
-                    let handled = match vk {
-                        x if x == VK_LEFT.0 as u32 => {
-                            if ctrl_down {
-                                state.text_widget.move_word_left(shift_down);
-                            } else {
-                                state.text_widget.move_left(shift_down);
-                            }
-                            true
-                        }
-                        x if x == VK_RIGHT.0 as u32 => {
-                            if ctrl_down {
-                                state.text_widget.move_word_right(shift_down);
-                            } else {
-                                state.text_widget.move_right(shift_down);
-                            }
-                            true
-                        }
-                        x if x == VK_HOME.0 as u32 => {
-                            state.text_widget.move_to_start(shift_down);
-                            true
-                        }
-                        x if x == VK_END.0 as u32 => {
-                            state.text_widget.move_to_end(shift_down);
-                            true
-                        }
-                        x if x == VK_BACK.0 as u32 => {
-                            let _ = state.text_widget.backspace();
-                            true
-                        }
-                        x if x == VK_DELETE.0 as u32 => {
-                            let _ = state.text_widget.delete_forward();
-                            true
-                        }
-                        x if x == VK_A.0 as u32 && ctrl_down => {
-                            state.text_widget.select_all();
-                            true
-                        }
-                        x if x == VK_C.0 as u32 && ctrl_down => {
-                            if let Some(s) = state.text_widget.selected_text() {
-                                let _ = set_clipboard_text(hwnd, &s);
-                            }
-                            true
-                        }
-                        x if x == VK_X.0 as u32 && ctrl_down => {
-                            if let Some(s) = state.text_widget.selected_text() {
-                                let _ = set_clipboard_text(hwnd, &s);
-                                let _ = state.text_widget.insert_str("");
-                            }
-                            true
-                        }
-                        x if x == VK_V.0 as u32 && ctrl_down => {
-                            if !state.text_widget.is_composing() {
-                                if let Some(s) = get_clipboard_text(hwnd) {
-                                    let _ = state.text_widget.insert_str(&s);
-                                }
-                            }
-                            true
-                        }
-                        _ => false,
-                    };
-                    if handled {
-                        let _ = InvalidateRect(Some(hwnd), None, false);
-                        return LRESULT(0);
-                    }
+
+                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
+                    let widget = state.ui_tree[state.text_widget_ui_key]
+                        .content
+                        .as_mut()
+                        .unwrap()
+                        .unwrap_widget();
+                    widget.update(hwnd, Event::KeyDown { key: vk }, bounds);
+
+                    // if handled {
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                    return LRESULT(0);
+                    // }
+                }
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+            WM_KEYUP => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    let vk = wparam.0 as u32;
+
+                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
+                    let widget = state.ui_tree[state.text_widget_ui_key]
+                        .content
+                        .as_mut()
+                        .unwrap()
+                        .unwrap_widget();
+                    widget.update(hwnd, Event::KeyUp { key: vk }, bounds);
+
+                    // if handled {
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                    return LRESULT(0);
+                    // }
                 }
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -1304,12 +1255,15 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         let to_dip = dips_scale(hwnd);
                         let x_dip = (pt.x as f32) * to_dip;
                         let y_dip = (pt.y as f32) * to_dip;
+
+                        let widget = &state.ui_tree[state.text_widget_ui_key];
+
                         let RectDIP {
                             x_dip: left,
                             y_dip: top,
                             width_dip: width,
                             height_dip: height,
-                        } = state.text_widget.metric_bounds();
+                        } = widget.bounds(); //state.text_widget.metric_bounds();
                         if x_dip >= left
                             && y_dip >= top
                             && x_dip < left + width
@@ -1343,7 +1297,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 // Revoke drop target first
                 let _ = RevokeDragDrop(hwnd);
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    state.text_widget.set_ole_drop_preview(None);
+                    // state.text_widget.set_ole_drop_preview(None);
                     state.drop_target = None;
                 }
                 let ptr = WAM::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
