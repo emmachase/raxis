@@ -21,7 +21,9 @@ use windows_numerics::Vector2;
 use crate::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::model::UIKey;
-use crate::widgets::{DragData, DragInfo, DropResult, Renderer, Widget, WidgetDragDropTarget};
+use crate::widgets::{
+    BLACK, Color, DragData, DragInfo, DropResult, Renderer, Widget, WidgetDragDropTarget,
+};
 use crate::{InputMethod, Shell};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -357,16 +359,8 @@ impl Widget for TextInput {
     ) {
         self.update_bounds(bounds).expect("update bounds failed");
 
-        self.draw(
-            id,
-            ui_key,
-            shell,
-            renderer.render_target,
-            renderer.brush,
-            bounds,
-            dt,
-        )
-        .expect("draw failed");
+        self.draw(id, ui_key, shell, renderer, bounds, dt)
+            .expect("draw failed");
     }
 
     fn cursor(
@@ -570,9 +564,8 @@ impl TextInput {
     fn draw_selection(
         &self,
         layout: &IDWriteTextLayout,
-        rt: &ID2D1HwndRenderTarget,
+        renderer: &Renderer,
         bounds: RectDIP,
-        brush: &ID2D1SolidColorBrush,
     ) -> Result<()> {
         unsafe {
             let sel_start = self.selection_anchor.min(self.selection_active);
@@ -602,28 +595,22 @@ impl TextInput {
                     ) {
                         Ok(()) => {
                             // Selection color (light blue)
-                            brush.SetColor(&D2D1_COLOR_F {
-                                r: 0.2,
-                                g: 0.4,
-                                b: 1.0,
-                                a: 0.35,
-                            });
                             for m in runs.iter().take(actual as usize) {
-                                let rect = D2D_RECT_F {
-                                    left: bounds.x_dip + m.left,
-                                    top: bounds.y_dip + m.top,
-                                    right: bounds.x_dip + m.left + m.width,
-                                    bottom: bounds.y_dip + m.top + m.height,
-                                };
-                                rt.FillRectangle(&rect, brush);
+                                renderer.fill_rectangle(
+                                    &RectDIP {
+                                        x_dip: bounds.x_dip + m.left,
+                                        y_dip: bounds.y_dip + m.top,
+                                        width_dip: m.width,
+                                        height_dip: m.height,
+                                    },
+                                    Color {
+                                        r: 0.2,
+                                        g: 0.4,
+                                        b: 1.0,
+                                        a: 0.35,
+                                    },
+                                );
                             }
-                            // Restore brush to black for drawing text
-                            brush.SetColor(&D2D1_COLOR_F {
-                                r: 0.0,
-                                g: 0.0,
-                                b: 0.0,
-                                a: 1.0,
-                            });
                             Ok(())
                         }
                         Err(e) => Err(e),
@@ -639,8 +626,7 @@ impl TextInput {
         id: Option<u64>,
         ui_key: UIKey,
         shell: &Shell,
-        rt: &ID2D1HwndRenderTarget,
-        brush: &ID2D1SolidColorBrush,
+        renderer: &Renderer,
         bounds: RectDIP,
         dt: f64,
     ) -> Result<()> {
@@ -654,21 +640,21 @@ impl TextInput {
             }
 
             // Normal rendering: selection, base text, caret
-            self.draw_selection(layout, rt, bounds, brush)?;
+            self.draw_selection(layout, renderer, bounds)?;
 
-            brush.SetColor(&D2D1_COLOR_F {
+            renderer.brush.SetColor(&D2D1_COLOR_F {
                 r: 0.0,
                 g: 0.0,
                 b: 0.0,
                 a: 1.0,
             });
-            rt.DrawTextLayout(
+            renderer.render_target.DrawTextLayout(
                 Vector2 {
                     X: bounds.x_dip,
                     Y: bounds.y_dip,
                 },
                 layout,
-                brush,
+                renderer.brush,
                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
             );
 
@@ -676,18 +662,18 @@ impl TextInput {
             if let Some(drop) = self.ole_drop_preview16 {
                 let drop = self.snap_to_scalar_boundary(drop);
                 let (src_start, src_end) = self.selection_range();
-                if !self.has_selection() || !(drop >= src_start && drop <= src_end) {
+                if !(self.has_selection() && drop >= src_start && drop <= src_end) {
                     let mut x = 0.0f32;
                     let mut y = 0.0f32;
                     let mut m = DWRITE_HIT_TEST_METRICS::default();
                     layout.HitTestTextPosition(drop, false, &mut x, &mut y, &mut m)?;
-                    let caret_rect = D2D_RECT_F {
-                        left: bounds.x_dip + x,
-                        top: bounds.y_dip + m.top,
-                        right: bounds.x_dip + x + CARET_WIDTH,
-                        bottom: bounds.y_dip + m.top + m.height,
+                    let caret_rect = RectDIP {
+                        x_dip: bounds.x_dip + x,
+                        y_dip: bounds.y_dip + m.top,
+                        width_dip: CARET_WIDTH,
+                        height_dip: m.height,
                     };
-                    rt.FillRectangle(&caret_rect, brush);
+                    renderer.fill_rectangle(&caret_rect, BLACK);
                 }
             } else {
                 // Draw caret if there's no selection (1 DIP wide bar)
@@ -700,13 +686,13 @@ impl TextInput {
                         let mut y = 0.0f32;
                         let mut m = DWRITE_HIT_TEST_METRICS::default();
                         layout.HitTestTextPosition(ime_caret_pos, false, &mut x, &mut y, &mut m)?;
-                        let caret_rect = D2D_RECT_F {
-                            left: bounds.x_dip + x,
-                            top: bounds.y_dip + m.top,
-                            right: bounds.x_dip + x + CARET_WIDTH,
-                            bottom: bounds.y_dip + m.top + m.height,
+                        let caret_rect = RectDIP {
+                            x_dip: bounds.x_dip + x,
+                            y_dip: bounds.y_dip + m.top,
+                            width_dip: CARET_WIDTH,
+                            height_dip: m.height,
                         };
-                        rt.FillRectangle(&caret_rect, brush);
+                        renderer.fill_rectangle(&caret_rect, BLACK);
                     } else if sel_start == sel_end {
                         let mut x = 0.0f32;
                         let mut y = 0.0f32;
@@ -718,13 +704,13 @@ impl TextInput {
                             &mut y,
                             &mut m,
                         )?;
-                        let caret_rect = D2D_RECT_F {
-                            left: bounds.x_dip + x,
-                            top: bounds.y_dip + m.top,
-                            right: bounds.x_dip + x + CARET_WIDTH,
-                            bottom: bounds.y_dip + m.top + m.height,
+                        let caret_rect = RectDIP {
+                            x_dip: bounds.x_dip + x,
+                            y_dip: bounds.y_dip + m.top,
+                            width_dip: CARET_WIDTH,
+                            height_dip: m.height,
                         };
-                        rt.FillRectangle(&caret_rect, brush);
+                        renderer.fill_rectangle(&caret_rect, BLACK);
                     }
                 }
             }

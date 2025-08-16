@@ -4,7 +4,7 @@ use windows::{
         System::{
             Com::IDataObject,
             Ole::{DROPEFFECT, DROPEFFECT_NONE, IDropTarget, IDropTarget_Impl},
-            SystemServices::MODIFIERKEYS_FLAGS,
+            SystemServices::{MK_CONTROL, MODIFIERKEYS_FLAGS},
         },
     },
     core::{Result, implement},
@@ -35,12 +35,8 @@ impl IntegratedDropTarget {
     }
 
     fn choose_effect(&self, keys: MODIFIERKEYS_FLAGS) -> DROPEFFECT {
-        use windows::Win32::System::SystemServices::{MK_CONTROL, MK_SHIFT};
-
         if (keys.0 & MK_CONTROL.0) != 0 {
             windows::Win32::System::Ole::DROPEFFECT_COPY
-        } else if (keys.0 & MK_SHIFT.0) != 0 {
-            windows::Win32::System::Ole::DROPEFFECT_MOVE
         } else {
             windows::Win32::System::Ole::DROPEFFECT_MOVE
         }
@@ -81,6 +77,8 @@ impl IntegratedDropTarget {
     }
 }
 
+// We don't control the trait so we can't mark the functions unsafe
+#[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[allow(non_snake_case)]
 impl IDropTarget_Impl for IntegratedDropTarget_Impl {
     fn DragEnter(
@@ -90,21 +88,21 @@ impl IDropTarget_Impl for IntegratedDropTarget_Impl {
         pt: &POINTL,
         pdwEffect: *mut DROPEFFECT,
     ) -> Result<()> {
-        unsafe {
-            let effect = if let Some(data_obj) = pDataObj.as_ref() {
-                if let Some(drag_info) =
-                    self.create_drag_info(data_obj, pt, self.choose_effect(grfKeyState))
-                {
-                    let event = DragEvent::DragEnter { drag_info };
-                    (self.event_dispatcher)(self.hwnd, event)
-                } else {
-                    DROPEFFECT_NONE
-                }
+        let effect = if let Some(data_obj) = pDataObj.as_ref() {
+            if let Some(drag_info) =
+                self.create_drag_info(data_obj, pt, self.choose_effect(grfKeyState))
+            {
+                let event = DragEvent::DragEnter { drag_info };
+                (self.event_dispatcher)(self.hwnd, event)
             } else {
                 DROPEFFECT_NONE
-            };
+            }
+        } else {
+            DROPEFFECT_NONE
+        };
 
-            if !pdwEffect.is_null() {
+        if !pdwEffect.is_null() {
+            unsafe {
                 *pdwEffect = effect;
             }
         }
@@ -117,19 +115,19 @@ impl IDropTarget_Impl for IntegratedDropTarget_Impl {
         pt: &POINTL,
         pdwEffect: *mut DROPEFFECT,
     ) -> Result<()> {
-        unsafe {
-            // For DragOver, we create a placeholder drag info since we don't have the data object
-            let position = self.screen_to_client_dip(pt);
-            let drag_info = DragInfo {
-                data: crate::widgets::DragData::Text(String::new()), // Placeholder
-                position,
-                allowed_effects: self.choose_effect(grfKeyState),
-            };
+        // For DragOver, we create a placeholder drag info since we don't have the data object
+        let position = self.screen_to_client_dip(pt);
+        let drag_info = DragInfo {
+            data: crate::widgets::DragData::Text(String::new()), // Placeholder
+            position,
+            allowed_effects: self.choose_effect(grfKeyState),
+        };
 
-            let event = DragEvent::DragOver { drag_info };
-            let effect = (self.event_dispatcher)(self.hwnd, event);
+        let event = DragEvent::DragOver { drag_info };
+        let effect = (self.event_dispatcher)(self.hwnd, event);
 
-            if !pdwEffect.is_null() {
+        if !pdwEffect.is_null() {
+            unsafe {
                 *pdwEffect = effect;
             }
         }
@@ -149,21 +147,21 @@ impl IDropTarget_Impl for IntegratedDropTarget_Impl {
         pt: &POINTL,
         pdwEffect: *mut DROPEFFECT,
     ) -> Result<()> {
-        unsafe {
-            let effect = if let Some(data_obj) = pDataObj.as_ref() {
-                if let Some(drag_info) =
-                    self.create_drag_info(data_obj, pt, self.choose_effect(grfKeyState))
-                {
-                    let event = DragEvent::Drop { drag_info };
-                    (self.event_dispatcher)(self.hwnd, event)
-                } else {
-                    DROPEFFECT_NONE
-                }
+        let effect = if let Some(data_obj) = pDataObj.as_ref() {
+            if let Some(drag_info) =
+                self.create_drag_info(data_obj, pt, self.choose_effect(grfKeyState))
+            {
+                let event = DragEvent::Drop { drag_info };
+                (self.event_dispatcher)(self.hwnd, event)
             } else {
                 DROPEFFECT_NONE
-            };
+            }
+        } else {
+            DROPEFFECT_NONE
+        };
 
-            if !pdwEffect.is_null() {
+        if !pdwEffect.is_null() {
+            unsafe {
                 *pdwEffect = effect;
             }
         }

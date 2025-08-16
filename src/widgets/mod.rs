@@ -1,7 +1,10 @@
 use smol_str::SmolStr;
 use windows::Win32::{
     Foundation::HWND,
-    Graphics::Direct2D::{ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush},
+    Graphics::Direct2D::{
+        Common::{D2D_RECT_F, D2D1_COLOR_F},
+        ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
+    },
 };
 
 use crate::{
@@ -97,6 +100,54 @@ pub struct Renderer<'a> {
     pub brush: &'a ID2D1SolidColorBrush,
 }
 
+pub struct Color {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
+pub const BLACK: Color = Color {
+    r: 0.0,
+    g: 0.0,
+    b: 0.0,
+    a: 1.0,
+};
+
+impl From<u32> for Color {
+    fn from(color: u32) -> Self {
+        Color {
+            r: (0xFF & (color >> 24)) as f32 / 255.0,
+            g: (0xFF & (color >> 16)) as f32 / 255.0,
+            b: (0xFF & (color >> 8)) as f32 / 255.0,
+            a: (0xFF & color) as f32 / 255.0,
+        }
+    }
+}
+
+impl Renderer<'_> {
+    pub fn fill_rectangle<C: Into<Color>>(&self, rect: &RectDIP, color: C) {
+        unsafe {
+            let color = color.into();
+            self.brush.SetColor(&D2D1_COLOR_F {
+                r: color.r,
+                g: color.g,
+                b: color.b,
+                a: color.a,
+            });
+            self.render_target.FillRectangle(
+                &D2D_RECT_F {
+                    left: rect.x_dip,
+                    top: rect.y_dip,
+                    right: rect.x_dip + rect.width_dip,
+                    bottom: rect.y_dip + rect.height_dip,
+                },
+                self.brush,
+            );
+        }
+    }
+}
+
 pub enum Cursor {
     Arrow,
     IBeam,
@@ -139,10 +190,9 @@ pub trait Widget: std::fmt::Debug {
     #[allow(unused)]
     fn operate(&mut self, id: Option<u64>, key: UIKey, operation: &dyn Operation) {}
 
-    /// Allow downcasting to concrete widget types
-    // fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
-
-    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget> { None }
+    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget> {
+        None
+    }
 }
 
 // pub trait Focusable {

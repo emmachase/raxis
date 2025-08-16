@@ -54,20 +54,18 @@ fn propagate_inherited_properties(slots: BorrowedUITree<'_>, root: UIKey) {
 
 fn wrap_text(slots: BorrowedUITree<'_>, root: UIKey) {
     visitors::visit_bfs(slots, root, |slots, key, _parent| {
-        if let Some(content) = slots[key].content.as_ref() {
-            if let ElementContent::Text { layout, .. } = content {
-                let element = &slots[key];
+        if let Some(ElementContent::Text { layout, .. }) = slots[key].content.as_ref() {
+            let element = &slots[key];
 
-                let available_width =
-                    element.computed_width - element.padding.left - element.padding.right;
+            let available_width =
+                element.computed_width - element.padding.left - element.padding.right;
 
-                unsafe {
-                    layout
-                        .as_ref()
-                        .unwrap()
-                        .SetMaxWidth(available_width)
-                        .unwrap();
-                }
+            unsafe {
+                layout
+                    .as_ref()
+                    .unwrap()
+                    .SetMaxWidth(available_width)
+                    .unwrap();
             }
         }
     });
@@ -368,7 +366,7 @@ pub fn compute_scrollbar_geom(
             let height = element.computed_height;
             let content_height = element.computed_content_height;
             let max_scroll_y = (content_height - height).max(0.0);
-            if !(content_height > height) {
+            if content_height <= height {
                 return None;
             }
 
@@ -418,7 +416,7 @@ pub fn compute_scrollbar_geom(
             let height = element.computed_height;
             let content_width = element.computed_content_width;
             let max_scroll_x = (content_width - width).max(0.0);
-            if !(content_width > width) {
+            if content_width <= width {
                 return None;
             }
 

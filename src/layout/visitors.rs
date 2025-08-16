@@ -118,15 +118,14 @@ pub fn visit_deferring_bfs<S, F, R>(
 }
 
 /// Depth-first traversal with optional "exit-children" callback.
-pub fn visit_dfs<F, R>(
+pub fn visit_dfs<F, E, R>(
     slots: &mut SlotMap<UIKey, UIElement>,
     element: UIKey,
     mut visitor: F,
-    mut exit_children_visitor: Option<
-        &mut dyn FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>),
-    >,
+    mut exit_children_visitor: Option<E>,
 ) where
     F: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>) -> R,
+    E: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>),
     R: Into<VisitAction>,
 {
     #[derive(Clone, Copy)]
