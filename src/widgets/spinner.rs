@@ -4,7 +4,9 @@ use windows::Win32::Graphics::Direct2D::{
 use windows_numerics::Vector2;
 
 use crate::{
+    Shell,
     gfx::circle_arc::CircleArc,
+    layout::model::UIKey,
     math::easing::Easing,
     widgets::{Renderer, Widget},
 };
@@ -64,8 +66,10 @@ impl Widget for Spinner {
 
     fn update(
         &mut self,
+        _key: UIKey,
         _hwnd: windows::Win32::Foundation::HWND,
-        _event: super::Event,
+        _shell: &mut Shell,
+        _event: &super::Event,
         _bounds: crate::gfx::RectDIP,
     ) {
         // Nothing to do

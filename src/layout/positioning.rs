@@ -1,12 +1,12 @@
 use crate::layout::{
-    ScrollStateManager, UITree,
+    ScrollStateManager, BorrowedUITree,
     model::{Direction, HorizontalAlignment, UIKey, VerticalAlignment},
     scroll_manager::ScrollPosition,
     visitors,
 };
 
 pub fn position_elements(
-    slots: UITree<'_>,
+    slots: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {

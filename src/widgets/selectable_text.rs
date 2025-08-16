@@ -8,20 +8,19 @@ use windows::Win32::Graphics::DirectWrite::{
     IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Gdi::InvalidateRect;
-use windows::Win32::UI::Input::Ime::{
-    CPS_COMPLETE, ImmGetContext, ImmNotifyIME, NI_COMPOSITIONSTR,
-};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, SetCapture, SetFocus, VK_A, VK_BACK, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
-    VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT, VK_UP, VK_V, VK_X,
+    GetKeyState, VK_A, VK_BACK, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_LEFT,
+    VK_RIGHT, VK_SHIFT, VK_UP, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
 use windows_numerics::Vector2;
 
 use crate::clipboard::{get_clipboard_text, set_clipboard_text};
-use crate::gfx::RectDIP;
+use crate::gfx::{PointDIP, RectDIP};
+use crate::layout::model::UIKey;
 use crate::widgets::{Renderer, Widget};
+use crate::{InputMethod, Shell};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
@@ -46,6 +45,7 @@ pub struct SelectableText {
     selection_anchor: u32,
     selection_active: u32,
     is_dragging: bool,
+    is_focused: bool,
     caret_blink_timer: f64,
     caret_visible: bool,
 
@@ -116,18 +116,33 @@ impl Widget for SelectableText {
         }
     }
 
-    fn update(&mut self, hwnd: HWND, event: super::Event, RectDIP { x_dip, y_dip, .. }: RectDIP) {
+    fn update(
+        &mut self,
+        ui_key: UIKey,
+        hwnd: HWND,
+        shell: &mut Shell,
+        event: &super::Event,
+        bounds: RectDIP,
+    ) {
+        let RectDIP { x_dip, y_dip, .. } = bounds;
         match event {
             super::Event::MouseButtonDown { x, y, click_count } => {
-                if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
-                    unsafe {
-                        // Complete composition before altering selection
-                        if self.is_composing() {
-                            let himc = ImmGetContext(hwnd);
-                            if !himc.is_invalid() {
-                                let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
-                            }
-                        }
+                // Complete composition before altering selection
+                if let Some(ref ime_text) = self.ime_text {
+                    let _ = self.ime_commit(ime_text.clone());
+                    self.ime_end();
+                    shell.request_input_method(hwnd, InputMethod::Disabled);
+                }
+
+                if (PointDIP {
+                    x_dip: *x,
+                    y_dip: *y,
+                })
+                .within(bounds)
+                {
+                    if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
+                        shell.focus_manager.focus(ui_key);
+                        self.is_focused = true;
 
                         // Selection mode by click count
                         let mode = match click_count {
@@ -137,12 +152,10 @@ impl Widget for SelectableText {
                         };
                         self.set_selection_mode(mode);
                         self.begin_drag(idx);
-
-                        // Ensure we receive keyboard input
-                        let _ = SetFocus(Some(hwnd));
-                        let _ = SetCapture(hwnd);
-                        let _ = InvalidateRect(Some(hwnd), None, false);
                     }
+                } else if shell.focus_manager.is_focused(ui_key) {
+                    shell.focus_manager.release_focus();
+                    self.is_focused = false;
                 }
             }
             super::Event::MouseButtonUp { x, y, .. } => {
@@ -158,88 +171,137 @@ impl Widget for SelectableText {
                 }
             }
             super::Event::KeyDown { key } => {
-                let shift_down = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
-                let ctrl_down = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
-                let _handled = match key {
-                    x if x == VK_LEFT.0 as u32 => {
-                        if ctrl_down {
-                            self.move_word_left(shift_down);
-                        } else {
-                            self.move_left(shift_down);
-                        }
-                        true
-                    }
-                    x if x == VK_RIGHT.0 as u32 => {
-                        if ctrl_down {
-                            self.move_word_right(shift_down);
-                        } else {
-                            self.move_right(shift_down);
-                        }
-                        true
-                    }
-                    x if x == VK_UP.0 as u32 => {
-                        self.move_up(shift_down);
-                        true
-                    }
-                    x if x == VK_DOWN.0 as u32 => {
-                        self.move_down(shift_down);
-                        true
-                    }
-                    x if x == VK_HOME.0 as u32 => {
-                        self.move_to_start(shift_down);
-                        true
-                    }
-                    x if x == VK_END.0 as u32 => {
-                        self.move_to_end(shift_down);
-                        true
-                    }
-                    x if x == VK_BACK.0 as u32 => {
-                        if ctrl_down {
-                            let _ = self.backspace_word();
-                        } else {
-                            let _ = self.backspace();
-                        }
-                        true
-                    }
-                    x if x == VK_DELETE.0 as u32 => {
-                        if ctrl_down {
-                            let _ = self.delete_word_forward();
-                        } else {
-                            let _ = self.delete_forward();
-                        }
-                        true
-                    }
-                    x if x == VK_A.0 as u32 && ctrl_down => {
-                        self.select_all();
-                        true
-                    }
-                    x if x == VK_C.0 as u32 && ctrl_down => {
-                        if let Some(s) = self.selected_text() {
-                            let _ = set_clipboard_text(hwnd, &s);
-                        }
-                        true
-                    }
-                    x if x == VK_X.0 as u32 && ctrl_down => {
-                        if let Some(s) = self.selected_text() {
-                            let _ = set_clipboard_text(hwnd, &s);
-                            let _ = self.insert_str("");
-                        }
-                        true
-                    }
-                    x if x == VK_V.0 as u32 && ctrl_down => {
-                        if !self.is_composing() {
-                            if let Some(s) = get_clipboard_text(hwnd) {
-                                let _ = self.insert_str(&s);
+                if shell.focus_manager.is_focused(ui_key) {
+                    let shift_down = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
+                    let ctrl_down = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
+                    let _handled = match *key {
+                        x if x == VK_LEFT.0 as u32 => {
+                            if ctrl_down {
+                                self.move_word_left(shift_down);
+                            } else {
+                                self.move_left(shift_down);
                             }
+                            true
                         }
-                        true
-                    }
-                    _ => false,
-                };
+                        x if x == VK_RIGHT.0 as u32 => {
+                            if ctrl_down {
+                                self.move_word_right(shift_down);
+                            } else {
+                                self.move_right(shift_down);
+                            }
+                            true
+                        }
+                        x if x == VK_UP.0 as u32 => {
+                            self.move_up(shift_down);
+                            true
+                        }
+                        x if x == VK_DOWN.0 as u32 => {
+                            self.move_down(shift_down);
+                            true
+                        }
+                        x if x == VK_HOME.0 as u32 => {
+                            self.move_to_start(shift_down);
+                            true
+                        }
+                        x if x == VK_END.0 as u32 => {
+                            self.move_to_end(shift_down);
+                            true
+                        }
+                        x if x == VK_BACK.0 as u32 => {
+                            if ctrl_down {
+                                let _ = self.backspace_word();
+                            } else {
+                                let _ = self.backspace();
+                            }
+                            true
+                        }
+                        x if x == VK_DELETE.0 as u32 => {
+                            if ctrl_down {
+                                let _ = self.delete_word_forward();
+                            } else {
+                                let _ = self.delete_forward();
+                            }
+                            true
+                        }
+                        x if x == VK_A.0 as u32 && ctrl_down => {
+                            self.select_all();
+                            true
+                        }
+                        x if x == VK_C.0 as u32 && ctrl_down => {
+                            if let Some(s) = self.selected_text() {
+                                let _ = set_clipboard_text(hwnd, &s);
+                            }
+                            true
+                        }
+                        x if x == VK_X.0 as u32 && ctrl_down => {
+                            if let Some(s) = self.selected_text() {
+                                let _ = set_clipboard_text(hwnd, &s);
+                                let _ = self.insert_str("");
+                            }
+                            true
+                        }
+                        x if x == VK_V.0 as u32 && ctrl_down => {
+                            if !self.is_composing() {
+                                if let Some(s) = get_clipboard_text(hwnd) {
+                                    let _ = self.insert_str(&s);
+                                }
+                            }
+                            true
+                        }
+                        _ => false,
+                    };
+                }
             }
             super::Event::KeyUp { key: _ } => {}
             super::Event::Char { text } => {
-                let _ = self.insert_str(text.as_str());
+                if shell.focus_manager.is_focused(ui_key) {
+                    let _ = self.insert_str(text.as_str());
+                }
+            }
+
+            super::Event::ImeStartComposition => {
+                if shell.focus_manager.is_focused(ui_key) {
+                    self.ime_begin();
+
+                    if let Ok((c_x_dip, c_y_dip, h)) = self.caret_pos_dip(self.caret_active16()) {
+                        shell.request_input_method(
+                            hwnd,
+                            InputMethod::Enabled {
+                                position: PointDIP {
+                                    x_dip: x_dip + c_x_dip,
+                                    y_dip: y_dip + c_y_dip + h,
+                                },
+                            },
+                        );
+                    }
+                }
+            }
+            super::Event::ImeComposition { text, caret_units } => {
+                if shell.focus_manager.is_focused(ui_key) {
+                    self.ime_update(text.clone(), *caret_units);
+
+                    if let Ok((c_x_dip, c_y_dip, h)) = self.caret_pos_dip(self.caret_active16()) {
+                        shell.request_input_method(
+                            hwnd,
+                            InputMethod::Enabled {
+                                position: PointDIP {
+                                    x_dip: x_dip + c_x_dip,
+                                    y_dip: y_dip + c_y_dip + h,
+                                },
+                            },
+                        );
+                    }
+                }
+            }
+            super::Event::ImeCommit { text } => {
+                if shell.focus_manager.is_focused(ui_key) {
+                    self.ime_commit(text.clone()).expect("ime commit failed");
+                }
+            }
+            super::Event::ImeEndComposition => {
+                if shell.focus_manager.is_focused(ui_key) {
+                    self.ime_end();
+                }
             }
         }
     }
@@ -249,6 +311,14 @@ impl Widget for SelectableText {
 
         self.draw(renderer.render_target, renderer.brush, bounds, dt)
             .expect("draw failed");
+    }
+
+    fn cursor(&self, _key: UIKey, point: PointDIP, bounds: RectDIP) -> Option<super::Cursor> {
+        if point.within(bounds) {
+            Some(super::Cursor::IBeam)
+        } else {
+            None
+        }
     }
 }
 
@@ -267,6 +337,7 @@ impl SelectableText {
             selection_anchor: 0,
             selection_active: 0,
             is_dragging: false,
+            is_focused: false,
             caret_blink_timer: 0.0,
             caret_visible: true,
             sticky_x_dip: None,
@@ -463,7 +534,7 @@ impl SelectableText {
             // Draw caret if there's no selection (1 DIP wide bar)
             let sel_start = self.selection_anchor.min(self.selection_active);
             let sel_end = self.selection_anchor.max(self.selection_active);
-            if self.caret_visible {
+            if self.is_focused && self.caret_visible {
                 if self.is_composing() {
                     // let (start16, end16) = self.selection_range();
                     let ime_caret_pos = sel_start + self.ime_cursor16;

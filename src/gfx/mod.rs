@@ -5,6 +5,21 @@ use crate::dips_scale;
 pub mod circle_arc;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
+pub struct PointDIP {
+    pub x_dip: f32,
+    pub y_dip: f32,
+}
+
+impl PointDIP {
+    pub fn within(&self, rect: RectDIP) -> bool {
+        self.x_dip >= rect.x_dip
+            && self.x_dip <= rect.x_dip + rect.width_dip
+            && self.y_dip >= rect.y_dip
+            && self.y_dip <= rect.y_dip + rect.height_dip
+    }
+}
+
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct RectDIP {
     pub x_dip: f32,
     pub y_dip: f32,

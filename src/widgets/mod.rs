@@ -4,7 +4,11 @@ use windows::Win32::{
     Graphics::Direct2D::{ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush},
 };
 
-use crate::{gfx::RectDIP, layout::model::UIElement};
+use crate::{
+    Shell,
+    gfx::{PointDIP, RectDIP},
+    layout::model::{UIElement, UIKey},
+};
 
 pub mod selectable_text;
 pub mod spinner;
@@ -22,13 +26,10 @@ pub struct Limits {
 }
 
 pub enum Event {
-    // ImeStartComposition,
-    // ImeComposition {
-    //     text: SmolStr,
-    //     caret_units: u32,
-    //     position: OneShot
-    // },
-    // ImeEndComposition,
+    ImeStartComposition,
+    ImeComposition { text: String, caret_units: u32 },
+    ImeCommit { text: String },
+    ImeEndComposition,
     MouseButtonDown { x: f32, y: f32, click_count: u32 },
     MouseButtonUp { x: f32, y: f32, click_count: u32 },
     MouseMove { x: f32, y: f32 },
@@ -43,6 +44,11 @@ pub struct Renderer<'a> {
     pub brush: &'a ID2D1SolidColorBrush,
 }
 
+pub enum Cursor {
+    Arrow,
+    IBeam,
+}
+
 pub trait Widget: std::fmt::Debug {
     fn limits(&self, available: Limits) -> Limits;
 
@@ -53,7 +59,12 @@ pub trait Widget: std::fmt::Debug {
         dt: f64,
     );
 
-    fn update(&mut self, hwnd: HWND, event: Event, bounds: RectDIP);
+    fn update(&mut self, key: UIKey, hwnd: HWND, shell: &mut Shell, event: &Event, bounds: RectDIP);
+
+    #[allow(unused)]
+    fn cursor(&self, key: UIKey, point: PointDIP, bounds: RectDIP) -> Option<Cursor> {
+        None
+    }
 }
 
 impl UIElement {

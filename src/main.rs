@@ -1,13 +1,14 @@
 // #![windows_subsystem = "windows"]
 
 use raxis::dragdrop::start_text_drag;
+use raxis::gfx::PointDIP;
 use raxis::layout::model::{
     Axis, ElementContent, HorizontalAlignment, ScrollConfig, Sizing, UIElement, VerticalAlignment,
 };
 use raxis::layout::scroll_manager::{ScrollPosition, ScrollStateManager};
-use raxis::layout::{self, OwnedUITree, compute_scrollbar_geom};
-use raxis::w_id;
-use raxis::widgets::{Event, Renderer, Widget};
+use raxis::layout::{self, OwnedUITree, compute_scrollbar_geom, visitors};
+use raxis::widgets::{Cursor, Event, Renderer, Widget};
+use raxis::{Shell, w_id};
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
@@ -340,11 +341,14 @@ struct AppState {
     timing_info: DWM_TIMING_INFO,
     // spinner: Spinner,
     ui_tree: OwnedUITree,
+
+    shell: Shell,
+
     scroll_state_manager: ScrollStateManager,
 
     // Selectable text widget encapsulating layout, selection, and bounds
     // text_widget: SelectableText,
-    text_widget_ui_key: DefaultKey,
+    // text_widget_ui_key: DefaultKey,
 
     // Keep the window's OLE drop target alive for the lifetime of the window
     drop_target: Option<IDropTarget>,
@@ -387,11 +391,7 @@ impl AppState {
             let spinner = Spinner::new(6.0, 200.0, 1.6, 64.0);
 
             // Build selectable text widget using shared DWrite factory/format
-            let text_widget = SelectableText::new(
-                dwrite_factory.clone(),
-                text_format.clone(),
-                TEXT.to_string(),
-            );
+            // let text_widget = ;
 
             let mut ui_tree = OwnedUITree::new();
 
@@ -426,6 +426,9 @@ impl AppState {
             let child = ui_tree.insert(UIElement {
                 id: Some(w_id!()),
 
+                direction: layout::model::Direction::TopToBottom,
+                child_gap: 16.0,
+
                 background_color: Some(0xFFFF00FF),
 
                 scroll: Some(ScrollConfig {
@@ -439,6 +442,7 @@ impl AppState {
                 }),
 
                 horizontal_alignment: HorizontalAlignment::Center,
+                vertical_alignment: VerticalAlignment::Center,
 
                 width: Sizing::grow(),
                 height: Sizing::grow(),
@@ -463,7 +467,39 @@ impl AppState {
                 //         )
                 //         .ok(),
                 // }),
-                content: Some(ElementContent::Widget(Box::new(text_widget))),
+                content: Some(ElementContent::Widget(Box::new(SelectableText::new(
+                    dwrite_factory.clone(),
+                    text_format.clone(),
+                    TEXT.to_string(),
+                )))),
+
+                color: Some(0x6030F0FF),
+
+                ..Default::default()
+            });
+            ui_tree[child].children.push(text_widget_ui_key);
+
+            let text_widget_ui_key = ui_tree.insert(UIElement {
+                id: Some(w_id!()),
+                background_color: Some(0x00FFFFFF),
+
+                vertical_alignment: VerticalAlignment::Center,
+
+                // content: Some(ElementContent::Text {
+                //     layout: dwrite_factory
+                //         .CreateTextLayout(
+                //             &w!("Hello, World!").as_wide(),
+                //             Some(&text_format),
+                //             f32::INFINITY,
+                //             f32::INFINITY,
+                //         )
+                //         .ok(),
+                // }),
+                content: Some(ElementContent::Widget(Box::new(SelectableText::new(
+                    dwrite_factory.clone(),
+                    text_format.clone(),
+                    TEXT.to_string(),
+                )))),
 
                 color: Some(0x6030F0FF),
 
@@ -509,6 +545,8 @@ impl AppState {
             });
             ui_tree[root].children.push(child);
 
+            let shell = Shell::new();
+
             Ok(Self {
                 d2d_factory,
                 _dwrite_factory: dwrite_factory,
@@ -518,6 +556,7 @@ impl AppState {
                 clock: 0.0,
                 timing_info: DWM_TIMING_INFO::default(),
                 ui_tree,
+                shell,
                 scroll_state_manager: ScrollStateManager::default(),
                 drop_target: None,
                 pending_high_surrogate: None,
@@ -525,7 +564,6 @@ impl AppState {
                 last_click_pos: POINT { x: 0, y: 0 },
                 click_count: 0,
                 scroll_drag: None,
-                text_widget_ui_key,
             })
         }
     }
@@ -761,108 +799,115 @@ impl AppState {
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     unsafe {
         match msg {
-            // WM_IME_STARTCOMPOSITION => {
-            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
-            //         state.text_widget.ime_begin();
-            //         // Position IME window at current caret
-            //         let to_dip = dips_scale(hwnd);
-            //         if let Ok((x_dip, y_dip, h)) = state
-            //             .text_widget
-            //             .caret_pos_dip(state.text_widget.caret_active16())
-            //         {
-            //             let x_px = (x_dip / to_dip).round() as i32;
-            //             let y_px = ((y_dip + h) / to_dip).round() as i32;
-            //             let himc = ImmGetContext(hwnd);
-            //             if !himc.is_invalid() {
-            //                 let cf = CANDIDATEFORM {
-            //                     dwStyle: CFS_POINT,
-            //                     ptCurrentPos: POINT { x: x_px, y: y_px },
-            //                     rcArea: RECT::default(),
-            //                     dwIndex: 0,
-            //                 };
-            //                 let _ = ImmSetCandidateWindow(himc, &cf);
+            WM_IME_STARTCOMPOSITION => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    // state.text_widget.ime_begin();
+                    // // Position IME window at current caret
 
-            //                 let _ = ImmReleaseContext(hwnd, himc);
-            //             }
-            //         }
-            //         let _ = InvalidateRect(Some(hwnd), None, false);
-            //     }
-            //     LRESULT(0)
-            // }
-            // WM_IME_COMPOSITION => {
-            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
-            //         let himc = ImmGetContext(hwnd);
-            //         if !himc.is_invalid() {
-            //             let flags = lparam.0 as u32;
+                    // if let Ok((x_dip, y_dip, h)) = state
+                    //     .text_widget
+                    //     .caret_pos_dip(state.text_widget.caret_active16())
+                    // {
+                    //     let x_px = (x_dip / to_dip).round() as i32;
+                    //     let y_px = ((y_dip + h) / to_dip).round() as i32;
+                    // }
+                    // let _ = InvalidateRect(Some(hwnd), None, false);
+                    state.shell.dispatch_event(
+                        hwnd,
+                        &mut state.ui_tree,
+                        Event::ImeStartComposition,
+                    );
+                }
+                LRESULT(0)
+            }
+            WM_IME_COMPOSITION => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    let himc = ImmGetContext(hwnd);
+                    if !himc.is_invalid() {
+                        let flags = lparam.0 as u32;
 
-            //             // Handle result string (committed text)
-            //             if flags & GCS_RESULTSTR.0 != 0 {
-            //                 let bytes = ImmGetCompositionStringW(himc, GCS_RESULTSTR, None, 0);
-            //                 if bytes > 0 {
-            //                     let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
-            //                     let _ = ImmGetCompositionStringW(
-            //                         himc,
-            //                         GCS_RESULTSTR,
-            //                         Some(buf.as_mut_ptr() as *mut _),
-            //                         bytes as u32,
-            //                     );
-            //                     let s = String::from_utf16_lossy(&buf);
-            //                     let _ = state.text_widget.ime_commit(s);
-            //                 }
-            //             }
+                        // Handle result string (committed text)
+                        if flags & GCS_RESULTSTR.0 != 0 {
+                            let bytes = ImmGetCompositionStringW(himc, GCS_RESULTSTR, None, 0);
+                            if bytes > 0 {
+                                let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
+                                let _ = ImmGetCompositionStringW(
+                                    himc,
+                                    GCS_RESULTSTR,
+                                    Some(buf.as_mut_ptr() as *mut _),
+                                    bytes as u32,
+                                );
+                                let s = String::from_utf16_lossy(&buf);
 
-            //             // Handle ongoing composition string
-            //             if flags & GCS_COMPSTR.0 != 0 {
-            //                 let bytes = ImmGetCompositionStringW(himc, GCS_COMPSTR, None, 0);
-            //                 let mut comp = String::new();
-            //                 if bytes > 0 {
-            //                     let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
-            //                     let _ = ImmGetCompositionStringW(
-            //                         himc,
-            //                         GCS_COMPSTR,
-            //                         Some(buf.as_mut_ptr() as *mut _),
-            //                         bytes as u32,
-            //                     );
-            //                     comp = String::from_utf16_lossy(&buf);
-            //                 }
-            //                 // Caret within comp string (UTF-16 units)
-            //                 let caret_units = {
-            //                     let v = ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0);
-            //                     if v < 0 { 0 } else { v as u32 }
-            //                 };
-            //                 state.text_widget.ime_update(comp, caret_units);
+                                state.shell.dispatch_event(
+                                    hwnd,
+                                    &mut state.ui_tree,
+                                    Event::ImeComposition {
+                                        text: s.clone(),
+                                        caret_units: 0,
+                                    },
+                                );
 
-            //                 // Reposition IME window at composition caret
-            //                 let to_dip = dips_scale(hwnd);
-            //                 if let Ok((x_dip, y_dip, h)) = state.text_widget.ime_caret_pos_dip() {
-            //                     let x_px = (x_dip / to_dip).round() as i32;
-            //                     let y_px = ((y_dip + h) / to_dip).round() as i32;
-            //                     let cf = CANDIDATEFORM {
-            //                         dwStyle: CFS_FORCE_POSITION,
-            //                         ptCurrentPos: POINT { x: x_px, y: y_px },
-            //                         rcArea: RECT::default(),
-            //                         dwIndex: 0,
-            //                     };
-            //                     let _ = ImmSetCandidateWindow(himc, &cf);
-            //                 }
+                                state.shell.dispatch_event(
+                                    hwnd,
+                                    &mut state.ui_tree,
+                                    Event::ImeCommit { text: s.clone() },
+                                );
+                            }
+                        }
+                        // Handle ongoing composition string
+                        else if flags & GCS_COMPSTR.0 != 0 {
+                            let bytes = ImmGetCompositionStringW(himc, GCS_COMPSTR, None, 0);
+                            let mut comp = String::new();
+                            if bytes > 0 {
+                                let mut buf: Vec<u16> = vec![0; (bytes as usize) / 2];
+                                let _ = ImmGetCompositionStringW(
+                                    himc,
+                                    GCS_COMPSTR,
+                                    Some(buf.as_mut_ptr() as *mut _),
+                                    bytes as u32,
+                                );
+                                comp = String::from_utf16_lossy(&buf);
+                            }
+                            // Caret within comp string (UTF-16 units)
+                            let caret_units = {
+                                let v = ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0);
+                                if v < 0 { 0 } else { v as u32 }
+                            };
+                            // state.text_widget.ime_update(comp, caret_units);
+                            state.shell.dispatch_event(
+                                hwnd,
+                                &mut state.ui_tree,
+                                Event::ImeComposition {
+                                    text: comp.clone(),
+                                    caret_units,
+                                },
+                            );
 
-            //                 let _ = InvalidateRect(Some(hwnd), None, false);
-            //             }
+                            let _ = InvalidateRect(Some(hwnd), None, false);
+                        }
 
-            //             let _ = ImmReleaseContext(hwnd, himc);
-            //         }
-            //     }
-            //     LRESULT(0)
-            // }
-            // WM_IME_ENDCOMPOSITION => {
-            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
-            //         state.text_widget.ime_end();
-            //         let _ = InvalidateRect(Some(hwnd), None, false);
-            //     }
-            //     LRESULT(0)
-            // }
+                        let _ = ImmReleaseContext(hwnd, himc);
+                    }
+                }
+                LRESULT(0)
+            }
+            WM_IME_ENDCOMPOSITION => {
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    state
+                        .shell
+                        .dispatch_event(hwnd, &mut state.ui_tree, Event::ImeEndComposition);
+
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
+                LRESULT(0)
+            }
             WM_LBUTTONDOWN => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    // Capture mouse & keyboard input
+                    let _ = SetFocus(Some(hwnd));
+                    let _ = SetCapture(hwnd);
+
                     // Extract mouse position in client pixels
                     let xi = (lparam.0 & 0xFFFF) as i16 as i32;
                     let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
@@ -899,29 +944,19 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         state.click_count = 1;
                     }
 
-                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
-
-                    let widget = state.ui_tree[state.text_widget_ui_key]
-                        .content
-                        .as_mut()
-                        .unwrap()
-                        .unwrap_widget();
-                    widget.update(
+                    state.shell.dispatch_event(
                         hwnd,
+                        &mut state.ui_tree,
                         Event::MouseButtonDown {
                             x,
                             y,
                             click_count: state.click_count,
                         },
-                        bounds,
                     );
 
                     state.last_click_time = now;
                     state.last_click_pos = POINT { x: xi, y: yi };
 
-                    // Ensure we receive keyboard input
-                    let _ = SetFocus(Some(hwnd));
-                    let _ = SetCapture(hwnd);
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
@@ -1032,15 +1067,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     //     let _ = InvalidateRect(Some(hwnd), None, false);
                     // }
 
-                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
-                    let widget = state.ui_tree[state.text_widget_ui_key]
-                        .content
-                        .as_mut()
-                        .unwrap()
-                        .unwrap_widget();
-                    // state
-                    //     .text_widget
-                    widget.update(hwnd, Event::MouseMove { x, y }, bounds);
+                    state
+                        .shell
+                        .dispatch_event(hwnd, &mut state.ui_tree, Event::MouseMove { x, y });
                 }
                 LRESULT(0)
             }
@@ -1063,22 +1092,17 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     //     state.text_widget.end_drag(0);
                     // }
 
-                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
-                    let widget = state.ui_tree[state.text_widget_ui_key]
-                        .content
-                        .as_mut()
-                        .unwrap()
-                        .unwrap_widget();
-                    widget.update(
+                    state.shell.dispatch_event(
                         hwnd,
+                        &mut state.ui_tree,
                         Event::MouseButtonUp {
                             x,
                             y,
                             click_count: state.click_count,
                         },
-                        bounds,
                     );
 
+                    // Release mouse capture
                     let _ = ReleaseCapture();
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
@@ -1152,19 +1176,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         }
                     }
                     if !to_insert.is_empty() {
-                        // let _ = state.text_widget.insert_str(&to_insert);
-                        let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
-                        let widget = state.ui_tree[state.text_widget_ui_key]
-                            .content
-                            .as_mut()
-                            .unwrap()
-                            .unwrap_widget();
-                        widget.update(
+                        state.shell.dispatch_event(
                             hwnd,
+                            &mut state.ui_tree,
                             Event::Char {
                                 text: to_insert.into(),
                             },
-                            bounds,
                         );
 
                         let _ = InvalidateRect(Some(hwnd), None, false);
@@ -1176,13 +1193,11 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     let vk = wparam.0 as u32;
 
-                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
-                    let widget = state.ui_tree[state.text_widget_ui_key]
-                        .content
-                        .as_mut()
-                        .unwrap()
-                        .unwrap_widget();
-                    widget.update(hwnd, Event::KeyDown { key: vk }, bounds);
+                    state.shell.dispatch_event(
+                        hwnd,
+                        &mut state.ui_tree,
+                        Event::KeyDown { key: vk },
+                    );
 
                     // if handled {
                     let _ = InvalidateRect(Some(hwnd), None, false);
@@ -1195,13 +1210,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     let vk = wparam.0 as u32;
 
-                    let bounds = state.ui_tree[state.text_widget_ui_key].bounds();
-                    let widget = state.ui_tree[state.text_widget_ui_key]
-                        .content
-                        .as_mut()
-                        .unwrap()
-                        .unwrap_widget();
-                    widget.update(hwnd, Event::KeyUp { key: vk }, bounds);
+                    state
+                        .shell
+                        .dispatch_event(hwnd, &mut state.ui_tree, Event::KeyUp { key: vk });
 
                     // if handled {
                     let _ = InvalidateRect(Some(hwnd), None, false);
@@ -1284,27 +1295,54 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         let to_dip = dips_scale(hwnd);
                         let x_dip = (pt.x as f32) * to_dip;
                         let y_dip = (pt.y as f32) * to_dip;
+                        let point = PointDIP { x_dip, y_dip };
 
-                        let widget = &state.ui_tree[state.text_widget_ui_key];
+                        // let widget = &state.ui_tree[state.text_widget_ui_key];
 
-                        let RectDIP {
-                            x_dip: left,
-                            y_dip: top,
-                            width_dip: width,
-                            height_dip: height,
-                        } = widget.bounds(); //state.text_widget.metric_bounds();
-                        if x_dip >= left
-                            && y_dip >= top
-                            && x_dip < left + width
-                            && y_dip < top + height
-                        {
-                            if let Some(h) = IBEAM_CURSOR
-                                .get_or_init(|| LoadCursorW(None, IDC_IBEAM).ok().map(SafeCursor))
-                                .as_ref()
-                            {
-                                let _ = SetCursor(Some(h.0));
-                                return LRESULT(1);
+                        // let RectDIP {
+                        //     x_dip: left,
+                        //     y_dip: top,
+                        //     width_dip: width,
+                        //     height_dip: height,
+                        // } = widget.bounds(); //state.text_widget.metric_bounds();
+                        // if x_dip >= left
+                        //     && y_dip >= top
+                        //     && x_dip < left + width
+                        //     && y_dip < top + height
+                        // {
+                        let mut cursor = None;
+                        let root = state.ui_tree.keys().next().unwrap();
+                        visitors::visit_reverse_bfs(
+                            &mut state.ui_tree,
+                            root,
+                            |slots, element, _| {
+                                let bounds = slots[element].bounds();
+                                if let Some(ElementContent::Widget(ref widget)) =
+                                    slots[element].content
+                                {
+                                    if point.within(bounds) {
+                                        cursor = widget.cursor(element, point, bounds);
+                                    }
+                                }
+                            },
+                        );
+
+                        if let Some(cursor) = cursor {
+                            // if let Some(h) = IBEAM_CURSOR
+                            //     .get_or_init(|| LoadCursorW(None, IDC_IBEAM).ok().map(SafeCursor))
+                            //     .as_ref()
+                            // {
+                            // let _ = SetCursor(Some(h.0));
+                            match cursor {
+                                Cursor::Arrow => {
+                                    let _ = SetCursor(Some(LoadCursorW(None, IDC_ARROW).unwrap()));
+                                }
+                                Cursor::IBeam => {
+                                    let _ = SetCursor(Some(LoadCursorW(None, IDC_IBEAM).unwrap()));
+                                }
                             }
+
+                            return LRESULT(1);
                         }
                     }
                 }

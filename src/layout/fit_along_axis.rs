@@ -1,13 +1,13 @@
 use crate::{
     layout::{
-        UITree,
+        BorrowedUITree,
         model::{Axis, Direction, ElementContent, Sizing, UIElement, UIKey},
         visitors,
     },
     widgets::{Limits, Size},
 };
 
-pub fn fit_along_axis(slots: UITree<'_>, root: UIKey, axis: Axis) {
+pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
     // Helper to check scroll flag for an axis
     fn is_scroll_enabled(el: &UIElement, axis: Axis) -> bool {
         el.scroll

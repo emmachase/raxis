@@ -19,7 +19,7 @@ pub mod model;
 pub mod scroll_manager;
 
 mod float;
-mod visitors;
+pub mod visitors;
 
 mod fit_along_axis;
 mod grow_and_shrink_along_axis;
@@ -29,17 +29,17 @@ use fit_along_axis::fit_along_axis;
 use grow_and_shrink_along_axis::grow_and_shrink_along_axis;
 
 pub type OwnedUITree = SlotMap<UIKey, UIElement>;
-pub type UITree<'a> = &'a mut OwnedUITree;
+pub type BorrowedUITree<'a> = &'a mut OwnedUITree;
 
 #[allow(dead_code)]
-fn set_parent_references(slots: UITree<'_>, root: UIKey) {
+fn set_parent_references(slots: BorrowedUITree<'_>, root: UIKey) {
     visitors::visit_bfs(slots, root, |slots, key, parent| {
         slots[key].parent = parent;
     });
 }
 
 #[allow(dead_code)]
-fn propagate_inherited_properties(slots: UITree<'_>, root: UIKey) {
+fn propagate_inherited_properties(slots: BorrowedUITree<'_>, root: UIKey) {
     visitors::visit_bfs(slots, root, |slots, key, parent| {
         if let Some(parent_key) = parent {
             if slots[key].color.is_none() && slots[parent_key].color.is_some() {
@@ -51,7 +51,7 @@ fn propagate_inherited_properties(slots: UITree<'_>, root: UIKey) {
     });
 }
 
-fn wrap_text(slots: UITree<'_>, root: UIKey) {
+fn wrap_text(slots: BorrowedUITree<'_>, root: UIKey) {
     visitors::visit_bfs(slots, root, |slots, key, _parent| {
         if let Some(content) = slots[key].content.as_ref() {
             if let ElementContent::Text { layout, .. } = content {
@@ -72,7 +72,11 @@ fn wrap_text(slots: UITree<'_>, root: UIKey) {
     });
 }
 
-pub fn layout(slots: UITree<'_>, root: UIKey, scroll_state_manager: &mut ScrollStateManager) {
+pub fn layout(
+    slots: BorrowedUITree<'_>,
+    root: UIKey,
+    scroll_state_manager: &mut ScrollStateManager,
+) {
     set_parent_references(slots, root);
     propagate_inherited_properties(slots, root);
 
@@ -96,7 +100,7 @@ pub fn paint(
     // rt: &ID2D1HwndRenderTarget,
     // brush: &ID2D1SolidColorBrush,
     renderer: &Renderer,
-    slots: UITree<'_>,
+    slots: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
     offset_x: f32,
@@ -177,7 +181,7 @@ pub fn paint(
                 }
             }
         },
-        Some(&mut |slots: UITree<'_>, key, _parent| {
+        Some(&mut |slots: BorrowedUITree<'_>, key, _parent| {
             let element = &slots[key];
 
             let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());

@@ -1,11 +1,11 @@
 use crate::layout::{
-    UITree,
+    BorrowedUITree,
     float::EpsFloatCmp,
     model::{Axis, Direction, Sizing, UIKey},
     visitors,
 };
 
-pub fn grow_and_shrink_along_axis(slots: UITree<'_>, root: UIKey, axis: Axis) {
+pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
     let x_axis = matches!(axis, Axis::X);
 
     visitors::visit_bfs(slots, root, |slots, key, _parent| {
