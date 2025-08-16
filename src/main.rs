@@ -10,7 +10,7 @@ use raxis::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
 };
 use raxis::widgets::integrated_drop_target::IntegratedDropTarget;
-use raxis::widgets::{Cursor, Event, Modifiers, Renderer};
+use raxis::widgets::{Cursor, DragEvent, Event, Modifiers, Renderer};
 use raxis::{Shell, w_id};
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
@@ -909,46 +909,46 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                             let bounds = element.bounds();
                             if point.within(bounds)
                                 && let Some(ref config) = element.scroll
-                                    && let Some(element_id) = element.id
+                                && let Some(element_id) = element.id
+                            {
+                                // If the point is within the scrollable area, scroll
+                                if config.vertical == Some(true)
+                                    && can_scroll_further(
+                                        element,
+                                        axis,
+                                        if wheel_delta > 0.0 {
+                                            ScrollDirection::Positive
+                                        } else {
+                                            ScrollDirection::Negative
+                                        },
+                                        &state.scroll_state_manager,
+                                    )
                                 {
-                                    // If the point is within the scrollable area, scroll
-                                    if config.vertical == Some(true)
-                                        && can_scroll_further(
-                                            element,
-                                            axis,
-                                            if wheel_delta > 0.0 {
-                                                ScrollDirection::Positive
-                                            } else {
-                                                ScrollDirection::Negative
-                                            },
-                                            &state.scroll_state_manager,
-                                        ) {
-                                            let mut scroll_lines = 3;
-                                            SystemParametersInfoW(
-                                                SPI_GETWHEELSCROLLLINES,
-                                                0,
-                                                Some(&mut scroll_lines as *mut i32 as *mut _),
-                                                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-                                            )
-                                            .unwrap();
+                                    let mut scroll_lines = 3;
+                                    SystemParametersInfoW(
+                                        SPI_GETWHEELSCROLLLINES,
+                                        0,
+                                        Some(&mut scroll_lines as *mut i32 as *mut _),
+                                        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+                                    )
+                                    .unwrap();
 
-                                            let wheel_delta = wheel_delta
-                                                * LINE_HEIGHT as f32
-                                                * scroll_lines as f32;
+                                    let wheel_delta =
+                                        wheel_delta * LINE_HEIGHT as f32 * scroll_lines as f32;
 
-                                            let (delta_x, delta_y) = if axis == Axis::Y {
-                                                (0.0, wheel_delta)
-                                            } else {
-                                                (wheel_delta, 0.0)
-                                            };
+                                    let (delta_x, delta_y) = if axis == Axis::Y {
+                                        (0.0, wheel_delta)
+                                    } else {
+                                        (wheel_delta, 0.0)
+                                    };
 
-                                            state.scroll_state_manager.update_scroll_position(
-                                                element_id, delta_x, delta_y,
-                                            );
+                                    state
+                                        .scroll_state_manager
+                                        .update_scroll_position(element_id, delta_x, delta_y);
 
-                                            return VisitAction::Exit;
-                                        }
+                                    return VisitAction::Exit;
                                 }
+                            }
 
                             VisitAction::Continue
                         });
@@ -1020,8 +1020,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     } else if is_low {
                         if let Some(high) = state.pending_high_surrogate.take() {
                             let u = 0x10000
-                                + (((high as u32 - 0xD800) << 10)
-                                    | ((code - 0xDC00) & 0x3FF));
+                                + (((high as u32 - 0xD800) << 10) | ((code - 0xDC00) & 0x3FF));
                             if let Some(ch) = char::from_u32(u) {
                                 to_insert.push(ch);
                             }
@@ -1115,10 +1114,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                     &mut app_state.ui_tree,
                                     &event,
                                     match &event {
-                                        Event::DragEnter { drag_info }
-                                        | Event::DragOver { drag_info }
-                                        | Event::Drop { drag_info } => drag_info.position,
-                                        Event::DragLeave => PointDIP {
+                                        DragEvent::DragEnter { drag_info }
+                                        | DragEvent::DragOver { drag_info }
+                                        | DragEvent::Drop { drag_info } => drag_info.position,
+                                        DragEvent::DragLeave => PointDIP {
                                             x_dip: 0.0,
                                             y_dip: 0.0,
                                         }, // Position not needed for DragLeave

@@ -14,7 +14,7 @@ use crate::{
         BorrowedUITree,
         visitors::{self, VisitAction},
     },
-    widgets::{DragDropWidget, DropResult, Event, Operation, dispatch_operation},
+    widgets::{DragEvent, DropResult, Event, Operation, WidgetDragDropTarget, dispatch_operation},
 };
 
 pub mod clipboard;
@@ -68,41 +68,6 @@ impl Shell {
     pub fn dispatch_event(&mut self, hwnd: HWND, ui_tree: BorrowedUITree, event: Event) {
         self.event_captured = false;
 
-        // Handle drag/drop events specially - they need to find the right widget based on position
-        match &event {
-            Event::DragEnter { drag_info }
-            | Event::DragOver { drag_info }
-            | Event::Drop { drag_info } => {
-                if let Some(_result) = self.dispatch_drag_event(ui_tree, &event, drag_info.position)
-                {
-                    // Drag event was handled
-                    return;
-                }
-            }
-            Event::DragLeave => {
-                // Call drag_leave on the widget that currently has drag focus
-                if let Some(drag_widget_key) = self.current_drag_widget {
-                    if let Some(element) = ui_tree.get_mut(drag_widget_key) {
-                        let bounds = element.bounds();
-                        if let Some(layout::model::ElementContent::Widget(ref mut widget)) =
-                            element.content
-                        {
-                            // Try to cast to TextInput specifically (we can extend this later)
-                            if let Some(text_input) = widget
-                                .as_any_mut()
-                                .downcast_mut::<crate::widgets::text_input::TextInput>(
-                            ) {
-                                text_input.drag_leave(bounds);
-                            }
-                        }
-                    }
-                }
-                self.current_drag_widget = None;
-                return;
-            }
-            _ => {}
-        }
-
         // Handle regular events with reverse BFS traversal
         if let Some(root) = ui_tree.keys().next() {
             visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _| {
@@ -133,7 +98,7 @@ impl Shell {
     pub fn dispatch_drag_event(
         &mut self,
         ui_tree: BorrowedUITree,
-        event: &Event,
+        event: &DragEvent,
         position: gfx::PointDIP,
     ) -> Option<DropResult> {
         if let Some(root) = ui_tree.keys().next() {
@@ -142,7 +107,7 @@ impl Shell {
             let prev_drag_widget = self.current_drag_widget;
 
             // First, handle drag_leave if we're moving away from a widget
-            if matches!(event, Event::DragOver { .. }) && prev_drag_widget.is_some() {
+            if matches!(event, DragEvent::DragOver { .. }) && prev_drag_widget.is_some() {
                 // Check if we need to call drag_leave on the previous widget
                 let mut should_call_drag_leave = false;
                 let mut found_new_widget = false;
@@ -173,10 +138,7 @@ impl Shell {
                                 ref mut prev_widget,
                             )) = prev_element.content
                             {
-                                if let Some(prev_text_input) = prev_widget
-                                    .as_any_mut()
-                                    .downcast_mut::<crate::widgets::text_input::TextInput>(
-                                ) {
+                                if let Some(prev_text_input) = prev_widget.as_drop_target() {
                                     prev_text_input.drag_leave(prev_bounds);
                                 }
                             }
@@ -191,26 +153,22 @@ impl Shell {
                 let bounds = element.bounds();
 
                 // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
-                if position.within(bounds) || matches!(event, Event::DragLeave) {
+                if position.within(bounds) || matches!(event, DragEvent::DragLeave) {
                     if let Some(layout::model::ElementContent::Widget(ref mut widget)) =
                         element.content
                     {
-                        // Try to cast to TextInput specifically (we can extend this later)
-                        if let Some(text_input) = widget
-                            .as_any_mut()
-                            .downcast_mut::<crate::widgets::text_input::TextInput>(
-                        ) {
+                        if let Some(text_input) = widget.as_drop_target() {
                             new_drag_widget = Some(key);
 
                             match event {
-                                Event::DragEnter { drag_info } => {
+                                DragEvent::DragEnter { drag_info } => {
                                     let effect = text_input.drag_enter(drag_info, bounds);
                                     result = Some(DropResult {
                                         effect,
                                         handled: true,
                                     });
                                 }
-                                Event::DragOver { drag_info } => {
+                                DragEvent::DragOver { drag_info } => {
                                     if prev_drag_widget != Some(key) {
                                         // Moving to a new widget, call drag_enter
                                         let effect = text_input.drag_enter(drag_info, bounds);
@@ -227,18 +185,17 @@ impl Shell {
                                         });
                                     }
                                 }
-                                Event::Drop { drag_info } => {
+                                DragEvent::Drop { drag_info } => {
                                     result = Some(
                                         text_input.drop(element.id, key, self, drag_info, bounds),
                                     );
                                 }
-                                Event::DragLeave => {
+                                DragEvent::DragLeave => {
                                     text_input.drag_leave(bounds);
                                 }
-                                _ => {}
                             }
 
-                            if !matches!(event, Event::DragLeave) {
+                            if !matches!(event, DragEvent::DragLeave) {
                                 return VisitAction::Exit;
                             }
                         }

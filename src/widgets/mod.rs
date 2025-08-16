@@ -14,7 +14,7 @@ use crate::{
     },
 };
 
-pub use dragdrop::{DragData, DragDropWidget, DragInfo, DropResult};
+pub use dragdrop::{DragData, DragInfo, DropResult, WidgetDragDropTarget};
 
 pub mod dragdrop;
 pub mod integrated_drop_target;
@@ -82,24 +82,13 @@ pub enum Event {
     Char {
         text: SmolStr,
     },
-    // Drag and drop events
-    DragEnter {
-        drag_info: DragInfo,
-    },
-    DragOver {
-        drag_info: DragInfo,
-    },
+}
+
+pub enum DragEvent {
+    DragEnter { drag_info: DragInfo },
+    DragOver { drag_info: DragInfo },
     DragLeave,
-    Drop {
-        drag_info: DragInfo,
-    },
-    DragStart {
-        data: DragData,
-    },
-    DragEnd {
-        data: DragData,
-        effect: windows::Win32::System::Ole::DROPEFFECT,
-    },
+    Drop { drag_info: DragInfo },
 }
 
 pub struct Renderer<'a> {
@@ -151,7 +140,9 @@ pub trait Widget: std::fmt::Debug {
     fn operate(&mut self, id: Option<u64>, key: UIKey, operation: &dyn Operation) {}
 
     /// Allow downcasting to concrete widget types
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+    // fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+
+    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget> { None }
 }
 
 // pub trait Focusable {

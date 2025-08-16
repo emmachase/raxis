@@ -21,7 +21,7 @@ use windows_numerics::Vector2;
 use crate::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::model::UIKey;
-use crate::widgets::{DragData, DragDropWidget, DragInfo, DropResult, Renderer, Widget};
+use crate::widgets::{DragData, DragInfo, DropResult, Renderer, Widget, WidgetDragDropTarget};
 use crate::{InputMethod, Shell};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -186,9 +186,9 @@ impl Widget for TextInput {
                 if self.is_dragging && self.can_drag_drop && !self.has_started_ole_drag {
                     // Check if we have selected text and the drag started within the selection
                     if let Some(start_pos) = self.drag_start_position {
-                        if let Some(drag_data) = self.can_drag(start_pos) {
+                        if let Some(drag_data) = self.can_ole_drag(start_pos) {
                             // Start OLE drag operation
-                            self.drag_start(&drag_data);
+                            self.handoff_ole_drag(&drag_data);
 
                             return; // Don't update text selection when starting OLE drag
                         }
@@ -383,12 +383,12 @@ impl Widget for TextInput {
         }
     }
 
-    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
-        self
+    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget> {
+        Some(self)
     }
 }
 
-impl DragDropWidget for TextInput {
+impl WidgetDragDropTarget for TextInput {
     fn drag_enter(
         &mut self,
         drag_info: &DragInfo,
@@ -463,42 +463,6 @@ impl DragDropWidget for TextInput {
                 }
             }
         }
-    }
-
-    fn can_drag(&self, position: PointDIP) -> Option<DragData> {
-        // Check if we have selected text and the position is within the selection
-        let (sel_start, sel_end) = self.selection_range();
-        if sel_start != sel_end {
-            if let Ok(idx) = self.hit_test_index(position.x_dip, position.y_dip) {
-                if idx >= sel_start && idx <= sel_end {
-                    if let Some(selected_text) = self.selected_text() {
-                        return Some(DragData::Text(selected_text));
-                    }
-                }
-            }
-        }
-        None
-    }
-
-    fn drag_start(&mut self, data: &DragData) {
-        // Mark that we can perform drag-to-move
-        self.set_can_drag_drop(true);
-
-        // Start OLE drag operation with the selected text
-        let DragData::Text(text) = data;
-        self.has_started_ole_drag = true;
-        if let Ok(effect) = start_text_drag(text, true) {
-            self.drag_end(data, effect);
-        }
-    }
-
-    fn drag_end(&mut self, _data: &DragData, effect: windows::Win32::System::Ole::DROPEFFECT) {
-        // If it was a move operation, delete the selected text
-        if (effect.0 & DROPEFFECT_MOVE.0) != 0 && self.can_drag_drop() {
-            let _ = self.insert_str("");
-        }
-
-        self.reset_drag_state();
     }
 }
 
@@ -798,6 +762,38 @@ impl TextInput {
 
     fn clear_sticky_x(&mut self) {
         self.sticky_x_dip = None;
+    }
+
+    fn can_ole_drag(&self, position: PointDIP) -> Option<DragData> {
+        // Check if we have selected text and the position is within the selection
+        let (sel_start, sel_end) = self.selection_range();
+        if sel_start != sel_end {
+            if let Ok(idx) = self.hit_test_index(position.x_dip, position.y_dip) {
+                if idx >= sel_start && idx <= sel_end {
+                    if let Some(selected_text) = self.selected_text() {
+                        return Some(DragData::Text(selected_text));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn handoff_ole_drag(&mut self, data: &DragData) {
+        // Mark that we can perform drag-to-move
+        self.set_can_drag_drop(true);
+
+        // Start OLE drag operation with the selected text
+        let DragData::Text(text) = data;
+        self.has_started_ole_drag = true;
+        if let Ok(effect) = start_text_drag(text, true) {
+            // If it was a move operation, delete the selected text
+            if (effect.0 & DROPEFFECT_MOVE.0) != 0 && self.can_drag_drop() {
+                let _ = self.insert_str("");
+            }
+
+            self.reset_drag_state();
+        }
     }
 
     // Drag/select helpers

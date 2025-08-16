@@ -40,7 +40,7 @@ impl Default for DropResult {
 }
 
 /// Trait for widgets that can participate in drag and drop operations
-pub trait DragDropWidget {
+pub trait WidgetDragDropTarget {
     /// Called when a drag operation enters the widget's bounds
     /// Returns the drop effect that would be applied if dropped here
     fn drag_enter(
@@ -78,24 +78,6 @@ pub trait DragDropWidget {
     ) -> DropResult {
         let _ = drag_info;
         DropResult::default()
-    }
-
-    /// Called to check if the widget can initiate a drag operation at the given point
-    /// Returns Some(DragData) if a drag can be started, None otherwise
-    fn can_drag(&self, position: PointDIP) -> Option<DragData> {
-        let _ = position;
-        None
-    }
-
-    /// Called when a drag operation initiated by this widget begins
-    fn drag_start(&mut self, data: &DragData) {
-        let _ = data;
-    }
-
-    /// Called when a drag operation initiated by this widget ends
-    /// `effect` indicates what happened (copy, move, cancel, etc.)
-    fn drag_end(&mut self, data: &DragData, effect: DROPEFFECT) {
-        let _ = (data, effect);
     }
 }
 

@@ -12,7 +12,7 @@ use windows::{
 
 use crate::{
     gfx::PointDIP,
-    widgets::{DragInfo, Event, dragdrop::extract_drag_data},
+    widgets::{DragEvent, DragInfo, dragdrop::extract_drag_data},
 };
 
 /// Integrated drop target that works with the Shell and widget system
@@ -20,13 +20,13 @@ use crate::{
 pub struct IntegratedDropTarget {
     hwnd: HWND,
     /// Callback to dispatch events to the Shell, receives HWND as parameter
-    event_dispatcher: Box<dyn Fn(HWND, Event) -> DROPEFFECT + Send>,
+    event_dispatcher: Box<dyn Fn(HWND, DragEvent) -> DROPEFFECT + Send>,
 }
 
 impl IntegratedDropTarget {
     pub fn new<F>(hwnd: HWND, event_dispatcher: F) -> Self
     where
-        F: Fn(HWND, Event) -> DROPEFFECT + Send + 'static,
+        F: Fn(HWND, DragEvent) -> DROPEFFECT + Send + 'static,
     {
         Self {
             hwnd,
@@ -95,7 +95,7 @@ impl IDropTarget_Impl for IntegratedDropTarget_Impl {
                 if let Some(drag_info) =
                     self.create_drag_info(data_obj, pt, self.choose_effect(grfKeyState))
                 {
-                    let event = Event::DragEnter { drag_info };
+                    let event = DragEvent::DragEnter { drag_info };
                     (self.event_dispatcher)(self.hwnd, event)
                 } else {
                     DROPEFFECT_NONE
@@ -126,7 +126,7 @@ impl IDropTarget_Impl for IntegratedDropTarget_Impl {
                 allowed_effects: self.choose_effect(grfKeyState),
             };
 
-            let event = Event::DragOver { drag_info };
+            let event = DragEvent::DragOver { drag_info };
             let effect = (self.event_dispatcher)(self.hwnd, event);
 
             if !pdwEffect.is_null() {
@@ -137,7 +137,7 @@ impl IDropTarget_Impl for IntegratedDropTarget_Impl {
     }
 
     fn DragLeave(&self) -> Result<()> {
-        let event = Event::DragLeave;
+        let event = DragEvent::DragLeave;
         let _ = (self.event_dispatcher)(self.hwnd, event);
         Ok(())
     }
@@ -154,7 +154,7 @@ impl IDropTarget_Impl for IntegratedDropTarget_Impl {
                 if let Some(drag_info) =
                     self.create_drag_info(data_obj, pt, self.choose_effect(grfKeyState))
                 {
-                    let event = Event::Drop { drag_info };
+                    let event = DragEvent::Drop { drag_info };
                     (self.event_dispatcher)(self.hwnd, event)
                 } else {
                     DROPEFFECT_NONE
