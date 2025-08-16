@@ -312,6 +312,37 @@ pub struct ScrollbarGeom {
     pub max_scroll: f32,
 }
 
+#[derive(Clone, Copy, Debug)]
+pub enum ScrollDirection {
+    Positive,
+    Negative,
+}
+
+pub fn can_scroll_further(
+    element: &UIElement,
+    axis: Axis,
+    direction: ScrollDirection,
+    scroll_state_manager: &ScrollStateManager,
+) -> bool {
+    let id = match element.id {
+        Some(id) => id,
+        None => return false,
+    };
+
+    let scroll_position = scroll_state_manager.get_scroll_position(id);
+    let (max_scroll_x, max_scroll_y) = (
+        element.computed_content_width - element.computed_width,
+        element.computed_content_height - element.computed_height,
+    );
+
+    match (axis, direction) {
+        (Axis::X, ScrollDirection::Positive) => scroll_position.x < max_scroll_x,
+        (Axis::X, ScrollDirection::Negative) => scroll_position.x > 0.0,
+        (Axis::Y, ScrollDirection::Positive) => scroll_position.y < max_scroll_y,
+        (Axis::Y, ScrollDirection::Negative) => scroll_position.y > 0.0,
+    }
+}
+
 pub fn compute_scrollbar_geom(
     element: &UIElement,
     axis: Axis,

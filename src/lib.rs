@@ -72,8 +72,15 @@ impl Shell {
     /// Captures the event, preventing further traversal.
     ///
     /// No ancestor widget will receive the event.
-    pub fn capture_event(&mut self) {
+    ///
+    /// Returns true if the event was captured.
+    pub fn capture_event(&mut self) -> bool {
+        if self.event_captured {
+            return false;
+        }
+
         self.event_captured = true;
+        true
     }
 
     pub fn request_input_method(&mut self, hwnd: HWND, ime: InputMethod) {

@@ -25,17 +25,55 @@ pub struct Limits {
     pub max: Size,
 }
 
+pub struct Modifiers {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+}
+
 pub enum Event {
     ImeStartComposition,
-    ImeComposition { text: String, caret_units: u32 },
-    ImeCommit { text: String },
+    ImeComposition {
+        text: String,
+        caret_units: u32,
+    },
+    ImeCommit {
+        text: String,
+    },
     ImeEndComposition,
-    MouseButtonDown { x: f32, y: f32, click_count: u32 },
-    MouseButtonUp { x: f32, y: f32, click_count: u32 },
-    MouseMove { x: f32, y: f32 },
-    KeyDown { key: u32 },
-    KeyUp { key: u32 },
-    Char { text: SmolStr },
+    MouseButtonDown {
+        x: f32,
+        y: f32,
+        click_count: u32,
+        modifiers: Modifiers,
+    },
+    MouseButtonUp {
+        x: f32,
+        y: f32,
+        click_count: u32,
+        modifiers: Modifiers,
+    },
+    MouseMove {
+        x: f32,
+        y: f32,
+    },
+    MouseWheel {
+        x: f32,
+        y: f32,
+        wheel_delta: f32,
+        modifiers: Modifiers,
+    },
+    KeyDown {
+        key: u32,
+        modifiers: Modifiers,
+    },
+    KeyUp {
+        key: u32,
+        modifiers: Modifiers,
+    },
+    Char {
+        text: SmolStr,
+    },
 }
 
 pub struct Renderer<'a> {

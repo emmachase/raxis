@@ -126,7 +126,9 @@ impl Widget for SelectableText {
     ) {
         let RectDIP { x_dip, y_dip, .. } = bounds;
         match event {
-            super::Event::MouseButtonDown { x, y, click_count } => {
+            super::Event::MouseButtonDown {
+                x, y, click_count, ..
+            } => {
                 // Complete composition before altering selection
                 if let Some(ref ime_text) = self.ime_text {
                     let _ = self.ime_commit(ime_text.clone());
@@ -170,10 +172,10 @@ impl Widget for SelectableText {
                     let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
                 }
             }
-            super::Event::KeyDown { key } => {
+            super::Event::KeyDown { key, modifiers, .. } => {
                 if shell.focus_manager.is_focused(ui_key) {
-                    let shift_down = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
-                    let ctrl_down = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
+                    let shift_down = modifiers.shift;
+                    let ctrl_down = modifiers.ctrl;
                     let _handled = match *key {
                         x if x == VK_LEFT.0 as u32 => {
                             if ctrl_down {
@@ -252,13 +254,12 @@ impl Widget for SelectableText {
                     };
                 }
             }
-            super::Event::KeyUp { key: _ } => {}
+            super::Event::KeyUp { .. } => {}
             super::Event::Char { text } => {
                 if shell.focus_manager.is_focused(ui_key) {
                     let _ = self.insert_str(text.as_str());
                 }
             }
-
             super::Event::ImeStartComposition => {
                 if shell.focus_manager.is_focused(ui_key) {
                     self.ime_begin();
@@ -302,6 +303,10 @@ impl Widget for SelectableText {
                 if shell.focus_manager.is_focused(ui_key) {
                     self.ime_end();
                 }
+            }
+
+            _ => {
+                // Unhandled event
             }
         }
     }

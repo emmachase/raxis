@@ -6,8 +6,11 @@ use raxis::layout::model::{
     Axis, ElementContent, HorizontalAlignment, ScrollConfig, Sizing, UIElement, VerticalAlignment,
 };
 use raxis::layout::scroll_manager::{ScrollPosition, ScrollStateManager};
-use raxis::layout::{self, OwnedUITree, compute_scrollbar_geom, visitors};
-use raxis::widgets::{Cursor, Event, Renderer, Widget};
+use raxis::layout::visitors::VisitAction;
+use raxis::layout::{
+    self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
+};
+use raxis::widgets::{Cursor, Event, Modifiers, Renderer, Widget};
 use raxis::{Shell, w_id};
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
@@ -26,7 +29,12 @@ use windows::Win32::System::Com::{
     CoUninitialize, DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM, TYMED_HGLOBAL,
 };
 use windows::Win32::System::Ole::ReleaseStgMedium;
-use windows::Win32::UI::WindowsAndMessaging::WM_KEYUP;
+use windows::Win32::System::SystemServices::MK_SHIFT;
+use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowRect, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SystemParametersInfoW, WM_KEYUP, WM_MOUSEWHEEL,
+};
 use windows::{
     Win32::{
         Foundation::{
@@ -98,6 +106,8 @@ use windows::{
     core::{PCWSTR, Result, implement, w},
 };
 use windows_numerics::Vector2;
+
+pub const LINE_HEIGHT: u32 = 16;
 
 pub struct SafeCursor(pub HCURSOR);
 unsafe impl Send for SafeCursor {}
@@ -325,6 +335,14 @@ fn client_rect(hwnd: HWND) -> Result<RECT> {
     }
 }
 
+fn window_rect(hwnd: HWND) -> Result<RECT> {
+    unsafe {
+        let mut rc = RECT::default();
+        GetWindowRect(hwnd, &mut rc)?;
+        Ok(rc)
+    }
+}
+
 fn apply_dpi_to_rt(rt: &ID2D1HwndRenderTarget, hwnd: HWND) {
     let dpi = current_dpi(hwnd);
     unsafe { rt.SetDpi(dpi, dpi) };
@@ -382,7 +400,8 @@ impl AppState {
                 DWRITE_FONT_WEIGHT_REGULAR,
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
-                72.0,
+                // 72.0,
+                12.0,
                 PCWSTR(w!("en-us").as_ptr()),
             )?;
             text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
@@ -432,7 +451,7 @@ impl AppState {
                 background_color: Some(0xFFFF00FF),
 
                 scroll: Some(ScrollConfig {
-                    // horizontal: Some(true),
+                    horizontal: Some(true),
                     vertical: Some(true),
 
                     sticky_right: Some(true),
@@ -944,6 +963,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         state.click_count = 1;
                     }
 
+                    let modifiers = get_modifiers();
                     state.shell.dispatch_event(
                         hwnd,
                         &mut state.ui_tree,
@@ -951,6 +971,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                             x,
                             y,
                             click_count: state.click_count,
+                            modifiers,
                         },
                     );
 
@@ -1073,6 +1094,92 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 }
                 LRESULT(0)
             }
+            WM_MOUSEWHEEL => {
+                let wheel_delta = (wparam.0 >> 16) as i16;
+                let modifiers = (wparam.0 & 0xFFFF) as u16;
+                let x = (lparam.0 & 0xFFFF) as i16 as i32 as f32;
+                let y = (lparam.0 >> 16) as i16 as i32 as f32;
+
+                let shift = (modifiers & MK_SHIFT.0 as u16) != 0;
+                let axis = if shift { Axis::X } else { Axis::Y };
+
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    let rect = window_rect(hwnd).unwrap();
+
+                    let to_dip = dips_scale(hwnd);
+                    let x_dip = (x - rect.left as f32) * to_dip;
+                    let y_dip = (y - rect.top as f32) * to_dip;
+                    let wheel_delta = -wheel_delta as f32 / 120.0;
+                    let modifiers = get_modifiers();
+                    state.shell.dispatch_event(
+                        hwnd,
+                        &mut state.ui_tree,
+                        Event::MouseWheel {
+                            x: x_dip,
+                            y: y_dip,
+                            wheel_delta,
+                            modifiers,
+                        },
+                    );
+
+                    if state.shell.capture_event() {
+                        let point = PointDIP { x_dip, y_dip };
+
+                        let root = state.ui_tree.keys().next().unwrap();
+                        visitors::visit_reverse_bfs(&mut state.ui_tree, root, |ui_tree, key, _| {
+                            let element = &mut ui_tree[key];
+                            let bounds = element.bounds();
+                            if point.within(bounds) {
+                                if let Some(ref config) = element.scroll
+                                    && let Some(element_id) = element.id
+                                {
+                                    // If the point is within the scrollable area, scroll
+                                    if config.vertical == Some(true) {
+                                        if can_scroll_further(
+                                            &element,
+                                            axis,
+                                            if wheel_delta > 0.0 {
+                                                ScrollDirection::Positive
+                                            } else {
+                                                ScrollDirection::Negative
+                                            },
+                                            &state.scroll_state_manager,
+                                        ) {
+                                            let mut scroll_lines = 3;
+                                            SystemParametersInfoW(
+                                                SPI_GETWHEELSCROLLLINES,
+                                                0,
+                                                Some(&mut scroll_lines as *mut i32 as *mut _),
+                                                SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+                                            )
+                                            .unwrap();
+
+                                            let wheel_delta = wheel_delta
+                                                * LINE_HEIGHT as f32
+                                                * scroll_lines as f32;
+
+                                            let (delta_x, delta_y) = if axis == Axis::Y {
+                                                (0.0, wheel_delta)
+                                            } else {
+                                                (wheel_delta, 0.0)
+                                            };
+
+                                            state.scroll_state_manager.update_scroll_position(
+                                                element_id, delta_x, delta_y,
+                                            );
+
+                                            return VisitAction::Exit;
+                                        }
+                                    }
+                                }
+                            }
+
+                            VisitAction::Continue
+                        });
+                    }
+                }
+                LRESULT(0)
+            }
             WM_LBUTTONUP => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     if state.scroll_drag.take().is_some() {
@@ -1092,6 +1199,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     //     state.text_widget.end_drag(0);
                     // }
 
+                    let modifiers = get_modifiers();
                     state.shell.dispatch_event(
                         hwnd,
                         &mut state.ui_tree,
@@ -1099,6 +1207,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                             x,
                             y,
                             click_count: state.click_count,
+                            modifiers,
                         },
                     );
 
@@ -1108,6 +1217,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 }
                 LRESULT(0)
             }
+
             // WM_COPY => {
             //     if let Some(state) = state_mut_from_hwnd(hwnd) {
             //         if let Some(s) = state.text_widget.selected_text() {
@@ -1193,10 +1303,11 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     let vk = wparam.0 as u32;
 
+                    let modifiers = get_modifiers();
                     state.shell.dispatch_event(
                         hwnd,
                         &mut state.ui_tree,
-                        Event::KeyDown { key: vk },
+                        Event::KeyDown { key: vk, modifiers },
                     );
 
                     // if handled {
@@ -1210,9 +1321,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     let vk = wparam.0 as u32;
 
-                    state
-                        .shell
-                        .dispatch_event(hwnd, &mut state.ui_tree, Event::KeyUp { key: vk });
+                    let modifiers = get_modifiers();
+                    state.shell.dispatch_event(
+                        hwnd,
+                        &mut state.ui_tree,
+                        Event::KeyUp { key: vk, modifiers },
+                    );
 
                     // if handled {
                     let _ = InvalidateRect(Some(hwnd), None, false);
@@ -1377,6 +1491,17 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
+    }
+}
+
+fn get_modifiers() -> Modifiers {
+    let shift_down = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
+    let ctrl_down = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
+    let alt_down = unsafe { GetKeyState(VK_MENU.0 as i32) } < 0;
+    Modifiers {
+        shift: shift_down,
+        ctrl: ctrl_down,
+        alt: alt_down,
     }
 }
 
