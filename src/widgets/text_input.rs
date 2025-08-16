@@ -26,6 +26,8 @@ use crate::{InputMethod, Shell};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
+const CARET_WIDTH: f32 = 1.0;
+const LINE_OFFSET: f32 = 1.0;
 
 /// A widget that renders selectable text using DirectWrite and draws
 /// the selection highlight using Direct2D.
@@ -117,10 +119,6 @@ impl Widget for TextInput {
         }
     }
 
-    // fn operate(&mut self, id: Option<u64>, key: UIKey, operation: &dyn super::Operation) {
-    //     operation.focusable(self, id, key);
-    // }
-
     fn update(
         &mut self,
         id: Option<u64>,
@@ -136,8 +134,7 @@ impl Widget for TextInput {
                 x, y, click_count, ..
             } => {
                 // Complete composition before altering selection
-                if let Some(ref ime_text) = self.ime_text {
-                    let _ = self.ime_commit(ime_text.clone());
+                if self.ime_text.is_some() {
                     self.ime_end();
                     shell.request_input_method(hwnd, InputMethod::Disabled);
                 }
@@ -397,25 +394,14 @@ impl DragDropWidget for TextInput {
         drag_info: &DragInfo,
         widget_bounds: RectDIP,
     ) -> windows::Win32::System::Ole::DROPEFFECT {
-        use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE};
-
         match &drag_info.data {
             DragData::Text(_) => {
-                // Convert global position to widget-relative position
                 let widget_x = drag_info.position.x_dip - widget_bounds.x_dip;
                 let widget_y = drag_info.position.y_dip - widget_bounds.y_dip;
 
                 if let Ok(idx) = self.hit_test_index(widget_x, widget_y) {
                     self.set_ole_drop_preview(Some(idx));
-
-                    // Choose effect based on allowed effects
-                    if (drag_info.allowed_effects.0 & DROPEFFECT_MOVE.0) != 0 {
-                        DROPEFFECT_MOVE
-                    } else if (drag_info.allowed_effects.0 & DROPEFFECT_COPY.0) != 0 {
-                        DROPEFFECT_COPY
-                    } else {
-                        DROPEFFECT_NONE
-                    }
+                    self.get_drop_effect(&drag_info.allowed_effects)
                 } else {
                     DROPEFFECT_NONE
                 }
@@ -430,24 +416,14 @@ impl DragDropWidget for TextInput {
     ) -> windows::Win32::System::Ole::DROPEFFECT {
         match &drag_info.data {
             DragData::Text(_) => {
-                // Convert client coordinates to widget-relative coordinates
-                let widget_pos = PointDIP {
-                    x_dip: drag_info.position.x_dip - widget_bounds.x_dip,
-                    y_dip: drag_info.position.y_dip - widget_bounds.y_dip,
-                };
+                let widget_x = drag_info.position.x_dip - widget_bounds.x_dip;
+                let widget_y = drag_info.position.y_dip - widget_bounds.y_dip;
 
-                if let Ok(idx16) = self.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
+                if let Ok(idx16) = self.hit_test_index(widget_x, widget_y) {
                     self.set_ole_drop_preview(Some(idx16));
                 }
 
-                // Return the appropriate effect based on what's allowed
-                if (drag_info.allowed_effects.0 & DROPEFFECT_MOVE.0) != 0 {
-                    DROPEFFECT_MOVE
-                } else if (drag_info.allowed_effects.0 & DROPEFFECT_COPY.0) != 0 {
-                    DROPEFFECT_COPY
-                } else {
-                    DROPEFFECT_NONE
-                }
+                self.get_drop_effect(&drag_info.allowed_effects)
             }
         }
     }
@@ -473,76 +449,14 @@ impl DragDropWidget for TextInput {
                 };
 
                 if let Ok(drop_idx) = self.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
-                    let effect = if (drag_info.allowed_effects.0 & DROPEFFECT_MOVE.0) != 0 {
-                        DROPEFFECT_MOVE
-                    } else if (drag_info.allowed_effects.0 & DROPEFFECT_COPY.0) != 0 {
-                        DROPEFFECT_COPY
+                    let effect = self.get_drop_effect(&drag_info.allowed_effects);
+
+                    if let Some(result) = self.handle_text_drop(text, drop_idx, effect) {
+                        self.set_ole_drop_preview(None);
+                        shell.focus_manager.focus(id, key);
+                        result
                     } else {
-                        DROPEFFECT_NONE
-                    };
-
-                    // Check if this is a drop onto the same widget that initiated the drag
-                    let is_same_widget = self.has_started_ole_drag;
-
-                    // Check if we're dropping over an existing selection
-                    let (current_sel_start, current_sel_end) = self.selection_range();
-                    let dropping_over_selection = current_sel_start != current_sel_end
-                        && drop_idx >= current_sel_start
-                        && drop_idx <= current_sel_end;
-
-                    if is_same_widget && effect == DROPEFFECT_MOVE {
-                        // Handle move within the same widget
-                        let (drag_sel_start, drag_sel_end) = self.selection_range();
-
-                        // Don't allow dropping within the dragged selection (but allow over different selections)
-                        if !dropping_over_selection
-                            && drop_idx >= drag_sel_start
-                            && drop_idx <= drag_sel_end
-                        {
-                            self.set_ole_drop_preview(None);
-                            return DropResult {
-                                effect: DROPEFFECT_NONE,
-                                handled: false,
-                            };
-                        }
-
-                        if dropping_over_selection {
-                            // Replace the existing selection with the dragged text
-                            self.insert_str(text).unwrap();
-                        } else {
-                            // Adjust drop position if it's after the dragged selection
-                            let adjusted_drop_idx = if drop_idx > drag_sel_end {
-                                drop_idx - (drag_sel_end - drag_sel_start)
-                            } else {
-                                drop_idx
-                            };
-
-                            // Remove the dragged text first
-                            self.insert_str("").unwrap();
-
-                            // Insert at the adjusted position
-                            self.move_caret_to(adjusted_drop_idx);
-                            self.insert_str(text).unwrap();
-                        }
-                    } else {
-                        // Normal drop (different widget or copy operation)
-                        if dropping_over_selection {
-                            // Replace the existing selection with the dropped text
-                            self.insert_str(text).unwrap();
-                        } else {
-                            // Insert at the drop position
-                            self.move_caret_to(drop_idx);
-                            self.insert_str(text).unwrap();
-                        }
-                    }
-
-                    self.move_caret_to(drop_idx);
-                    self.set_ole_drop_preview(None);
-                    shell.focus_manager.focus(id, key);
-
-                    DropResult {
-                        effect,
-                        handled: true,
+                        DropResult::default()
                     }
                 } else {
                     DropResult::default()
@@ -579,20 +493,12 @@ impl DragDropWidget for TextInput {
     }
 
     fn drag_end(&mut self, _data: &DragData, effect: windows::Win32::System::Ole::DROPEFFECT) {
-        use windows::Win32::System::Ole::DROPEFFECT_MOVE;
-
         // If it was a move operation, delete the selected text
         if (effect.0 & DROPEFFECT_MOVE.0) != 0 && self.can_drag_drop() {
             let _ = self.insert_str("");
         }
 
-        // Clear drop preview in case drag was cancelled
-        self.set_ole_drop_preview(None);
-
-        self.set_can_drag_drop(false);
-        self.has_started_ole_drag = false;
-        self.drag_start_position = None;
-        self.end_drag(0);
+        self.reset_drag_state();
     }
 }
 
@@ -777,11 +683,6 @@ impl TextInput {
         unsafe {
             let layout = self.layout.as_ref().expect("layout not built");
 
-            // {
-            //     layout.SetMaxWidth(bounds.width_dip).unwrap();
-            //     layout.SetMaxHeight(bounds.height_dip).unwrap();
-            // }
-
             self.caret_blink_timer += dt;
             if self.caret_blink_timer >= BLINK_TIME {
                 self.caret_blink_timer = 0.0;
@@ -819,7 +720,7 @@ impl TextInput {
                     let caret_rect = D2D_RECT_F {
                         left: bounds.x_dip + x,
                         top: bounds.y_dip + m.top,
-                        right: bounds.x_dip + x + 1.0,
+                        right: bounds.x_dip + x + CARET_WIDTH,
                         bottom: bounds.y_dip + m.top + m.height,
                     };
                     rt.FillRectangle(&caret_rect, brush);
@@ -830,7 +731,6 @@ impl TextInput {
                 let sel_end = self.selection_anchor.max(self.selection_active);
                 if shell.focus_manager.is_focused(id, ui_key) && self.caret_visible {
                     if self.is_composing() {
-                        // let (start16, end16) = self.selection_range();
                         let ime_caret_pos = sel_start + self.ime_cursor16;
                         let mut x = 0.0f32;
                         let mut y = 0.0f32;
@@ -839,7 +739,7 @@ impl TextInput {
                         let caret_rect = D2D_RECT_F {
                             left: bounds.x_dip + x,
                             top: bounds.y_dip + m.top,
-                            right: bounds.x_dip + x + 1.0,
+                            right: bounds.x_dip + x + CARET_WIDTH,
                             bottom: bounds.y_dip + m.top + m.height,
                         };
                         rt.FillRectangle(&caret_rect, brush);
@@ -857,7 +757,7 @@ impl TextInput {
                         let caret_rect = D2D_RECT_F {
                             left: bounds.x_dip + x,
                             top: bounds.y_dip + m.top,
-                            right: bounds.x_dip + x + 1.0,
+                            right: bounds.x_dip + x + CARET_WIDTH,
                             bottom: bounds.y_dip + m.top + m.height,
                         };
                         rt.FillRectangle(&caret_rect, brush);
@@ -995,6 +895,87 @@ impl TextInput {
 
     pub fn can_drag_drop(&self) -> bool {
         self.can_drag_drop
+    }
+
+    /// Helper method to determine the appropriate drop effect based on allowed effects
+    fn get_drop_effect(
+        &self,
+        allowed_effects: &windows::Win32::System::Ole::DROPEFFECT,
+    ) -> windows::Win32::System::Ole::DROPEFFECT {
+        if (allowed_effects.0 & DROPEFFECT_MOVE.0) != 0 {
+            DROPEFFECT_MOVE
+        } else if (allowed_effects.0 & DROPEFFECT_COPY.0) != 0 {
+            DROPEFFECT_COPY
+        } else {
+            DROPEFFECT_NONE
+        }
+    }
+
+    /// Reset all drag-related state
+    fn reset_drag_state(&mut self) {
+        self.set_ole_drop_preview(None);
+        self.set_can_drag_drop(false);
+        self.has_started_ole_drag = false;
+        self.drag_start_position = None;
+        self.end_drag(0);
+    }
+
+    /// Handle text drop logic, returning None if drop should be rejected
+    fn handle_text_drop(
+        &mut self,
+        text: &str,
+        drop_idx: u32,
+        effect: windows::Win32::System::Ole::DROPEFFECT,
+    ) -> Option<DropResult> {
+        let is_same_widget = self.has_started_ole_drag;
+        let (current_sel_start, current_sel_end) = self.selection_range();
+        let dropping_over_selection = current_sel_start != current_sel_end
+            && drop_idx >= current_sel_start
+            && drop_idx <= current_sel_end;
+
+        if is_same_widget && effect == DROPEFFECT_MOVE {
+            // Handle move within the same widget
+            if !dropping_over_selection
+                && drop_idx >= current_sel_start
+                && drop_idx <= current_sel_end
+            {
+                // Don't allow dropping within the dragged selection
+                return None;
+            }
+
+            if dropping_over_selection {
+                // Replace the existing selection with the dragged text
+                self.insert_str(text).unwrap();
+            } else {
+                // Adjust drop position if it's after the dragged selection
+                let adjusted_drop_idx = if drop_idx > current_sel_end {
+                    drop_idx - (current_sel_end - current_sel_start)
+                } else {
+                    drop_idx
+                };
+
+                // Remove the dragged text first, then insert at adjusted position
+                self.insert_str("").unwrap();
+                self.move_caret_to(adjusted_drop_idx);
+                self.insert_str(text).unwrap();
+            }
+        } else {
+            // Normal drop (different widget or copy operation)
+            if dropping_over_selection {
+                // Replace the existing selection with the dropped text
+                self.insert_str(text).unwrap();
+            } else {
+                // Insert at the drop position
+                self.move_caret_to(drop_idx);
+                self.insert_str(text).unwrap();
+            }
+        }
+
+        self.move_caret_to(drop_idx);
+        Some(DropResult {
+            effect,
+            handled: true,
+        })
     }
 
     // ===== IME support =====
@@ -1398,6 +1379,12 @@ impl TextInput {
         }
     }
 
+    /// Rebuild text layout and recalculate metrics in one operation
+    fn rebuild_layout_and_metrics(&mut self) -> Result<()> {
+        self.build_text_layout()?;
+        self.recalc_metrics()
+    }
+
     fn selection_range(&self) -> (u32, u32) {
         (
             self.selection_anchor.min(self.selection_active),
@@ -1533,8 +1520,7 @@ impl TextInput {
         self.text.replace_range(caret_byte..next_byte, "");
         self.recompute_text_boundaries();
         // Caret stays at start16
-        self.build_text_layout()?;
-        self.recalc_metrics()?;
+        self.rebuild_layout_and_metrics()?;
         self.clear_sticky_x();
         self.force_blink();
         Ok(())
@@ -1649,7 +1635,7 @@ impl TextInput {
                 self.sticky_x_dip = Some(curr_x);
                 curr_x
             };
-            let target_y = top - 1.0; // just above current line
+            let target_y = top - LINE_OFFSET; // just above current line
             if let Ok(idx) = self.hit_test_index(desired_x, target_y) {
                 let idx = self.snap_to_scalar_boundary(idx);
                 self.move_to_target(idx, extend);
@@ -1674,7 +1660,7 @@ impl TextInput {
                 self.sticky_x_dip = Some(curr_x);
                 curr_x
             };
-            let target_y = top + h + 1.0; // just below current line
+            let target_y = top + h + LINE_OFFSET; // just below current line
             if let Ok(idx) = self.hit_test_index(desired_x, target_y) {
                 let idx = self.snap_to_scalar_boundary(idx);
                 self.move_to_target(idx, extend);

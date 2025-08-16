@@ -309,7 +309,6 @@ impl Shell {
                         let himc = ImmGetContext(hwnd);
                         if !himc.is_invalid() {
                             let to_dip = dips_scale(hwnd);
-                            println!("new_position: {new_position:?}");
                             let cf = CANDIDATEFORM {
                                 dwStyle: CFS_POINT,
                                 ptCurrentPos: POINT {
