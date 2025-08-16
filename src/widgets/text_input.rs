@@ -133,7 +133,10 @@ impl Widget for TextInput {
         let RectDIP { x_dip, y_dip, .. } = bounds;
         match event {
             super::Event::MouseButtonDown {
-                x, y, click_count, ..
+                x,
+                y,
+                click_count,
+                modifiers,
             } => {
                 // Complete composition before altering selection
                 if self.ime_text.is_some() {
@@ -163,7 +166,10 @@ impl Widget for TextInput {
                             _ => SelectionMode::Paragraph,
                         };
                         self.set_selection_mode(mode);
-                        self.begin_drag(idx);
+                        self.begin_drag(idx, modifiers.shift);
+                        if modifiers.shift {
+                            self.update_drag(x - x_dip, y - y_dip);
+                        }
                     }
                 } else {
                     shell.focus_manager.release_focus(id, ui_key);
@@ -783,38 +789,41 @@ impl TextInput {
     }
 
     // Drag/select helpers
-    pub fn begin_drag(&mut self, idx: u32) {
+    pub fn begin_drag(&mut self, idx: u32, extend: bool) {
         // Mouse interaction resets sticky X
         self.clear_sticky_x();
         let idx = self.snap_to_scalar_boundary(idx);
-        self.drag_origin16 = idx;
-
         self.can_drag_drop = false;
 
-        // Drag-to-move applies only to Char mode. For Word/Paragraph clicks, always compute selection.
-        match self.selection_mode {
-            SelectionMode::Char => {
-                // If there is an existing non-empty selection and the drag starts inside it,
-                // switch to drag-to-move mode and keep the selection intact.
-                let (sel_start, sel_end) = self.selection_range();
-                if sel_end > sel_start && idx >= sel_start && idx < sel_end {
-                    self.can_drag_drop = true;
-                } else {
-                    self.selection_anchor = idx;
-                    self.selection_active = idx;
+        if !extend {
+            self.drag_origin16 = idx;
+
+            // Drag-to-move applies only to Char mode. For Word/Paragraph clicks, always compute selection.
+            match self.selection_mode {
+                SelectionMode::Char => {
+                    // If there is an existing non-empty selection and the drag starts inside it,
+                    // switch to drag-to-move mode and keep the selection intact.
+                    let (sel_start, sel_end) = self.selection_range();
+                    if sel_end > sel_start && idx >= sel_start && idx < sel_end {
+                        self.can_drag_drop = true;
+                    } else {
+                        self.selection_anchor = idx;
+                        self.selection_active = idx;
+                    }
+                }
+                SelectionMode::Word => {
+                    let (ws, we) = self.word_range_at(idx);
+                    self.selection_anchor = ws;
+                    self.selection_active = we;
+                }
+                SelectionMode::Paragraph => {
+                    let (ps, pe) = self.paragraph_range_at(idx);
+                    self.selection_anchor = ps;
+                    self.selection_active = pe;
                 }
             }
-            SelectionMode::Word => {
-                let (ws, we) = self.word_range_at(idx);
-                self.selection_anchor = ws;
-                self.selection_active = we;
-            }
-            SelectionMode::Paragraph => {
-                let (ps, pe) = self.paragraph_range_at(idx);
-                self.selection_anchor = ps;
-                self.selection_active = pe;
-            }
         }
+
         self.is_dragging = true;
         self.force_blink();
     }
