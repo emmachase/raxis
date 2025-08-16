@@ -18,61 +18,50 @@ pub struct BoxAmount {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum Direction {
+    #[default]
     LeftToRight,
     TopToBottom,
 }
 
-impl Default for Direction {
-    fn default() -> Self {
-        Direction::LeftToRight
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum HorizontalAlignment {
+    #[default]
     Left,
     Center,
     Right,
 }
 
-impl Default for HorizontalAlignment {
-    fn default() -> Self {
-        HorizontalAlignment::Left
-    }
-}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum VerticalAlignment {
+    #[default]
     Top,
     Center,
     Bottom,
 }
 
-impl Default for VerticalAlignment {
-    fn default() -> Self {
-        VerticalAlignment::Top
-    }
-}
 
 /// How to break text at word boundaries
 /// Default: AfterWord
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum WordBreak {
     None,
     // Anywhere, // TODO: Implement
+    #[default]
     AfterWord,
 }
 
-impl Default for WordBreak {
-    fn default() -> Self {
-        WordBreak::AfterWord
-    }
-}
 
 // ---------- Inline text model ----------
 
 #[derive(Clone, Debug, PartialEq)]
+#[derive(Default)]
 pub struct TextSpan {
     /// The text content of this span
     pub text: String,
@@ -80,14 +69,6 @@ pub struct TextSpan {
     pub color: Option<u32>,
 }
 
-impl Default for TextSpan {
-    fn default() -> Self {
-        Self {
-            text: String::new(),
-            color: None,
-        }
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct WrappedLine {

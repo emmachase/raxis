@@ -212,7 +212,7 @@ pub fn paint(
                     track_rect,
                     thumb_rect,
                     ..
-                }) = compute_scrollbar_geom(&element, Axis::X, scroll_state_manager)
+                }) = compute_scrollbar_geom(element, Axis::X, scroll_state_manager)
                 {
                     unsafe {
                         // Draw track
@@ -257,7 +257,7 @@ pub fn paint(
                     track_rect,
                     thumb_rect,
                     ..
-                }) = compute_scrollbar_geom(&element, Axis::Y, scroll_state_manager)
+                }) = compute_scrollbar_geom(element, Axis::Y, scroll_state_manager)
                 {
                     unsafe {
                         // Draw track

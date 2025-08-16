@@ -99,7 +99,7 @@ impl Widget for TextInput {
 
             let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
 
-            let lim = super::Limits {
+            super::Limits {
                 min: super::Size {
                     width: min_width,
                     height: max_metrics.height,
@@ -108,9 +108,7 @@ impl Widget for TextInput {
                     width: max_metrics.widthIncludingTrailingWhitespace,
                     height: max_metrics.height,
                 },
-            };
-
-            lim
+            }
         } else {
             super::Limits {
                 min: available.min,
@@ -718,49 +716,47 @@ impl TextInput {
             match layout.HitTestTextRange(sel_start, sel_len, 0.0, 0.0, None, &mut needed) {
                 Ok(()) => {
                     // Nothing visible to draw
-                    return Ok(());
+                    Ok(())
                 }
                 Err(e) if e.code() == STRSAFE_E_INSUFFICIENT_BUFFER => {
                     let capacity = needed.max(1);
-                    loop {
-                        let mut runs = vec![DWRITE_HIT_TEST_METRICS::default(); capacity as usize];
-                        let mut actual: u32 = 0;
-                        match layout.HitTestTextRange(
-                            sel_start,
-                            sel_len,
-                            0.0,
-                            0.0,
-                            Some(&mut runs),
-                            &mut actual,
-                        ) {
-                            Ok(()) => {
-                                // Selection color (light blue)
-                                brush.SetColor(&D2D1_COLOR_F {
-                                    r: 0.2,
-                                    g: 0.4,
-                                    b: 1.0,
-                                    a: 0.35,
-                                });
-                                for m in runs.iter().take(actual as usize) {
-                                    let rect = D2D_RECT_F {
-                                        left: bounds.x_dip + m.left,
-                                        top: bounds.y_dip + m.top,
-                                        right: bounds.x_dip + m.left + m.width,
-                                        bottom: bounds.y_dip + m.top + m.height,
-                                    };
-                                    rt.FillRectangle(&rect, brush);
-                                }
-                                // Restore brush to black for drawing text
-                                brush.SetColor(&D2D1_COLOR_F {
-                                    r: 0.0,
-                                    g: 0.0,
-                                    b: 0.0,
-                                    a: 1.0,
-                                });
-                                break Ok(());
+                    let mut runs = vec![DWRITE_HIT_TEST_METRICS::default(); capacity as usize];
+                    let mut actual: u32 = 0;
+                    match layout.HitTestTextRange(
+                        sel_start,
+                        sel_len,
+                        0.0,
+                        0.0,
+                        Some(&mut runs),
+                        &mut actual,
+                    ) {
+                        Ok(()) => {
+                            // Selection color (light blue)
+                            brush.SetColor(&D2D1_COLOR_F {
+                                r: 0.2,
+                                g: 0.4,
+                                b: 1.0,
+                                a: 0.35,
+                            });
+                            for m in runs.iter().take(actual as usize) {
+                                let rect = D2D_RECT_F {
+                                    left: bounds.x_dip + m.left,
+                                    top: bounds.y_dip + m.top,
+                                    right: bounds.x_dip + m.left + m.width,
+                                    bottom: bounds.y_dip + m.top + m.height,
+                                };
+                                rt.FillRectangle(&rect, brush);
                             }
-                            Err(e) => break Err(e),
+                            // Restore brush to black for drawing text
+                            brush.SetColor(&D2D1_COLOR_F {
+                                r: 0.0,
+                                g: 0.0,
+                                b: 0.0,
+                                a: 1.0,
+                            });
+                            Ok(())
                         }
+                        Err(e) => Err(e),
                     }
                 }
                 Err(e) => Err(e),
@@ -847,26 +843,24 @@ impl TextInput {
                             bottom: bounds.y_dip + m.top + m.height,
                         };
                         rt.FillRectangle(&caret_rect, brush);
-                    } else {
-                        if sel_start == sel_end {
-                            let mut x = 0.0f32;
-                            let mut y = 0.0f32;
-                            let mut m = DWRITE_HIT_TEST_METRICS::default();
-                            layout.HitTestTextPosition(
-                                self.selection_active,
-                                false,
-                                &mut x,
-                                &mut y,
-                                &mut m,
-                            )?;
-                            let caret_rect = D2D_RECT_F {
-                                left: bounds.x_dip + x,
-                                top: bounds.y_dip + m.top,
-                                right: bounds.x_dip + x + 1.0,
-                                bottom: bounds.y_dip + m.top + m.height,
-                            };
-                            rt.FillRectangle(&caret_rect, brush);
-                        }
+                    } else if sel_start == sel_end {
+                        let mut x = 0.0f32;
+                        let mut y = 0.0f32;
+                        let mut m = DWRITE_HIT_TEST_METRICS::default();
+                        layout.HitTestTextPosition(
+                            self.selection_active,
+                            false,
+                            &mut x,
+                            &mut y,
+                            &mut m,
+                        )?;
+                        let caret_rect = D2D_RECT_F {
+                            left: bounds.x_dip + x,
+                            top: bounds.y_dip + m.top,
+                            right: bounds.x_dip + x + 1.0,
+                            bottom: bounds.y_dip + m.top + m.height,
+                        };
+                        rt.FillRectangle(&caret_rect, brush);
                     }
                 }
             }
@@ -1376,7 +1370,7 @@ impl TextInput {
     }
 
     fn is_scalar_boundary(&self, idx16: u32) -> bool {
-        self.utf16_boundaries.iter().any(|&b| b == idx16)
+        self.utf16_boundaries.contains(&idx16)
     }
 
     fn snap_to_scalar_boundary(&self, idx16: u32) -> u32 {

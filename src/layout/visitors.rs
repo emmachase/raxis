@@ -17,9 +17,9 @@ impl VisitAction {
     }
 }
 
-impl Into<VisitAction> for bool {
-    fn into(self) -> VisitAction {
-        if self {
+impl From<bool> for VisitAction {
+    fn from(val: bool) -> Self {
+        if val {
             VisitAction::Continue
         } else {
             VisitAction::Exit
@@ -27,8 +27,8 @@ impl Into<VisitAction> for bool {
     }
 }
 
-impl Into<VisitAction> for () {
-    fn into(self) -> VisitAction {
+impl From<()> for VisitAction {
+    fn from(_: ()) -> Self {
         VisitAction::Continue
     }
 }
@@ -98,10 +98,8 @@ pub fn visit_deferring_bfs<S, F, R>(
         while let Some((current, parent)) = queue.pop_front() {
             if should_defer(slots, current, parent) {
                 deferred.push((current, parent));
-            } else {
-                if visitor(slots, current, parent).into().is_exit() {
-                    break 'exit;
-                }
+            } else if visitor(slots, current, parent).into().is_exit() {
+                break 'exit;
             }
 
             // Always enqueue children

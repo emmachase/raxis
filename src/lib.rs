@@ -43,6 +43,12 @@ pub enum InputMethod {
     Enabled { position: gfx::PointDIP },
 }
 
+impl Default for Shell {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Shell {
     pub fn new() -> Self {
         Self {
@@ -303,7 +309,7 @@ impl Shell {
                         let himc = ImmGetContext(hwnd);
                         if !himc.is_invalid() {
                             let to_dip = dips_scale(hwnd);
-                            println!("new_position: {:?}", new_position);
+                            println!("new_position: {new_position:?}");
                             let cf = CANDIDATEFORM {
                                 dwStyle: CFS_POINT,
                                 ptCurrentPos: POINT {

@@ -9,6 +9,12 @@ pub struct FocusManager {
     focused_widget: Option<FocusTarget>,
 }
 
+impl Default for FocusManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FocusManager {
     pub fn new() -> Self {
         Self {
@@ -18,7 +24,7 @@ impl FocusManager {
 
     pub fn is_focused(&self, target_id: Option<u64>, target_key: UIKey) -> bool {
         match &self.focused_widget {
-            Some(FocusTarget::ById(id)) => target_id.map_or(false, |target_id| id == &target_id),
+            Some(FocusTarget::ById(id)) => target_id.is_some_and(|target_id| id == &target_id),
             Some(FocusTarget::ByKey(key)) => key == &target_key,
             None => false,
         }

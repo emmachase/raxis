@@ -112,7 +112,7 @@ pub fn extract_drag_data(data_object: &IDataObject) -> Option<DragData> {
         let fmt = FORMATETC {
             cfFormat: CF_UNICODETEXT.0,
             ptd: std::ptr::null_mut(),
-            dwAspect: DVASPECT_CONTENT.0 as u32,
+            dwAspect: DVASPECT_CONTENT.0,
             lindex: -1,
             tymed: TYMED_HGLOBAL.0 as u32,
         };
@@ -134,10 +134,10 @@ pub fn extract_drag_data(data_object: &IDataObject) -> Option<DragData> {
                 }
                 let _ = GlobalUnlock(h);
                 let s = String::from_utf16_lossy(&out);
-                let _ = ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
+                ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
                 return Some(DragData::Text(s.replace("\r\n", "\n")));
             }
-            let _ = ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
+            ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
         }
     }
 

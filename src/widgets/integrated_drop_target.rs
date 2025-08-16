@@ -37,9 +37,9 @@ impl IntegratedDropTarget {
     fn choose_effect(&self, keys: MODIFIERKEYS_FLAGS) -> DROPEFFECT {
         use windows::Win32::System::SystemServices::{MK_CONTROL, MK_SHIFT};
 
-        if (keys.0 as u32 & MK_CONTROL.0 as u32) != 0 {
+        if (keys.0 & MK_CONTROL.0) != 0 {
             windows::Win32::System::Ole::DROPEFFECT_COPY
-        } else if (keys.0 as u32 & MK_SHIFT.0 as u32) != 0 {
+        } else if (keys.0 & MK_SHIFT.0) != 0 {
             windows::Win32::System::Ole::DROPEFFECT_MOVE
         } else {
             windows::Win32::System::Ole::DROPEFFECT_MOVE

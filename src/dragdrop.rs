@@ -42,7 +42,7 @@ impl IDropSource_Impl for DropSource_Impl {
             return DRAGDROP_S_CANCEL;
         }
         // Drop when left button released
-        if (grfKeyState.0 as u32 & MK_LBUTTON.0 as u32) == 0 {
+        if (grfKeyState.0 & MK_LBUTTON.0) == 0 {
             return DRAGDROP_S_DROP;
         }
 
@@ -79,23 +79,23 @@ impl IDataObject_Impl for TextDataObject_Impl {
                 .ok_or_else(|| windows::core::Error::from(E_POINTER))?;
             if fmt.cfFormat != CF_UNICODETEXT.0
                 || fmt.tymed != TYMED_HGLOBAL.0 as u32
-                || fmt.dwAspect != DVASPECT_CONTENT.0 as u32
+                || fmt.dwAspect != DVASPECT_CONTENT.0
                 || fmt.lindex != -1
             {
                 return Err(DV_E_FORMATETC.into());
             }
 
-            let bytes = (self.text_w.len() * 2) as usize;
+            let bytes = self.text_w.len() * 2;
             let hglobal = GlobalAlloc(GMEM_MOVEABLE, bytes);
             if hglobal.is_err() {
                 return Err(E_OUTOFMEMORY.into());
             }
-            let ptr = GlobalLock(hglobal.as_ref().unwrap().clone()) as *mut u8;
+            let ptr = GlobalLock(*hglobal.as_ref().unwrap()) as *mut u8;
             if ptr.is_null() {
                 return Err(E_OUTOFMEMORY.into());
             }
             std::ptr::copy_nonoverlapping(self.text_w.as_ptr() as *const u8, ptr, bytes);
-            let _ = GlobalUnlock(hglobal.as_ref().unwrap().clone());
+            let _ = GlobalUnlock(*hglobal.as_ref().unwrap());
 
             Ok(STGMEDIUM {
                 tymed: TYMED_HGLOBAL.0 as u32,
@@ -123,7 +123,7 @@ impl IDataObject_Impl for TextDataObject_Impl {
                 .unwrap();
             if fmt.cfFormat == CF_UNICODETEXT.0
                 && fmt.tymed & TYMED_HGLOBAL.0 as u32 != 0
-                && fmt.dwAspect == DVASPECT_CONTENT.0 as u32
+                && fmt.dwAspect == DVASPECT_CONTENT.0
                 && fmt.lindex == -1
             {
                 S_OK

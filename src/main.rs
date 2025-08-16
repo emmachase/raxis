@@ -486,8 +486,8 @@ impl AppState {
                     &self.shell,
                     &Renderer {
                         factory: &self.d2d_factory,
-                        render_target: &rt,
-                        brush: &brush,
+                        render_target: rt,
+                        brush,
                     },
                     &mut self.ui_tree,
                     root,
@@ -586,10 +586,7 @@ impl AppState {
             }
         }
 
-        let root = match self.ui_tree.keys().next() {
-            Some(k) => k,
-            None => return None,
-        };
+        let root = self.ui_tree.keys().next()?;
         let mut result = None;
         dfs(self, root, x, y, &mut result);
         result
@@ -910,14 +907,14 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         visitors::visit_reverse_bfs(&mut state.ui_tree, root, |ui_tree, key, _| {
                             let element = &mut ui_tree[key];
                             let bounds = element.bounds();
-                            if point.within(bounds) {
-                                if let Some(ref config) = element.scroll
+                            if point.within(bounds)
+                                && let Some(ref config) = element.scroll
                                     && let Some(element_id) = element.id
                                 {
                                     // If the point is within the scrollable area, scroll
-                                    if config.vertical == Some(true) {
-                                        if can_scroll_further(
-                                            &element,
+                                    if config.vertical == Some(true)
+                                        && can_scroll_further(
+                                            element,
                                             axis,
                                             if wheel_delta > 0.0 {
                                                 ScrollDirection::Positive
@@ -951,9 +948,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 
                                             return VisitAction::Exit;
                                         }
-                                    }
                                 }
-                            }
 
                             VisitAction::Continue
                         });
@@ -1026,7 +1021,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         if let Some(high) = state.pending_high_surrogate.take() {
                             let u = 0x10000
                                 + (((high as u32 - 0xD800) << 10)
-                                    | ((code as u32 - 0xDC00) & 0x3FF));
+                                    | ((code - 0xDC00) & 0x3FF));
                             if let Some(ch) = char::from_u32(u) {
                                 to_insert.push(ch);
                             }

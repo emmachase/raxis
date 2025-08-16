@@ -22,7 +22,7 @@ pub fn set_clipboard_text(hwnd: HWND, s: &str) -> Result<()> {
             let crlf = s.replace('\n', "\r\n");
             let mut w: Vec<u16> = crlf.encode_utf16().collect();
             w.push(0);
-            let bytes = (w.len() * 2) as usize;
+            let bytes = w.len() * 2;
             let hmem: HGLOBAL = GlobalAlloc(GMEM_MOVEABLE, bytes)?;
             if !hmem.is_invalid() {
                 let ptr = GlobalLock(hmem) as *mut u16;
@@ -45,8 +45,8 @@ pub fn set_clipboard_text(hwnd: HWND, s: &str) -> Result<()> {
 
 pub fn get_clipboard_text(hwnd: HWND) -> Option<String> {
     unsafe {
-        if IsClipboardFormatAvailable(CF_UNICODETEXT.0.into()).is_ok() {
-            if OpenClipboard(Some(hwnd)).is_ok() {
+        if IsClipboardFormatAvailable(CF_UNICODETEXT.0.into()).is_ok()
+            && OpenClipboard(Some(hwnd)).is_ok() {
                 let h = GetClipboardData(CF_UNICODETEXT.0.into());
                 if let Ok(h) = h {
                     let hg = HGLOBAL(h.0);
@@ -72,7 +72,6 @@ pub fn get_clipboard_text(hwnd: HWND) -> Option<String> {
                 }
                 let _ = CloseClipboard();
             }
-        }
         None
     }
 }
