@@ -1121,10 +1121,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                             x_dip: 0.0,
                                             y_dip: 0.0,
                                         }, // Position not needed for DragLeave
-                                        _ => PointDIP {
-                                            x_dip: 0.0,
-                                            y_dip: 0.0,
-                                        },
                                     },
                                 ) {
                                     result.effect

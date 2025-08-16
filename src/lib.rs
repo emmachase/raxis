@@ -14,7 +14,7 @@ use crate::{
         BorrowedUITree,
         visitors::{self, VisitAction},
     },
-    widgets::{DragEvent, DropResult, Event, Operation, WidgetDragDropTarget, dispatch_operation},
+    widgets::{DragEvent, DropResult, Event, Operation, dispatch_operation},
 };
 
 pub mod clipboard;
