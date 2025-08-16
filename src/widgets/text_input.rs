@@ -10,7 +10,7 @@ use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     VK_A, VK_BACK, VK_C, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_RIGHT, VK_UP,
-    VK_V, VK_X,
+    VK_V, VK_X, VK_Y, VK_Z,
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
@@ -28,6 +28,26 @@ use unicode_segmentation::UnicodeSegmentation;
 const BLINK_TIME: f64 = 0.5;
 const CARET_WIDTH: f32 = 1.0;
 const LINE_OFFSET: f32 = 1.0;
+const MAX_UNDO_LEVELS: usize = 100;
+const UNDO_MERGE_TIME_MS: f64 = 1000.0; // 1 second
+
+/// Represents a state that can be undone/redone
+#[derive(Debug, Clone)]
+struct UndoState {
+    text: String,
+    selection_anchor: u32,
+    selection_active: u32,
+    timestamp: f64,
+    operation_type: UndoOperationType,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+enum UndoOperationType {
+    CharacterInsertion,
+    CharacterDeletion,
+    WordDeletion,
+    Other,
+}
 
 /// A widget that renders selectable text using DirectWrite and draws
 /// the selection highlight using Direct2D.
@@ -79,6 +99,11 @@ pub struct TextInput {
     // at this position to indicate the drop location during OLE drag-over.
     ole_drop_preview16: Option<u32>,
     can_drag_drop: bool,
+
+    // Undo/redo system
+    undo_stack: Vec<UndoState>,
+    redo_stack: Vec<UndoState>,
+    last_operation_time: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -283,6 +308,14 @@ impl Widget for TextInput {
                             }
                             true
                         }
+                        x if x == VK_Z.0 as u32 && ctrl_down => {
+                            let _ = self.undo();
+                            true
+                        }
+                        x if x == VK_Z.0 as u32 && ctrl_down && shift_down => {
+                            let _ = self.redo();
+                            true
+                        }
                         x if x == VK_ESCAPE.0 as u32 => {
                             if self.has_selection() {
                                 self.clear_selection();
@@ -361,6 +394,8 @@ impl Widget for TextInput {
         bounds: RectDIP,
         dt: f64,
     ) {
+        // Update timing for undo system
+        self.last_operation_time += dt * 1000.0; // Convert to milliseconds
         self.update_bounds(bounds).expect("update bounds failed");
 
         self.draw(id, ui_key, shell, renderer, bounds, dt)
@@ -494,6 +529,9 @@ impl TextInput {
             drag_origin16: 0,
             ole_drop_preview16: None,
             can_drag_drop: false,
+            undo_stack: Vec::new(),
+            redo_stack: Vec::new(),
+            last_operation_time: 0.0,
         };
         s.recompute_text_boundaries();
         s
@@ -1445,6 +1483,14 @@ impl TextInput {
         if s.is_empty() && start16 == end16 {
             return Ok(()); // nothing to do
         }
+        
+        // Save undo state before modification
+        let operation_type = if s.len() == 1 && !s.chars().any(|c| c.is_whitespace()) {
+            UndoOperationType::CharacterInsertion
+        } else {
+            UndoOperationType::Other
+        };
+        self.save_undo_state(operation_type, self.last_operation_time);
         let start_byte = self.utf16_index_to_byte(start16);
         let end_byte = self.utf16_index_to_byte(end16);
         self.text.replace_range(start_byte..end_byte, s);
@@ -1476,6 +1522,9 @@ impl TextInput {
         if start16 == 0 {
             return Ok(());
         }
+        
+        // Save undo state before modification
+        self.save_undo_state(UndoOperationType::CharacterDeletion, self.last_operation_time);
         // Delete previous Unicode scalar
         let prev16 = self.prev_scalar_index(start16);
         let prev_byte = self.utf16_index_to_byte(prev16);
@@ -1502,6 +1551,9 @@ impl TextInput {
         if start16 >= total16 {
             return Ok(());
         }
+        
+        // Save undo state before modification
+        self.save_undo_state(UndoOperationType::CharacterDeletion, self.last_operation_time);
         // Delete next Unicode scalar
         let next16 = self.next_scalar_index(start16);
         let caret_byte = self.utf16_index_to_byte(start16);
@@ -1526,6 +1578,9 @@ impl TextInput {
         if start16 == 0 {
             return Ok(());
         }
+        
+        // Save undo state before modification
+        self.save_undo_state(UndoOperationType::WordDeletion, self.last_operation_time);
         let prev16 = self.prev_word_index(start16);
         let prev_byte = self.utf16_index_to_byte(prev16);
         let caret_byte = self.utf16_index_to_byte(start16);
@@ -1553,6 +1608,9 @@ impl TextInput {
         if start16 >= total16 {
             return Ok(());
         }
+        
+        // Save undo state before modification
+        self.save_undo_state(UndoOperationType::WordDeletion, self.last_operation_time);
         let next16 = self.next_word_index(start16);
         let caret_byte = self.utf16_index_to_byte(start16);
         let next_byte = self.utf16_index_to_byte(next16);
@@ -1690,5 +1748,115 @@ impl TextInput {
         self.clear_sticky_x();
         let total16 = self.text.encode_utf16().count() as u32;
         self.move_to_target(total16, extend);
+    }
+
+    // ===== Undo/Redo system =====
+    
+    /// Save the current state to the undo stack before making modifications
+    fn save_undo_state(&mut self, operation_type: UndoOperationType, current_time: f64) {
+        // Check if we can merge with the previous operation
+        if let Some(last_state) = self.undo_stack.last_mut() {
+            let time_diff = current_time - last_state.timestamp;
+            
+            // Merge successive character insertions/deletions within time window
+            if time_diff < UNDO_MERGE_TIME_MS 
+                && last_state.operation_type == operation_type 
+                && (operation_type == UndoOperationType::CharacterInsertion 
+                    || operation_type == UndoOperationType::CharacterDeletion) {
+                // Don't create a new undo state, the previous one will be updated
+                // when the actual operation completes
+                self.last_operation_time = current_time;
+                return;
+            }
+        }
+        
+        let state = UndoState {
+            text: self.text.clone(),
+            selection_anchor: self.selection_anchor,
+            selection_active: self.selection_active,
+            timestamp: current_time,
+            operation_type,
+        };
+        
+        self.undo_stack.push(state);
+        
+        // Limit undo stack size
+        if self.undo_stack.len() > MAX_UNDO_LEVELS {
+            self.undo_stack.remove(0);
+        }
+        
+        // Clear redo stack when new action is performed
+        self.redo_stack.clear();
+        self.last_operation_time = current_time;
+    }
+    
+    /// Undo the last action
+    pub fn undo(&mut self) -> Result<bool> {
+        if let Some(undo_state) = self.undo_stack.pop() {
+            // Save current state to redo stack
+            let current_state = UndoState {
+                text: self.text.clone(),
+                selection_anchor: self.selection_anchor,
+                selection_active: self.selection_active,
+                timestamp: self.last_operation_time,
+                operation_type: UndoOperationType::Other,
+            };
+            self.redo_stack.push(current_state);
+            
+            // Restore the undo state
+            self.text = undo_state.text;
+            self.selection_anchor = undo_state.selection_anchor;
+            self.selection_active = undo_state.selection_active;
+            
+            // Update internal state
+            self.recompute_text_boundaries();
+            self.build_text_layout()?;
+            self.recalc_metrics()?;
+            self.force_blink();
+            
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+    
+    /// Redo the last undone action
+    pub fn redo(&mut self) -> Result<bool> {
+        if let Some(redo_state) = self.redo_stack.pop() {
+            // Save current state to undo stack
+            let current_state = UndoState {
+                text: self.text.clone(),
+                selection_anchor: self.selection_anchor,
+                selection_active: self.selection_active,
+                timestamp: self.last_operation_time,
+                operation_type: UndoOperationType::Other,
+            };
+            self.undo_stack.push(current_state);
+            
+            // Restore the redo state
+            self.text = redo_state.text;
+            self.selection_anchor = redo_state.selection_anchor;
+            self.selection_active = redo_state.selection_active;
+            
+            // Update internal state
+            self.recompute_text_boundaries();
+            self.build_text_layout()?;
+            self.recalc_metrics()?;
+            self.force_blink();
+            
+            Ok(true)
+        } else {
+            Ok(false)
+        }
+    }
+    
+    /// Check if undo is available
+    pub fn can_undo(&self) -> bool {
+        !self.undo_stack.is_empty()
+    }
+    
+    /// Check if redo is available
+    pub fn can_redo(&self) -> bool {
+        !self.redo_stack.is_empty()
     }
 }
