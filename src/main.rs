@@ -16,8 +16,8 @@ use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
     widgets::{
-        selectable_text::{SelectableText, SelectionMode},
         spinner::Spinner,
+        text_input::{SelectionMode, TextInput},
     },
 };
 use slotmap::DefaultKey;
@@ -488,7 +488,7 @@ impl AppState {
                 //         )
                 //         .ok(),
                 // }),
-                content: Some(ElementContent::Widget(Box::new(SelectableText::new(
+                content: Some(ElementContent::Widget(Box::new(TextInput::new(
                     dwrite_factory.clone(),
                     text_format.clone(),
                     TEXT.to_string(),
@@ -516,7 +516,7 @@ impl AppState {
                 //         )
                 //         .ok(),
                 // }),
-                content: Some(ElementContent::Widget(Box::new(SelectableText::new(
+                content: Some(ElementContent::Widget(Box::new(TextInput::new(
                     dwrite_factory.clone(),
                     text_format.clone(),
                     TEXT.to_string(),

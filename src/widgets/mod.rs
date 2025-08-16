@@ -10,8 +10,8 @@ use crate::{
     layout::model::{UIElement, UIKey},
 };
 
-pub mod selectable_text;
 pub mod spinner;
+pub mod text_input;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Size {

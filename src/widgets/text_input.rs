@@ -31,7 +31,7 @@ const BLINK_TIME: f64 = 0.5;
 /// It encapsulates selection state, hit-testing, and cached layout bounds
 /// for cursor hit-testing.
 #[derive(Debug, Clone)]
-pub struct SelectableText {
+pub struct TextInput {
     // DirectWrite objects (shared/cloneable COM interfaces)
     dwrite_factory: IDWriteFactory,
     text_format: IDWriteTextFormat,
@@ -83,7 +83,7 @@ pub enum SelectionMode {
     Paragraph,
 }
 
-impl Widget for SelectableText {
+impl Widget for TextInput {
     fn limits(&self, available: super::Limits) -> super::Limits {
         if let Some(layout) = &self.layout {
             unsafe {
@@ -327,7 +327,7 @@ impl Widget for SelectableText {
     }
 }
 
-impl SelectableText {
+impl TextInput {
     pub fn new(
         dwrite_factory: IDWriteFactory,
         text_format: IDWriteTextFormat,
