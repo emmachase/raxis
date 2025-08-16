@@ -11,7 +11,8 @@ use windows::Win32::Graphics::DirectWrite::{
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    VK_A, VK_BACK, VK_C, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_UP, VK_V, VK_X,
+    VK_A, VK_BACK, VK_C, VK_DELETE, VK_DOWN, VK_END, VK_ESCAPE, VK_HOME, VK_LEFT, VK_RIGHT, VK_UP,
+    VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
@@ -278,6 +279,14 @@ impl Widget for TextInput {
                                 if let Some(s) = get_clipboard_text(hwnd) {
                                     let _ = self.insert_str(&s);
                                 }
+                            }
+                            true
+                        }
+                        x if x == VK_ESCAPE.0 as u32 => {
+                            if self.has_selection() {
+                                self.clear_selection();
+                            } else {
+                                shell.focus_manager.release_focus(id, ui_key);
                             }
                             true
                         }
@@ -578,6 +587,9 @@ impl DragDropWidget for TextInput {
         if (effect.0 & DROPEFFECT_MOVE.0) != 0 && self.can_drag_drop() {
             let _ = self.insert_str("");
         }
+
+        // Clear drop preview in case drag was cancelled
+        self.set_ole_drop_preview(None);
 
         self.set_can_drag_drop(false);
         self.has_started_ole_drag = false;
@@ -1111,6 +1123,15 @@ impl TextInput {
 
     pub fn metric_bounds(&self) -> RectDIP {
         self.metric_bounds
+    }
+
+    pub fn has_selection(&self) -> bool {
+        self.selection_active != self.selection_anchor
+    }
+
+    pub fn clear_selection(&mut self) {
+        self.selection_active = self.selection_anchor;
+        self.force_blink();
     }
 
     /// Select the word containing or following the given UTF-16 index.

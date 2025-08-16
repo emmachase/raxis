@@ -184,8 +184,8 @@ impl Shell {
                 let element = &mut ui_tree[key];
                 let bounds = element.bounds();
 
-                // Check if point is within widget bounds
-                if position.within(bounds) {
+                // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
+                if position.within(bounds) || matches!(event, Event::DragLeave) {
                     if let Some(layout::model::ElementContent::Widget(ref mut widget)) =
                         element.content
                     {
@@ -226,9 +226,15 @@ impl Shell {
                                         text_input.drop(element.id, key, self, drag_info, bounds),
                                     );
                                 }
+                                Event::DragLeave => {
+                                    text_input.drag_leave(bounds);
+                                }
                                 _ => {}
                             }
-                            return VisitAction::Exit;
+
+                            if !matches!(event, Event::DragLeave) {
+                                return VisitAction::Exit;
+                            }
                         }
                     }
                 }
