@@ -7,9 +7,17 @@ use windows::Win32::{
 use crate::{
     Shell,
     gfx::{PointDIP, RectDIP},
-    layout::model::{UIElement, UIKey},
+    layout::{
+        BorrowedUITree, OwnedUITree,
+        model::{ElementContent, UIElement, UIKey},
+        visitors,
+    },
 };
 
+pub use dragdrop::{DragData, DragDropWidget, DragInfo, DropResult};
+
+pub mod dragdrop;
+pub mod integrated_drop_target;
 pub mod spinner;
 pub mod text_input;
 
@@ -74,6 +82,24 @@ pub enum Event {
     Char {
         text: SmolStr,
     },
+    // Drag and drop events
+    DragEnter {
+        drag_info: DragInfo,
+    },
+    DragOver {
+        drag_info: DragInfo,
+    },
+    DragLeave,
+    Drop {
+        drag_info: DragInfo,
+    },
+    DragStart {
+        data: DragData,
+    },
+    DragEnd {
+        data: DragData,
+        effect: windows::Win32::System::Ole::DROPEFFECT,
+    },
 }
 
 pub struct Renderer<'a> {
@@ -92,17 +118,60 @@ pub trait Widget: std::fmt::Debug {
 
     fn paint(
         &mut self, // TODO: this shouldnt need to be mut right
+        id: Option<u64>,
+        ui_key: UIKey,
+        shell: &Shell,
         renderer: &Renderer,
         bounds: RectDIP,
         dt: f64,
     );
 
-    fn update(&mut self, key: UIKey, hwnd: HWND, shell: &mut Shell, event: &Event, bounds: RectDIP);
+    fn update(
+        &mut self,
+        id: Option<u64>,
+        key: UIKey,
+        hwnd: HWND,
+        shell: &mut Shell,
+        event: &Event,
+        bounds: RectDIP,
+    );
 
     #[allow(unused)]
-    fn cursor(&self, key: UIKey, point: PointDIP, bounds: RectDIP) -> Option<Cursor> {
+    fn cursor(
+        &self,
+        id: Option<u64>,
+        key: UIKey,
+        point: PointDIP,
+        bounds: RectDIP,
+    ) -> Option<Cursor> {
         None
     }
+
+    #[allow(unused)]
+    fn operate(&mut self, id: Option<u64>, key: UIKey, operation: &dyn Operation) {}
+
+    /// Allow downcasting to concrete widget types
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any;
+}
+
+// pub trait Focusable {
+//     fn focus(&mut self);
+//     fn unfocus(&mut self);
+// }
+
+#[allow(unused)]
+pub trait Operation {
+    // fn focusable(&self, focusable: &mut dyn Focusable, id: Option<u64>, key: UIKey) {}
+}
+
+pub fn dispatch_operation(ui_tree: BorrowedUITree, operation: &dyn Operation) {
+    let root = ui_tree.keys().next().unwrap();
+    visitors::visit_bfs(ui_tree, root, |ui_tree, key, _| {
+        let element = &mut ui_tree[key];
+        if let Some(ElementContent::Widget(widget)) = element.content.as_mut() {
+            widget.operate(element.id, key, operation);
+        }
+    });
 }
 
 impl UIElement {

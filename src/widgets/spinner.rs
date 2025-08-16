@@ -49,6 +49,9 @@ impl Widget for Spinner {
 
     fn paint(
         &mut self, // TODO: this shouldnt need to be mut right
+        id: Option<u64>,
+        ui_key: UIKey,
+        shell: &Shell,
         renderer: &Renderer,
         bounds: crate::gfx::RectDIP,
         dt: f64,
@@ -66,6 +69,7 @@ impl Widget for Spinner {
 
     fn update(
         &mut self,
+        _id: Option<u64>,
         _key: UIKey,
         _hwnd: windows::Win32::Foundation::HWND,
         _shell: &mut Shell,
@@ -73,6 +77,10 @@ impl Widget for Spinner {
         _bounds: crate::gfx::RectDIP,
     ) {
         // Nothing to do
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 

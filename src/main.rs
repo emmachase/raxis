@@ -1,6 +1,5 @@
 // #![windows_subsystem = "windows"]
 
-use raxis::dragdrop::start_text_drag;
 use raxis::gfx::PointDIP;
 use raxis::layout::model::{
     Axis, ElementContent, HorizontalAlignment, ScrollConfig, Sizing, UIElement, VerticalAlignment,
@@ -10,6 +9,7 @@ use raxis::layout::visitors::VisitAction;
 use raxis::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
 };
+use raxis::widgets::integrated_drop_target::IntegratedDropTarget;
 use raxis::widgets::{Cursor, Event, Modifiers, Renderer, Widget};
 use raxis::{Shell, w_id};
 use raxis::{
@@ -134,188 +134,9 @@ struct ScrollDragState {
     grab_offset: f32,
 }
 
-// ===== OLE Drop Target implementation =====
-#[implement(IDropTarget)]
-struct DropTarget {
-    hwnd: HWND,
-}
-
-impl DropTarget {
-    fn new(hwnd: HWND) -> Self {
-        Self { hwnd }
-    }
-
-    fn choose_effect(&self, keys: MODIFIERKEYS_FLAGS) -> DROPEFFECT {
-        if (keys.0 as u32 & MK_CONTROL.0 as u32) != 0 {
-            DROPEFFECT_COPY
-        } else {
-            DROPEFFECT_MOVE
-        }
-    }
-
-    fn update_preview_from_point(&self, pt: &POINTL) {
-        unsafe {
-            if let Some(state) = state_mut_from_hwnd(self.hwnd) {
-                let mut p = POINT { x: pt.x, y: pt.y };
-                let _ = ScreenToClient(self.hwnd, &mut p);
-                let to_dip = dips_scale(self.hwnd);
-                let x = (p.x as f32) * to_dip;
-                let y = (p.y as f32) * to_dip;
-                // TODO
-                // if let Ok(idx16) = state.text_widget.hit_test_index(x, y) {
-                //     state.text_widget.set_ole_drop_preview(Some(idx16));
-                // }
-                let _ = InvalidateRect(Some(self.hwnd), None, false);
-            }
-        }
-    }
-
-    fn insert_from_dataobject(
-        &self,
-        data: &IDataObject,
-        pt: &POINTL,
-        effect: DROPEFFECT,
-    ) -> windows::core::Result<()> {
-        unsafe {
-            // Compute drop index from point
-            if let Some(state) = state_mut_from_hwnd(self.hwnd) {
-                let mut p = POINT { x: pt.x, y: pt.y };
-                let _ = ScreenToClient(self.hwnd, &mut p);
-                let to_dip = dips_scale(self.hwnd);
-                let x = (p.x as f32) * to_dip;
-                let y = (p.y as f32) * to_dip;
-                // TODO
-                // if let Ok(idx16) = state.text_widget.hit_test_index(x, y) {
-                //     state.text_widget.set_ole_drop_preview(Some(idx16));
-
-                //     // Request CF_UNICODETEXT via HGLOBAL
-                //     let fmt = FORMATETC {
-                //         cfFormat: CF_UNICODETEXT.0,
-                //         ptd: std::ptr::null_mut(),
-                //         dwAspect: DVASPECT_CONTENT.0 as u32,
-                //         lindex: -1,
-                //         tymed: TYMED_HGLOBAL.0 as u32,
-                //     };
-                //     if let Ok(mut medium) = data.GetData(&fmt) {
-                //         let h = medium.u.hGlobal;
-                //         let ptr = GlobalLock(h) as *const u16;
-                //         if !ptr.is_null() {
-                //             // Read until NUL
-                //             let mut out: Vec<u16> = Vec::new();
-                //             let mut i = 0isize;
-                //             loop {
-                //                 let v = *ptr.offset(i);
-                //                 if v == 0 {
-                //                     break;
-                //                 }
-                //                 out.push(v);
-                //                 i += 1;
-                //             }
-                //             let _ = GlobalUnlock(h);
-                //             let mut s = String::from_utf16_lossy(&out);
-
-                //             // If we dropped from our own drag, remove the selection
-                //             let internal_move = state.text_widget.can_drag_drop()
-                //                 && (effect.0 & DROPEFFECT_MOVE.0) != 0;
-
-                //             // Normalize CRLF to LF for internal text
-                //             s = s.replace("\r\n", "\n");
-
-                //             state.text_widget.finish_ole_drop(&s, internal_move)?;
-                //         }
-                //         let _ = ReleaseStgMedium(&mut medium as *mut STGMEDIUM);
-                //     }
-                //     state.text_widget.set_ole_drop_preview(None);
-                //     let _ = InvalidateRect(Some(self.hwnd), None, false);
-                // }
-            }
-            Ok(())
-        }
-    }
-}
-
-#[allow(non_snake_case)]
-impl IDropTarget_Impl for DropTarget_Impl {
-    fn DragEnter(
-        &self,
-        pDataObj: windows_core::Ref<'_, IDataObject>,
-        grfKeyState: MODIFIERKEYS_FLAGS,
-        pt: &POINTL,
-        pdwEffect: *mut DROPEFFECT,
-    ) -> windows::core::Result<()> {
-        unsafe {
-            let mut accepts = false;
-            if let Some(dobj) = pDataObj.as_ref() {
-                let fmt = FORMATETC {
-                    cfFormat: CF_UNICODETEXT.0,
-                    ptd: std::ptr::null_mut(),
-                    dwAspect: DVASPECT_CONTENT.0 as u32,
-                    lindex: -1,
-                    tymed: TYMED_HGLOBAL.0 as u32,
-                };
-                let hr = dobj.QueryGetData(&fmt);
-                accepts = hr == S_OK;
-            }
-            let eff = if accepts {
-                self.choose_effect(grfKeyState)
-            } else {
-                DROPEFFECT_NONE
-            };
-            if !pdwEffect.is_null() {
-                *pdwEffect = eff;
-            }
-            if accepts {
-                self.update_preview_from_point(pt);
-            }
-        }
-        Ok(())
-    }
-
-    fn DragOver(
-        &self,
-        grfKeyState: MODIFIERKEYS_FLAGS,
-        pt: &POINTL,
-        pdwEffect: *mut DROPEFFECT,
-    ) -> windows::core::Result<()> {
-        unsafe {
-            if !pdwEffect.is_null() {
-                *pdwEffect = self.choose_effect(grfKeyState);
-            }
-            self.update_preview_from_point(pt);
-        }
-        Ok(())
-    }
-
-    fn DragLeave(&self) -> windows::core::Result<()> {
-        unsafe {
-            if let Some(state) = state_mut_from_hwnd(self.hwnd) {
-                // TODO
-                // state.text_widget.set_ole_drop_preview(None);
-                let _ = InvalidateRect(Some(self.hwnd), None, false);
-            }
-        }
-        Ok(())
-    }
-
-    fn Drop(
-        &self,
-        pDataObj: windows_core::Ref<'_, IDataObject>,
-        grfKeyState: MODIFIERKEYS_FLAGS,
-        pt: &POINTL,
-        pdwEffect: *mut DROPEFFECT,
-    ) -> windows::core::Result<()> {
-        let effect = self.choose_effect(grfKeyState);
-        unsafe {
-            if !pdwEffect.is_null() {
-                *pdwEffect = effect;
-            }
-        }
-        if let Some(data) = pDataObj.as_ref() {
-            let _ = self.insert_from_dataobject(data, pt, effect);
-        }
-        Ok(())
-    }
-}
+// ===== OLE Drop Target integration =====
+// The old DropTarget implementation has been replaced with IntegratedDropTarget
+// which properly integrates with the widget system
 
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
 fn state_mut_from_hwnd(hwnd: HWND) -> Option<&'static mut AppState> {
@@ -477,6 +298,8 @@ impl AppState {
                 background_color: Some(0x00FFFFFF),
 
                 vertical_alignment: VerticalAlignment::Center,
+
+                width: Sizing::grow(),
 
                 // content: Some(ElementContent::Text {
                 //     layout: dwrite_factory
@@ -686,8 +509,7 @@ impl AppState {
 
                 layout::layout(&mut self.ui_tree, root, &mut self.scroll_state_manager);
                 layout::paint(
-                    // &rt,
-                    // brush,
+                    &self.shell,
                     &Renderer {
                         factory: &self.d2d_factory,
                         render_target: &rt,
@@ -801,7 +623,7 @@ impl AppState {
 }
 
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
-    unsafe {
+    let result = unsafe {
         match msg {
             WM_IME_STARTCOMPOSITION => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
@@ -1317,7 +1139,35 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 
                     // Register OLE drop target
                     if state.drop_target.is_none() {
-                        let dt: IDropTarget = DropTarget::new(hwnd).into();
+                        let dt: IDropTarget = IntegratedDropTarget::new(hwnd, |hwnd, event| {
+                            // Dispatch drag/drop events to the Shell
+                            if let Some(app_state) = state_mut_from_hwnd(hwnd) {
+                                if let Some(result) = app_state.shell.dispatch_drag_event(
+                                    &mut app_state.ui_tree,
+                                    &event,
+                                    match &event {
+                                        Event::DragEnter { drag_info }
+                                        | Event::DragOver { drag_info }
+                                        | Event::Drop { drag_info } => drag_info.position,
+                                        Event::DragLeave => PointDIP {
+                                            x_dip: 0.0,
+                                            y_dip: 0.0,
+                                        }, // Position not needed for DragLeave
+                                        _ => PointDIP {
+                                            x_dip: 0.0,
+                                            y_dip: 0.0,
+                                        },
+                                    },
+                                ) {
+                                    result.effect
+                                } else {
+                                    windows::Win32::System::Ole::DROPEFFECT_NONE
+                                }
+                            } else {
+                                windows::Win32::System::Ole::DROPEFFECT_NONE
+                            }
+                        })
+                        .into();
                         let _ = RegisterDragDrop(hwnd, &dt);
                         state.drop_target = Some(dt);
                     }
@@ -1378,7 +1228,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                     slots[element].content
                                 {
                                     if point.within(bounds) {
-                                        cursor = widget.cursor(element, point, bounds);
+                                        cursor = widget.cursor(
+                                            slots[element].id,
+                                            element,
+                                            point,
+                                            bounds,
+                                        );
                                     }
                                 }
                             },
@@ -1429,7 +1284,13 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             _ => DefWindowProcW(hwnd, msg, wparam, lparam),
         }
+    };
+
+    if let Some(state) = state_mut_from_hwnd(hwnd) {
+        state.shell.dispatch_operations(&mut state.ui_tree);
     }
+
+    result
 }
 
 fn get_modifiers() -> Modifiers {

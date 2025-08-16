@@ -6,6 +6,7 @@ use windows::Win32::Graphics::Direct2D::{
 use windows_numerics::Vector2;
 
 use crate::{
+    Shell,
     gfx::RectDIP,
     layout::{
         model::{Axis, ElementContent, UIElement, UIKey},
@@ -99,6 +100,7 @@ pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 pub fn paint(
     // rt: &ID2D1HwndRenderTarget,
     // brush: &ID2D1SolidColorBrush,
+    shell: &Shell,
     renderer: &Renderer,
     slots: BorrowedUITree<'_>,
     root: UIKey,
@@ -176,7 +178,14 @@ pub fn paint(
                         }
                     }
                     ElementContent::Widget(widget) => {
-                        widget.paint(renderer, bounds, 1.0 / 240.0 /* TODO: dt */);
+                        widget.paint(
+                            element.id,
+                            key,
+                            shell,
+                            renderer,
+                            bounds,
+                            1.0 / 240.0, /* TODO: dt */
+                        );
                     }
                 }
             }

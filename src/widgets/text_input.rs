@@ -8,9 +8,9 @@ use windows::Win32::Graphics::DirectWrite::{
     IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Gdi::InvalidateRect;
+use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE};
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, VK_A, VK_BACK, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_LEFT,
-    VK_RIGHT, VK_SHIFT, VK_UP, VK_V, VK_X,
+    VK_A, VK_BACK, VK_C, VK_DELETE, VK_DOWN, VK_END, VK_HOME, VK_LEFT, VK_RIGHT, VK_UP, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
@@ -19,7 +19,7 @@ use windows_numerics::Vector2;
 use crate::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::model::UIKey;
-use crate::widgets::{Renderer, Widget};
+use crate::widgets::{DragData, DragDropWidget, DragInfo, DropResult, Renderer, Widget};
 use crate::{InputMethod, Shell};
 use unicode_segmentation::UnicodeSegmentation;
 
@@ -45,7 +45,6 @@ pub struct TextInput {
     selection_anchor: u32,
     selection_active: u32,
     is_dragging: bool,
-    is_focused: bool,
     caret_blink_timer: f64,
     caret_visible: bool,
 
@@ -116,8 +115,13 @@ impl Widget for TextInput {
         }
     }
 
+    // fn operate(&mut self, id: Option<u64>, key: UIKey, operation: &dyn super::Operation) {
+    //     operation.focusable(self, id, key);
+    // }
+
     fn update(
         &mut self,
+        id: Option<u64>,
         ui_key: UIKey,
         hwnd: HWND,
         shell: &mut Shell,
@@ -143,8 +147,7 @@ impl Widget for TextInput {
                 .within(bounds)
                 {
                     if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
-                        shell.focus_manager.focus(ui_key);
-                        self.is_focused = true;
+                        shell.focus_manager.focus(id, ui_key);
 
                         // Selection mode by click count
                         let mode = match click_count {
@@ -155,9 +158,8 @@ impl Widget for TextInput {
                         self.set_selection_mode(mode);
                         self.begin_drag(idx);
                     }
-                } else if shell.focus_manager.is_focused(ui_key) {
-                    shell.focus_manager.release_focus();
-                    self.is_focused = false;
+                } else {
+                    shell.focus_manager.release_focus(id, ui_key);
                 }
             }
             super::Event::MouseButtonUp { x, y, .. } => {
@@ -173,7 +175,7 @@ impl Widget for TextInput {
                 }
             }
             super::Event::KeyDown { key, modifiers, .. } => {
-                if shell.focus_manager.is_focused(ui_key) {
+                if shell.focus_manager.is_focused(id, ui_key) {
                     let shift_down = modifiers.shift;
                     let ctrl_down = modifiers.ctrl;
                     let _handled = match *key {
@@ -256,12 +258,12 @@ impl Widget for TextInput {
             }
             super::Event::KeyUp { .. } => {}
             super::Event::Char { text } => {
-                if shell.focus_manager.is_focused(ui_key) {
+                if shell.focus_manager.is_focused(id, ui_key) {
                     let _ = self.insert_str(text.as_str());
                 }
             }
             super::Event::ImeStartComposition => {
-                if shell.focus_manager.is_focused(ui_key) {
+                if shell.focus_manager.is_focused(id, ui_key) {
                     self.ime_begin();
 
                     if let Ok((c_x_dip, c_y_dip, h)) = self.caret_pos_dip(self.caret_active16()) {
@@ -278,7 +280,7 @@ impl Widget for TextInput {
                 }
             }
             super::Event::ImeComposition { text, caret_units } => {
-                if shell.focus_manager.is_focused(ui_key) {
+                if shell.focus_manager.is_focused(id, ui_key) {
                     self.ime_update(text.clone(), *caret_units);
 
                     if let Ok((c_x_dip, c_y_dip, h)) = self.caret_pos_dip(self.caret_active16()) {
@@ -295,12 +297,12 @@ impl Widget for TextInput {
                 }
             }
             super::Event::ImeCommit { text } => {
-                if shell.focus_manager.is_focused(ui_key) {
+                if shell.focus_manager.is_focused(id, ui_key) {
                     self.ime_commit(text.clone()).expect("ime commit failed");
                 }
             }
             super::Event::ImeEndComposition => {
-                if shell.focus_manager.is_focused(ui_key) {
+                if shell.focus_manager.is_focused(id, ui_key) {
                     self.ime_end();
                 }
             }
@@ -311,19 +313,177 @@ impl Widget for TextInput {
         }
     }
 
-    fn paint(&mut self, renderer: &Renderer, bounds: RectDIP, dt: f64) {
+    fn paint(
+        &mut self,
+        id: Option<u64>,
+        ui_key: UIKey,
+        shell: &Shell,
+        renderer: &Renderer,
+        bounds: RectDIP,
+        dt: f64,
+    ) {
         self.update_bounds(bounds).expect("update bounds failed");
 
-        self.draw(renderer.render_target, renderer.brush, bounds, dt)
-            .expect("draw failed");
+        self.draw(
+            id,
+            ui_key,
+            shell,
+            renderer.render_target,
+            renderer.brush,
+            bounds,
+            dt,
+        )
+        .expect("draw failed");
     }
 
-    fn cursor(&self, _key: UIKey, point: PointDIP, bounds: RectDIP) -> Option<super::Cursor> {
+    fn cursor(
+        &self,
+        _id: Option<u64>,
+        _key: UIKey,
+        point: PointDIP,
+        bounds: RectDIP,
+    ) -> Option<super::Cursor> {
         if point.within(bounds) {
             Some(super::Cursor::IBeam)
         } else {
             None
         }
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
+impl DragDropWidget for TextInput {
+    fn drag_enter(
+        &mut self,
+        drag_info: &DragInfo,
+        widget_bounds: RectDIP,
+    ) -> windows::Win32::System::Ole::DROPEFFECT {
+        use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE};
+
+        match &drag_info.data {
+            DragData::Text(_) => {
+                // Convert global position to widget-relative position
+                let widget_x = drag_info.position.x_dip - widget_bounds.x_dip;
+                let widget_y = drag_info.position.y_dip - widget_bounds.y_dip;
+
+                if let Ok(idx) = self.hit_test_index(widget_x, widget_y) {
+                    self.set_ole_drop_preview(Some(idx));
+
+                    // Choose effect based on allowed effects
+                    if (drag_info.allowed_effects.0 & DROPEFFECT_MOVE.0) != 0 {
+                        DROPEFFECT_MOVE
+                    } else if (drag_info.allowed_effects.0 & DROPEFFECT_COPY.0) != 0 {
+                        DROPEFFECT_COPY
+                    } else {
+                        DROPEFFECT_NONE
+                    }
+                } else {
+                    DROPEFFECT_NONE
+                }
+            }
+        }
+    }
+
+    fn drag_over(
+        &mut self,
+        drag_info: &DragInfo,
+        widget_bounds: RectDIP,
+    ) -> windows::Win32::System::Ole::DROPEFFECT {
+        match &drag_info.data {
+            DragData::Text(_) => {
+                // Convert client coordinates to widget-relative coordinates
+                let widget_pos = PointDIP {
+                    x_dip: drag_info.position.x_dip - widget_bounds.x_dip,
+                    y_dip: drag_info.position.y_dip - widget_bounds.y_dip,
+                };
+
+                if let Ok(idx16) = self.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
+                    self.set_ole_drop_preview(Some(idx16));
+                }
+
+                // Return the appropriate effect based on what's allowed
+                if (drag_info.allowed_effects.0 & DROPEFFECT_MOVE.0) != 0 {
+                    DROPEFFECT_MOVE
+                } else if (drag_info.allowed_effects.0 & DROPEFFECT_COPY.0) != 0 {
+                    DROPEFFECT_COPY
+                } else {
+                    DROPEFFECT_NONE
+                }
+            }
+            _ => DROPEFFECT_NONE,
+        }
+    }
+
+    fn drag_leave(&mut self, _widget_bounds: RectDIP) {
+        self.set_ole_drop_preview(None);
+    }
+
+    fn drop(&mut self, drag_info: &DragInfo, widget_bounds: RectDIP) -> DropResult {
+        match &drag_info.data {
+            DragData::Text(text) => {
+                // Convert client coordinates to widget-relative coordinates
+                let widget_pos = PointDIP {
+                    x_dip: drag_info.position.x_dip - widget_bounds.x_dip,
+                    y_dip: drag_info.position.y_dip - widget_bounds.y_dip,
+                };
+
+                if let Ok(idx16) = self.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
+                    // Insert text at the drop position
+                    self.move_caret_to(idx16);
+                    self.insert_str(text);
+                    self.set_ole_drop_preview(None);
+
+                    let effect = if (drag_info.allowed_effects.0 & DROPEFFECT_MOVE.0) != 0 {
+                        DROPEFFECT_MOVE
+                    } else if (drag_info.allowed_effects.0 & DROPEFFECT_COPY.0) != 0 {
+                        DROPEFFECT_COPY
+                    } else {
+                        DROPEFFECT_NONE
+                    };
+
+                    DropResult {
+                        effect,
+                        handled: true,
+                    }
+                } else {
+                    DropResult::default()
+                }
+            }
+        }
+    }
+
+    fn can_drag(&self, position: PointDIP) -> Option<DragData> {
+        // Check if we have selected text and the position is within the selection
+        let (sel_start, sel_end) = self.selection_range();
+        if sel_start != sel_end {
+            if let Ok(idx) = self.hit_test_index(position.x_dip, position.y_dip) {
+                if idx >= sel_start && idx <= sel_end {
+                    if let Some(selected_text) = self.selected_text() {
+                        return Some(DragData::Text(selected_text));
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn drag_start(&mut self, _data: &DragData) {
+        // Mark that we can perform drag-to-move
+        self.set_can_drag_drop(true);
+    }
+
+    fn drag_end(&mut self, _data: &DragData, effect: windows::Win32::System::Ole::DROPEFFECT) {
+        use windows::Win32::System::Ole::DROPEFFECT_MOVE;
+
+        // If it was a move operation, delete the selected text
+        if (effect.0 & DROPEFFECT_MOVE.0) != 0 && self.can_drag_drop() {
+            let _ = self.insert_str("");
+        }
+
+        self.set_can_drag_drop(false);
     }
 }
 
@@ -342,7 +502,6 @@ impl TextInput {
             selection_anchor: 0,
             selection_active: 0,
             is_dragging: false,
-            is_focused: false,
             caret_blink_timer: 0.0,
             caret_visible: true,
             sticky_x_dip: None,
@@ -498,6 +657,9 @@ impl TextInput {
 
     pub fn draw(
         &mut self,
+        id: Option<u64>,
+        ui_key: UIKey,
+        shell: &Shell,
         rt: &ID2D1HwndRenderTarget,
         brush: &ID2D1SolidColorBrush,
         bounds: RectDIP,
@@ -536,47 +698,6 @@ impl TextInput {
                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
             );
 
-            // Draw caret if there's no selection (1 DIP wide bar)
-            let sel_start = self.selection_anchor.min(self.selection_active);
-            let sel_end = self.selection_anchor.max(self.selection_active);
-            if self.is_focused && self.caret_visible {
-                if self.is_composing() {
-                    // let (start16, end16) = self.selection_range();
-                    let ime_caret_pos = sel_start + self.ime_cursor16;
-                    let mut x = 0.0f32;
-                    let mut y = 0.0f32;
-                    let mut m = DWRITE_HIT_TEST_METRICS::default();
-                    layout.HitTestTextPosition(ime_caret_pos, false, &mut x, &mut y, &mut m)?;
-                    let caret_rect = D2D_RECT_F {
-                        left: bounds.x_dip + x,
-                        top: bounds.y_dip + m.top,
-                        right: bounds.x_dip + x + 1.0,
-                        bottom: bounds.y_dip + m.top + m.height,
-                    };
-                    rt.FillRectangle(&caret_rect, brush);
-                } else {
-                    if sel_start == sel_end {
-                        let mut x = 0.0f32;
-                        let mut y = 0.0f32;
-                        let mut m = DWRITE_HIT_TEST_METRICS::default();
-                        layout.HitTestTextPosition(
-                            self.selection_active,
-                            false,
-                            &mut x,
-                            &mut y,
-                            &mut m,
-                        )?;
-                        let caret_rect = D2D_RECT_F {
-                            left: bounds.x_dip + x,
-                            top: bounds.y_dip + m.top,
-                            right: bounds.x_dip + x + 1.0,
-                            bottom: bounds.y_dip + m.top + m.height,
-                        };
-                        rt.FillRectangle(&caret_rect, brush);
-                    }
-                }
-            }
-
             // OLE drag-over preview caret
             if let Some(drop) = self.ole_drop_preview16 {
                 let drop = self.snap_to_scalar_boundary(drop);
@@ -593,6 +714,47 @@ impl TextInput {
                         bottom: bounds.y_dip + m.top + m.height,
                     };
                     rt.FillRectangle(&caret_rect, brush);
+                }
+            } else {
+                // Draw caret if there's no selection (1 DIP wide bar)
+                let sel_start = self.selection_anchor.min(self.selection_active);
+                let sel_end = self.selection_anchor.max(self.selection_active);
+                if shell.focus_manager.is_focused(id, ui_key) && self.caret_visible {
+                    if self.is_composing() {
+                        // let (start16, end16) = self.selection_range();
+                        let ime_caret_pos = sel_start + self.ime_cursor16;
+                        let mut x = 0.0f32;
+                        let mut y = 0.0f32;
+                        let mut m = DWRITE_HIT_TEST_METRICS::default();
+                        layout.HitTestTextPosition(ime_caret_pos, false, &mut x, &mut y, &mut m)?;
+                        let caret_rect = D2D_RECT_F {
+                            left: bounds.x_dip + x,
+                            top: bounds.y_dip + m.top,
+                            right: bounds.x_dip + x + 1.0,
+                            bottom: bounds.y_dip + m.top + m.height,
+                        };
+                        rt.FillRectangle(&caret_rect, brush);
+                    } else {
+                        if sel_start == sel_end {
+                            let mut x = 0.0f32;
+                            let mut y = 0.0f32;
+                            let mut m = DWRITE_HIT_TEST_METRICS::default();
+                            layout.HitTestTextPosition(
+                                self.selection_active,
+                                false,
+                                &mut x,
+                                &mut y,
+                                &mut m,
+                            )?;
+                            let caret_rect = D2D_RECT_F {
+                                left: bounds.x_dip + x,
+                                top: bounds.y_dip + m.top,
+                                right: bounds.x_dip + x + 1.0,
+                                bottom: bounds.y_dip + m.top + m.height,
+                            };
+                            rt.FillRectangle(&caret_rect, brush);
+                        }
+                    }
                 }
             }
 
