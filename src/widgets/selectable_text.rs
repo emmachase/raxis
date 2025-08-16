@@ -12,8 +12,8 @@ use windows::Win32::UI::Input::Ime::{
     CPS_COMPLETE, ImmGetContext, ImmNotifyIME, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::{
-    GetKeyState, SetCapture, SetFocus, VK_A, VK_BACK, VK_C, VK_CONTROL, VK_DELETE, VK_END, VK_HOME,
-    VK_LEFT, VK_RIGHT, VK_SHIFT, VK_V, VK_X,
+    GetKeyState, SetCapture, SetFocus, VK_A, VK_BACK, VK_C, VK_CONTROL, VK_DELETE, VK_DOWN, VK_END,
+    VK_HOME, VK_LEFT, VK_RIGHT, VK_SHIFT, VK_UP, VK_V, VK_X,
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
@@ -48,6 +48,9 @@ pub struct SelectableText {
     is_dragging: bool,
     caret_blink_timer: f64,
     caret_visible: bool,
+
+    // Preferred horizontal position (DIPs) for vertical navigation (sticky X)
+    sticky_x_dip: Option<f32>,
 
     // Cached layout bounds in DIPs (for cursor hit-testing)
     metric_bounds: RectDIP,
@@ -174,6 +177,14 @@ impl Widget for SelectableText {
                         }
                         true
                     }
+                    x if x == VK_UP.0 as u32 => {
+                        self.move_up(shift_down);
+                        true
+                    }
+                    x if x == VK_DOWN.0 as u32 => {
+                        self.move_down(shift_down);
+                        true
+                    }
                     x if x == VK_HOME.0 as u32 => {
                         self.move_to_start(shift_down);
                         true
@@ -183,11 +194,19 @@ impl Widget for SelectableText {
                         true
                     }
                     x if x == VK_BACK.0 as u32 => {
-                        let _ = self.backspace();
+                        if ctrl_down {
+                            let _ = self.backspace_word();
+                        } else {
+                            let _ = self.backspace();
+                        }
                         true
                     }
                     x if x == VK_DELETE.0 as u32 => {
-                        let _ = self.delete_forward();
+                        if ctrl_down {
+                            let _ = self.delete_word_forward();
+                        } else {
+                            let _ = self.delete_forward();
+                        }
                         true
                     }
                     x if x == VK_A.0 as u32 && ctrl_down => {
@@ -250,6 +269,7 @@ impl SelectableText {
             is_dragging: false,
             caret_blink_timer: 0.0,
             caret_visible: true,
+            sticky_x_dip: None,
             metric_bounds: RectDIP::default(),
             utf16_boundaries: Vec::new(),
             word_starts_utf16: Vec::new(),
@@ -531,8 +551,14 @@ impl SelectableText {
         self.caret_visible = true;
     }
 
+    fn clear_sticky_x(&mut self) {
+        self.sticky_x_dip = None;
+    }
+
     // Drag/select helpers
     pub fn begin_drag(&mut self, idx: u32) {
+        // Mouse interaction resets sticky X
+        self.clear_sticky_x();
         let idx = self.snap_to_scalar_boundary(idx);
         self.drag_origin16 = idx;
 
@@ -736,6 +762,7 @@ impl SelectableText {
 
     /// Move caret (anchor and active) to an absolute UTF-16 index.
     pub fn move_caret_to(&mut self, idx16: u32) {
+        self.clear_sticky_x();
         let idx = self.snap_to_scalar_boundary(idx16);
         self.selection_anchor = idx;
         self.selection_active = idx;
@@ -1025,6 +1052,7 @@ impl SelectableText {
     }
 
     pub fn select_all(&mut self) {
+        self.clear_sticky_x();
         let len16 = self.text.encode_utf16().count() as u32;
         self.selection_anchor = 0;
         self.selection_active = len16;
@@ -1111,6 +1139,7 @@ impl SelectableText {
     pub fn backspace(&mut self) -> Result<()> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
+            self.clear_sticky_x();
             self.force_blink();
             return self.insert_str("");
         }
@@ -1127,6 +1156,7 @@ impl SelectableText {
         self.selection_active = prev16;
         self.build_text_layout()?;
         self.recalc_metrics()?;
+        self.clear_sticky_x();
 
         self.force_blink();
         Ok(())
@@ -1151,6 +1181,58 @@ impl SelectableText {
         // Caret stays at start16
         self.build_text_layout()?;
         self.recalc_metrics()?;
+        self.clear_sticky_x();
+        self.force_blink();
+        Ok(())
+    }
+
+    /// Delete the word to the left of the caret when no selection, or delete the selection.
+    pub fn backspace_word(&mut self) -> Result<()> {
+        let (start16, end16) = self.selection_range();
+        if start16 != end16 {
+            self.clear_sticky_x();
+            self.force_blink();
+            return self.insert_str("");
+        }
+        if start16 == 0 {
+            return Ok(());
+        }
+        let prev16 = self.prev_word_index(start16);
+        let prev_byte = self.utf16_index_to_byte(prev16);
+        let caret_byte = self.utf16_index_to_byte(start16);
+        self.text.replace_range(prev_byte..caret_byte, "");
+        self.recompute_text_boundaries();
+        self.selection_anchor = prev16;
+        self.selection_active = prev16;
+        self.build_text_layout()?;
+        self.recalc_metrics()?;
+        self.clear_sticky_x();
+
+        self.force_blink();
+        Ok(())
+    }
+
+    /// Delete the word to the right of the caret when no selection, or delete the selection.
+    pub fn delete_word_forward(&mut self) -> Result<()> {
+        let (start16, end16) = self.selection_range();
+        if start16 != end16 {
+            self.clear_sticky_x();
+            self.force_blink();
+            return self.insert_str("");
+        }
+        let total16 = self.text.encode_utf16().count() as u32;
+        if start16 >= total16 {
+            return Ok(());
+        }
+        let next16 = self.next_word_index(start16);
+        let caret_byte = self.utf16_index_to_byte(start16);
+        let next_byte = self.utf16_index_to_byte(next16);
+        self.text.replace_range(caret_byte..next_byte, "");
+        self.recompute_text_boundaries();
+        // Caret stays at start16
+        self.build_text_layout()?;
+        self.recalc_metrics()?;
+        self.clear_sticky_x();
 
         self.force_blink();
         Ok(())
@@ -1172,6 +1254,7 @@ impl SelectableText {
     }
 
     pub fn move_left(&mut self, extend: bool) {
+        self.clear_sticky_x();
         let (start16, end16) = self.selection_range();
         let target = if !extend && start16 != end16 {
             start16
@@ -1183,6 +1266,8 @@ impl SelectableText {
     }
 
     pub fn move_right(&mut self, extend: bool) {
+        // Horizontal movement resets sticky X
+        self.clear_sticky_x();
         let (start16, end16) = self.selection_range();
         let target = if !extend && start16 != end16 {
             end16
@@ -1193,7 +1278,58 @@ impl SelectableText {
         self.move_to_target(target, extend);
     }
 
+    pub fn move_up(&mut self, extend: bool) {
+        // If there is an active selection and we're not extending, collapse to start first
+        let (start16, end16) = self.selection_range();
+        let base = if !extend && start16 != end16 {
+            start16
+        } else {
+            self.selection_active
+        };
+
+        if let Ok((curr_x, top, _h)) = self.caret_pos_dip(base) {
+            // Initialize sticky X on first vertical move; otherwise use existing
+            let desired_x = if let Some(sx) = self.sticky_x_dip {
+                sx
+            } else {
+                self.sticky_x_dip = Some(curr_x);
+                curr_x
+            };
+            let target_y = top - 1.0; // just above current line
+            if let Ok(idx) = self.hit_test_index(desired_x, target_y) {
+                let idx = self.snap_to_scalar_boundary(idx);
+                self.move_to_target(idx, extend);
+            }
+        }
+    }
+
+    pub fn move_down(&mut self, extend: bool) {
+        // If there is an active selection and we're not extending, collapse to end first
+        let (start16, end16) = self.selection_range();
+        let base = if !extend && start16 != end16 {
+            end16
+        } else {
+            self.selection_active
+        };
+
+        if let Ok((curr_x, top, h)) = self.caret_pos_dip(base) {
+            // Initialize sticky X on first vertical move; otherwise use existing
+            let desired_x = if let Some(sx) = self.sticky_x_dip {
+                sx
+            } else {
+                self.sticky_x_dip = Some(curr_x);
+                curr_x
+            };
+            let target_y = top + h + 1.0; // just below current line
+            if let Ok(idx) = self.hit_test_index(desired_x, target_y) {
+                let idx = self.snap_to_scalar_boundary(idx);
+                self.move_to_target(idx, extend);
+            }
+        }
+    }
+
     pub fn move_word_left(&mut self, extend: bool) {
+        self.clear_sticky_x();
         let (start16, end16) = self.selection_range();
         let target = if !extend && start16 != end16 {
             start16
@@ -1205,6 +1341,7 @@ impl SelectableText {
     }
 
     pub fn move_word_right(&mut self, extend: bool) {
+        self.clear_sticky_x();
         let (start16, end16) = self.selection_range();
         let target = if !extend && start16 != end16 {
             end16
@@ -1216,10 +1353,12 @@ impl SelectableText {
     }
 
     pub fn move_to_start(&mut self, extend: bool) {
+        self.clear_sticky_x();
         self.move_to_target(0, extend);
     }
 
     pub fn move_to_end(&mut self, extend: bool) {
+        self.clear_sticky_x();
         let total16 = self.text.encode_utf16().count() as u32;
         self.move_to_target(total16, extend);
     }

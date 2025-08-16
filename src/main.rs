@@ -104,7 +104,8 @@ unsafe impl Sync for SafeCursor {}
 
 static IBEAM_CURSOR: OnceLock<Option<SafeCursor>> = OnceLock::new();
 
-const TEXT: &str = "Hello, בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ.  DirectWrite! こんにちは 😍";
+// const TEXT: &str = "Hello, בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ.  DirectWrite! こんにちは 😍";
+const TEXT: &str = "Hello, World!";
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DragAxis {
@@ -472,7 +473,6 @@ impl AppState {
 
             let spinner_ui_key = ui_tree.insert(UIElement {
                 id: Some(w_id!()),
-                background_color: Some(0x00FFFFFF),
 
                 vertical_alignment: VerticalAlignment::Center,
 
