@@ -28,12 +28,14 @@ use windows::Win32::Graphics::DirectWrite::{
 use windows::Win32::System::Com::{
     CoUninitialize, DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM, TYMED_HGLOBAL,
 };
-use windows::Win32::System::Ole::ReleaseStgMedium;
+use windows::Win32::System::Ole::{
+    DROPEFFECT_LINK, DROPEFFECT_NONE, DROPEFFECT_SCROLL, ReleaseStgMedium,
+};
 use windows::Win32::System::SystemServices::MK_SHIFT;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SystemParametersInfoW, WM_KEYUP, WM_MOUSEWHEEL,
+    SystemParametersInfoW, WM_DPICHANGED, WM_KEYUP, WM_MOUSEWHEEL,
 };
 use windows::{
     Win32::{
@@ -257,7 +259,7 @@ impl IDropTarget_Impl for DropTarget_Impl {
             let eff = if accepts {
                 self.choose_effect(grfKeyState)
             } else {
-                DROPEFFECT(0)
+                DROPEFFECT_NONE
             };
             if !pdwEffect.is_null() {
                 *pdwEffect = eff;
@@ -658,9 +660,7 @@ impl AppState {
             let mut ps = PAINTSTRUCT::default();
             BeginPaint(hwnd, &mut ps);
 
-            if let (d2d_factory, Some(rt), Some(brush)) =
-                (&self.d2d_factory, &self.render_target, &self.black_brush)
-            {
+            if let (Some(rt), Some(brush)) = (&self.render_target, &self.black_brush) {
                 rt.BeginDraw();
                 let white = D2D1_COLOR_F {
                     r: 1.0,
@@ -672,7 +672,6 @@ impl AppState {
 
                 let rc = client_rect(hwnd)?;
                 let rc_dip = RectDIP::from(hwnd, rc);
-                let to_dip = dips_scale(hwnd);
 
                 brush.SetColor(&D2D1_COLOR_F {
                     r: 0.0,
@@ -680,20 +679,6 @@ impl AppState {
                     b: 0.0,
                     a: 1.0,
                 });
-
-                // let _ = self.text_widget.update_bounds(rc_dip);
-                // let _ = self.text_widget.draw(rt, brush, dt);
-
-                // let center = Vector2 {
-                //     X: 100.0 * to_dip,
-                //     Y: 100.0 * to_dip,
-                // };
-                // let radius = 64.0 * to_dip;
-                // self.spinner.set_layout(center, radius);
-                // let dt = self.timing_info.rateCompose.uiDenominator as f32
-                //     / self.timing_info.rateCompose.uiNumerator as f32;
-                // self.spinner.update(dt);
-                // self.spinner.draw(d2d_factory, rt, brush)?;
 
                 let root = self.ui_tree.keys().next().unwrap();
                 self.ui_tree[root].width = Sizing::fixed(rc_dip.width_dip);
@@ -1218,35 +1203,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
 
-            // WM_COPY => {
-            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
-            //         if let Some(s) = state.text_widget.selected_text() {
-            //             let _ = set_clipboard_text(hwnd, &s);
-            //         }
-            //     }
-            //     LRESULT(0)
-            // }
-            // WM_CUT => {
-            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
-            //         if let Some(s) = state.text_widget.selected_text() {
-            //             let _ = set_clipboard_text(hwnd, &s);
-            //             let _ = state.text_widget.insert_str("");
-            //             let _ = InvalidateRect(Some(hwnd), None, false);
-            //         }
-            //     }
-            //     LRESULT(0)
-            // }
-            // WM_PASTE => {
-            //     if let Some(state) = state_mut_from_hwnd(hwnd) {
-            //         if !state.text_widget.is_composing() {
-            //             if let Some(s) = get_clipboard_text(hwnd) {
-            //                 let _ = state.text_widget.insert_str(&s);
-            //                 let _ = InvalidateRect(Some(hwnd), None, false);
-            //             }
-            //         }
-            //     }
-            //     LRESULT(0)
-            // }
             WM_CHAR => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     // Suppress WM_CHAR while IME composition is active to avoid duplicate input
@@ -1379,7 +1335,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 }
                 LRESULT(0)
             }
-            WAM::WM_DPICHANGED => {
+            WM_DPICHANGED => {
                 // Resize window to the suggested rect and update render target DPI
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
                     let suggested = &*(lparam.0 as *const RECT);
@@ -1411,19 +1367,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         let y_dip = (pt.y as f32) * to_dip;
                         let point = PointDIP { x_dip, y_dip };
 
-                        // let widget = &state.ui_tree[state.text_widget_ui_key];
-
-                        // let RectDIP {
-                        //     x_dip: left,
-                        //     y_dip: top,
-                        //     width_dip: width,
-                        //     height_dip: height,
-                        // } = widget.bounds(); //state.text_widget.metric_bounds();
-                        // if x_dip >= left
-                        //     && y_dip >= top
-                        //     && x_dip < left + width
-                        //     && y_dip < top + height
-                        // {
                         let mut cursor = None;
                         let root = state.ui_tree.keys().next().unwrap();
                         visitors::visit_reverse_bfs(
@@ -1442,11 +1385,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         );
 
                         if let Some(cursor) = cursor {
-                            // if let Some(h) = IBEAM_CURSOR
-                            //     .get_or_init(|| LoadCursorW(None, IDC_IBEAM).ok().map(SafeCursor))
-                            //     .as_ref()
-                            // {
-                            // let _ = SetCursor(Some(h.0));
                             match cursor {
                                 Cursor::Arrow => {
                                     let _ = SetCursor(Some(LoadCursorW(None, IDC_ARROW).unwrap()));
