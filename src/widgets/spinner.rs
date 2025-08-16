@@ -49,9 +49,9 @@ impl Widget for Spinner {
 
     fn paint(
         &mut self, // TODO: this shouldnt need to be mut right
-        id: Option<u64>,
-        ui_key: UIKey,
-        shell: &Shell,
+        _id: Option<u64>,
+        _ui_key: UIKey,
+        _shell: &Shell,
         renderer: &Renderer,
         bounds: crate::gfx::RectDIP,
         dt: f64,

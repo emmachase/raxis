@@ -6,7 +6,7 @@ use windows::Win32::{
     },
 };
 
-use crate::gfx::PointDIP;
+use crate::{Shell, gfx::PointDIP, layout::model::UIKey};
 
 /// Represents the data being dragged
 #[derive(Debug, Clone)]
@@ -68,7 +68,14 @@ pub trait DragDropWidget {
 
     /// Called when data is dropped on the widget
     /// Returns the actual effect that was applied and whether it was handled
-    fn drop(&mut self, drag_info: &DragInfo, widget_bounds: crate::gfx::RectDIP) -> DropResult {
+    fn drop(
+        &mut self,
+        _id: Option<u64>,
+        _key: UIKey,
+        _shell: &mut Shell,
+        drag_info: &DragInfo,
+        _widget_bounds: crate::gfx::RectDIP,
+    ) -> DropResult {
         let _ = drag_info;
         DropResult::default()
     }

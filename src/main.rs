@@ -10,27 +10,19 @@ use raxis::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
 };
 use raxis::widgets::integrated_drop_target::IntegratedDropTarget;
-use raxis::widgets::{Cursor, Event, Modifiers, Renderer, Widget};
+use raxis::widgets::{Cursor, Event, Modifiers, Renderer};
 use raxis::{Shell, w_id};
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
-    widgets::{
-        spinner::Spinner,
-        text_input::{SelectionMode, TextInput},
-    },
+    widgets::{spinner::Spinner, text_input::TextInput},
 };
 use slotmap::DefaultKey;
-use std::{ffi::c_void, sync::OnceLock};
+use std::ffi::c_void;
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING,
 };
-use windows::Win32::System::Com::{
-    CoUninitialize, DVASPECT_CONTENT, FORMATETC, IDataObject, STGMEDIUM, TYMED_HGLOBAL,
-};
-use windows::Win32::System::Ole::{
-    DROPEFFECT_LINK, DROPEFFECT_NONE, DROPEFFECT_SCROLL, ReleaseStgMedium,
-};
+use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
@@ -39,10 +31,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
 };
 use windows::{
     Win32::{
-        Foundation::{
-            D2DERR_RECREATE_TARGET, GlobalFree, HANDLE, HGLOBAL, HWND, LPARAM, LRESULT, POINT,
-            POINTL, RECT, S_OK, WPARAM,
-        },
+        Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::{
             Direct2D::{
                 Common::{D2D_SIZE_U, D2D1_ALPHA_MODE_UNKNOWN, D2D1_COLOR_F, D2D1_PIXEL_FORMAT},
@@ -65,57 +54,42 @@ use windows::{
         },
         System::{
             Com::CoInitialize,
-            DataExchange::{
-                CloseClipboard, EmptyClipboard, GetClipboardData, IsClipboardFormatAvailable,
-                OpenClipboard, SetClipboardData,
-            },
             LibraryLoader::GetModuleHandleW,
-            Memory::{GMEM_MOVEABLE, GlobalAlloc, GlobalLock, GlobalUnlock},
-            Ole::{
-                CF_UNICODETEXT, DROPEFFECT, DROPEFFECT_COPY, DROPEFFECT_MOVE, IDropTarget,
-                IDropTarget_Impl, OleInitialize, OleUninitialize, RegisterDragDrop, RevokeDragDrop,
-            },
-            SystemServices::{MK_CONTROL, MODIFIERKEYS_FLAGS},
+            Ole::{IDropTarget, OleInitialize, OleUninitialize, RegisterDragDrop, RevokeDragDrop},
         },
         UI::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
             Input::{
                 Ime::{
-                    CANDIDATEFORM, CFS_FORCE_POSITION, CFS_POINT, CPS_COMPLETE, GCS_COMPSTR,
-                    GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW, ImmGetContext,
-                    ImmNotifyIME, ImmReleaseContext, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
+                    GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW,
+                    ImmGetContext, ImmReleaseContext,
                 },
                 KeyboardAndMouse::{
-                    GetDoubleClickTime, GetKeyState, ReleaseCapture, SetCapture, SetFocus, VK_A,
-                    VK_BACK, VK_C, VK_CONTROL, VK_DELETE, VK_END, VK_HOME, VK_LEFT, VK_RIGHT,
-                    VK_SHIFT, VK_V, VK_X,
+                    GetDoubleClickTime, GetKeyState, ReleaseCapture, SetCapture, SetFocus,
+                    VK_CONTROL, VK_SHIFT,
                 },
             },
             WindowsAndMessaging::{
                 self as WAM, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
                 GetMessageTime, GetMessageW, GetSystemMetrics, HCURSOR, HTCLIENT, IDC_ARROW,
-                IDC_IBEAM, LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CXDRAG,
-                SM_CYDOUBLECLK, SM_CYDRAG, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor,
-                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
-                WM_CHAR, WM_COPY, WM_CREATE, WM_CUT, WM_DESTROY, WM_DISPLAYCHANGE,
-                WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_PASTE, WM_SETCURSOR,
-                WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                IDC_IBEAM, LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK,
+                SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos,
+                ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_CREATE, WM_DESTROY,
+                WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+                WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
+                WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
-    core::{PCWSTR, Result, implement, w},
+    core::{PCWSTR, Result, w},
 };
-use windows_numerics::Vector2;
 
 pub const LINE_HEIGHT: u32 = 16;
 
 pub struct SafeCursor(pub HCURSOR);
 unsafe impl Send for SafeCursor {}
 unsafe impl Sync for SafeCursor {}
-
-static IBEAM_CURSOR: OnceLock<Option<SafeCursor>> = OnceLock::new();
 
 // const TEXT: &str = "Hello, בְּרֵאשִׁ֖ית בָּרָ֣א אֱלֹהִ֑ים אֵ֥ת הַשָּׁמַ֖יִם וְאֵ֥ת הָאָֽרֶץ.  DirectWrite! こんにちは 😍";
 const TEXT: &str = "Hello, World!";

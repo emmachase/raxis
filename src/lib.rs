@@ -222,7 +222,9 @@ impl Shell {
                                     }
                                 }
                                 Event::Drop { drag_info } => {
-                                    result = Some(text_input.drop(drag_info, bounds));
+                                    result = Some(
+                                        text_input.drop(element.id, key, self, drag_info, bounds),
+                                    );
                                 }
                                 _ => {}
                             }

@@ -8,7 +8,7 @@ use crate::{
     Shell,
     gfx::{PointDIP, RectDIP},
     layout::{
-        BorrowedUITree, OwnedUITree,
+        BorrowedUITree,
         model::{ElementContent, UIElement, UIKey},
         visitors,
     },
