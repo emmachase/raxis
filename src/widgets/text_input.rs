@@ -811,7 +811,7 @@ impl TextInput {
             if let Some(drop) = self.ole_drop_preview16 {
                 let drop = self.snap_to_scalar_boundary(drop);
                 let (src_start, src_end) = self.selection_range();
-                if !(drop >= src_start && drop <= src_end) {
+                if !self.has_selection() || !(drop >= src_start && drop <= src_end) {
                     let mut x = 0.0f32;
                     let mut y = 0.0f32;
                     let mut m = DWRITE_HIT_TEST_METRICS::default();
