@@ -7,7 +7,7 @@ use crate::{
     widgets::{Limits, Size},
 };
 
-pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
+pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
     // Helper to check scroll flag for an axis
     fn is_scroll_enabled(el: &UIElement, axis: Axis) -> bool {
         el.scroll
@@ -21,8 +21,8 @@ pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
 
     let x_axis = matches!(axis, Axis::X);
 
-    visitors::visit_reverse_bfs(slots, root, |slots, key, _parent| {
-        let element = &slots[key];
+    visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _parent| {
+        let element = &ui_tree.slots[key];
         let axis_padding = if x_axis {
             element.padding.left + element.padding.right
         } else {
@@ -33,11 +33,11 @@ pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
         // let element = &slots[key];
         macro_rules! element {
             () => {
-                slots[key]
+                ui_tree.slots[key]
             };
         }
 
-        if slots[key].content.is_some() {
+        if element!().content.is_some() {
             if matches!(
                 element!().content.as_ref().unwrap(),
                 ElementContent::Text { .. }
@@ -108,36 +108,46 @@ pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                         panic!("ElementContent is not a Widget");
                     };
 
-                if x_axis {
-                    let Limits { min, max } = widget.limits(Limits {
-                        min: Size {
-                            width: 0.0,
-                            height: 0.0,
-                        },
-                        max: Size {
-                            width: f32::INFINITY,
-                            height: f32::INFINITY,
-                        },
-                    });
+                if let Some(id) = element!().id
+                    && let Some(instance) = ui_tree.state.get(&id)
+                {
+                    if x_axis {
+                        let Limits { min, max } = widget.limits(
+                            instance,
+                            Limits {
+                                min: Size {
+                                    width: 0.0,
+                                    height: 0.0,
+                                },
+                                max: Size {
+                                    width: f32::INFINITY,
+                                    height: f32::INFINITY,
+                                },
+                            },
+                        );
 
-                    let element = &mut slots[key];
-                    element.computed_width = max.width;
-                    element.min_width = min.width;
-                } else {
-                    let Limits { min, max } = widget.limits(Limits {
-                        min: Size {
-                            width: 0.0,
-                            height: 0.0,
-                        },
-                        max: Size {
-                            width: element!().computed_width,
-                            height: f32::INFINITY,
-                        },
-                    });
+                        let element = &mut ui_tree.slots[key];
+                        element.computed_width = max.width;
+                        element.min_width = min.width;
+                    } else {
+                        let Limits { min, max } = widget.limits(
+                            instance,
+                            Limits {
+                                min: Size {
+                                    width: 0.0,
+                                    height: 0.0,
+                                },
+                                max: Size {
+                                    width: element!().computed_width,
+                                    height: f32::INFINITY,
+                                },
+                            },
+                        );
 
-                    let element = &mut slots[key];
-                    element.computed_height = max.height;
-                    element.min_height = min.height;
+                        let element = &mut ui_tree.slots[key];
+                        element.computed_height = max.height;
+                        element.min_height = min.height;
+                    }
                 }
             }
         } else {
@@ -158,7 +168,7 @@ pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                 .children
                 .iter()
                 .copied()
-                .filter(|child| slots[*child].floating.is_none())
+                .filter(|child| ui_tree.slots[*child].floating.is_none())
                 .collect();
 
             if element!().direction == axis_direction {
@@ -166,7 +176,7 @@ pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                 let (children_size_sum, children_min_size_sum) = non_floating_children.iter().fold(
                     (0.0_f32, 0.0_f32),
                     |(acc_size, acc_min), child| {
-                        let c = &slots[*child];
+                        let c = &ui_tree.slots[*child];
                         if x_axis {
                             (acc_size + c.computed_width, acc_min + c.min_width)
                         } else {
@@ -199,7 +209,7 @@ pub fn fit_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                     non_floating_children
                         .iter()
                         .fold((0.0_f32, 0.0_f32), |acc, child| {
-                            let c = &slots[*child];
+                            let c = &ui_tree.slots[*child];
                             if x_axis {
                                 (acc.0.max(c.computed_width), acc.1.max(c.min_width))
                             } else {

@@ -123,14 +123,16 @@ impl Shell {
         self.event_captured = false;
 
         // Handle regular events with reverse BFS traversal
-        if let Some(root) = ui_tree.keys().next() {
+        if let Some(root) = ui_tree.slots.keys().next() {
             visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _| {
-                let element = &mut ui_tree[key];
-                let id = element.id;
+                let element = &mut ui_tree.slots[key];
                 let bounds = element.bounds();
                 if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content
                 {
-                    widget.update(id, key, hwnd, self, &event, bounds);
+                    if let Some(id) = element.id {
+                        let instance = ui_tree.state.get_mut(&id).unwrap();
+                        widget.update(instance, hwnd, self, &event, bounds);
+                    }
 
                     if self.event_captured {
                         return VisitAction::Exit;
@@ -155,7 +157,7 @@ impl Shell {
         event: &DragEvent,
         position: gfx::PointDIP,
     ) -> Option<DropResult> {
-        if let Some(root) = ui_tree.keys().next() {
+        if let Some(root) = ui_tree.slots.keys().next() {
             let mut result = None;
             let mut new_drag_widget = None;
             let prev_drag_widget = self.current_drag_widget;
@@ -168,7 +170,7 @@ impl Shell {
 
                 // Quick check to see if we're still over the same widget or moved to a new one
                 visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _| {
-                    let element = &ui_tree[key];
+                    let element = &ui_tree.slots[key];
                     let bounds = element.bounds();
 
                     if position.within(bounds) {
@@ -186,14 +188,17 @@ impl Shell {
                 if should_call_drag_leave || !found_new_widget {
                     // Call drag_leave on the previous widget
                     if let Some(prev_key) = prev_drag_widget {
-                        if let Some(prev_element) = ui_tree.get_mut(prev_key) {
+                        if let Some(prev_element) = ui_tree.slots.get_mut(prev_key) {
                             let prev_bounds = prev_element.bounds();
                             if let Some(layout::model::ElementContent::Widget(
                                 ref mut prev_widget,
                             )) = prev_element.content
                             {
-                                if let Some(prev_text_input) = prev_widget.as_drop_target() {
-                                    prev_text_input.drag_leave(prev_bounds);
+                                if let Some(prev_text_input) = prev_widget.as_drop_target()
+                                    && let Some(id) = prev_element.id
+                                    && let Some(instance) = ui_tree.state.get_mut(&id)
+                                {
+                                    prev_text_input.drag_leave(instance, prev_bounds);
                                 }
                             }
                         }
@@ -203,7 +208,7 @@ impl Shell {
 
             // Now find the widget under the current position and handle the event
             visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _| {
-                let element = &mut ui_tree[key];
+                let element = &mut ui_tree.slots[key];
                 let bounds = element.bounds();
 
                 // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
@@ -211,12 +216,15 @@ impl Shell {
                     if let Some(layout::model::ElementContent::Widget(ref mut widget)) =
                         element.content
                     {
-                        if let Some(text_input) = widget.as_drop_target() {
+                        if let Some(text_input) = widget.as_drop_target()
+                            && let Some(id) = element.id
+                            && let Some(instance) = ui_tree.state.get_mut(&id)
+                        {
                             new_drag_widget = Some(key);
 
                             match event {
                                 DragEvent::DragEnter { drag_info } => {
-                                    let effect = text_input.drag_enter(drag_info, bounds);
+                                    let effect = text_input.drag_enter(instance, drag_info, bounds);
                                     result = Some(DropResult {
                                         effect,
                                         handled: true,
@@ -225,14 +233,16 @@ impl Shell {
                                 DragEvent::DragOver { drag_info } => {
                                     if prev_drag_widget != Some(key) {
                                         // Moving to a new widget, call drag_enter
-                                        let effect = text_input.drag_enter(drag_info, bounds);
+                                        let effect =
+                                            text_input.drag_enter(instance, drag_info, bounds);
                                         result = Some(DropResult {
                                             effect,
                                             handled: true,
                                         });
                                     } else {
                                         // Same widget, call drag_over
-                                        let effect = text_input.drag_over(drag_info, bounds);
+                                        let effect =
+                                            text_input.drag_over(instance, drag_info, bounds);
                                         result = Some(DropResult {
                                             effect,
                                             handled: true,
@@ -240,12 +250,11 @@ impl Shell {
                                     }
                                 }
                                 DragEvent::Drop { drag_info } => {
-                                    result = Some(
-                                        text_input.drop(element.id, key, self, drag_info, bounds),
-                                    );
+                                    result =
+                                        Some(text_input.drop(instance, self, drag_info, bounds));
                                 }
                                 DragEvent::DragLeave => {
-                                    text_input.drag_leave(bounds);
+                                    text_input.drag_leave(instance, bounds);
                                 }
                             }
 

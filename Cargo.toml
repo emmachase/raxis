@@ -39,3 +39,4 @@ windows-numerics = "0.2.0"
 strip = true    # Automatically strip symbols from the binary.
 opt-level = "z" # Optimize for size.
 lto = "fat"
+panic = "abort"

@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{any::Any, time::Instant};
 
 use smol_str::SmolStr;
 use windows::Win32::{
@@ -14,9 +14,10 @@ use crate::{
     gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree,
-        model::{ElementContent, UIElement, UIKey},
+        model::{ElementContent, UIElement},
         visitors,
     },
+    runtime::DeviceResources,
 };
 
 pub use dragdrop::{DragData, DragInfo, DropResult, WidgetDragDropTarget};
@@ -158,13 +159,56 @@ pub enum Cursor {
     IBeam,
 }
 
+pub type State = Option<Box<dyn Any>>;
+
+#[macro_export]
+macro_rules! with_state {
+    ($instance:ident as $state:ty) => {
+        $instance
+            .state
+            .as_ref()
+            .unwrap()
+            .downcast_ref::<$state>()
+            .unwrap()
+    };
+
+    (mut $instance:ident as $state:ty) => {
+        $instance
+            .state
+            .as_mut()
+            .unwrap()
+            .downcast_mut::<$state>()
+            .unwrap()
+    };
+}
+
+pub struct Instance {
+    id: u64,
+    state: State,
+}
+
+impl Instance {
+    pub fn new(id: u64, widget: &Box<dyn Widget>, device_resources: &DeviceResources) -> Self {
+        Self {
+            id,
+            state: widget.state(device_resources),
+        }
+    }
+}
+
+#[allow(unused)]
 pub trait Widget: std::fmt::Debug {
-    fn limits(&self, available: Limits) -> Limits;
+    fn limits(&self, instance: &Instance, available: Limits) -> Limits;
+
+    fn state(&self, device_resources: &DeviceResources) -> State {
+        None
+    }
 
     fn paint(
         &mut self, // TODO: this shouldnt need to be mut right
-        id: Option<u64>,
-        ui_key: UIKey,
+        // id: Option<u64>,
+        // ui_key: UIKey,
+        instance: &mut Instance,
         shell: &Shell,
         renderer: &Renderer,
         bounds: RectDIP,
@@ -173,31 +217,28 @@ pub trait Widget: std::fmt::Debug {
 
     fn update(
         &mut self,
-        id: Option<u64>,
-        key: UIKey,
+        instance: &mut Instance,
         hwnd: HWND,
         shell: &mut Shell,
         event: &Event,
         bounds: RectDIP,
     );
 
-    #[allow(unused)]
-    fn cursor(
-        &self,
-        id: Option<u64>,
-        key: UIKey,
-        point: PointDIP,
-        bounds: RectDIP,
-    ) -> Option<Cursor> {
+    fn cursor(&self, instance: &Instance, point: PointDIP, bounds: RectDIP) -> Option<Cursor> {
         None
     }
 
-    #[allow(unused)]
-    fn operate(&mut self, id: Option<u64>, key: UIKey, operation: &dyn Operation) {}
+    fn operate(&mut self, instance: &mut Instance, operation: &dyn Operation) {}
 
     fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget> {
         None
     }
+
+    // fn capture_device_resources(
+    //     &mut self,
+    //     instance: &mut Instance,
+    // ) {
+    // }
 }
 
 // pub trait Focusable {
@@ -211,11 +252,14 @@ pub trait Operation {
 }
 
 pub fn dispatch_operation(ui_tree: BorrowedUITree, operation: &dyn Operation) {
-    let root = ui_tree.keys().next().unwrap();
+    let root = ui_tree.slots.keys().next().unwrap();
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, _| {
-        let element = &mut ui_tree[key];
+        let element = &mut ui_tree.slots[key];
         if let Some(ElementContent::Widget(widget)) = element.content.as_mut() {
-            widget.operate(element.id, key, operation);
+            if let Some(id) = element.id {
+                let instance = ui_tree.state.get_mut(&id).unwrap();
+                widget.operate(instance, operation);
+            }
         }
     });
 }

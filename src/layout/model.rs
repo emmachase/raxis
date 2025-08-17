@@ -5,7 +5,11 @@ use std::collections::HashMap;
 
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
-use crate::widgets::Widget;
+use crate::{
+    layout::OwnedUITree,
+    runtime::DeviceResources,
+    widgets::{Instance, Widget},
+};
 
 // ---------- Geometry & basic types ----------
 
@@ -17,17 +21,25 @@ pub struct BoxAmount {
     pub left: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+impl BoxAmount {
+    pub fn all(amount: f32) -> Self {
+        Self {
+            top: amount,
+            right: amount,
+            bottom: amount,
+            left: amount,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Direction {
     #[default]
     LeftToRight,
     TopToBottom,
 }
 
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum HorizontalAlignment {
     #[default]
     Left,
@@ -35,9 +47,7 @@ pub enum HorizontalAlignment {
     Right,
 }
 
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum VerticalAlignment {
     #[default]
     Top,
@@ -45,11 +55,9 @@ pub enum VerticalAlignment {
     Bottom,
 }
 
-
 /// How to break text at word boundaries
 /// Default: AfterWord
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum WordBreak {
     None,
     // Anywhere, // TODO: Implement
@@ -57,18 +65,15 @@ pub enum WordBreak {
     AfterWord,
 }
 
-
 // ---------- Inline text model ----------
 
-#[derive(Clone, Debug, PartialEq)]
-#[derive(Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct TextSpan {
     /// The text content of this span
     pub text: String,
     /// Optional color override for this specific span (RGBA packed)
     pub color: Option<u32>,
 }
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct WrappedLine {
@@ -323,3 +328,127 @@ impl Default for UIElement {
 //         self.content.is_some()
 //     }
 // }
+
+// pub struct DeclTree {
+//     pub root: UIElement,
+//     pub children: Vec<DeclTree>,
+// }
+
+// impl DeclTree {
+//     pub fn hookup(self, slots: BorrowedUITree) -> DefaultKey {
+//         let root = slots.insert(self.root);
+//         for child in self.children {
+//             // let k = slots.insert(child);
+//             let k = DeclTree::hookup(child, slots);
+//             slots[k].parent = Some(root);
+//             slots[root].children.push(k);
+//         }
+//         root
+//     }
+// }
+
+// pub fn element<F: FnOnce() -> Vec<UIElement>>(
+//     tree: RefCell<OwnedUITree>,
+//     element: UIElement,
+//     children: F,
+// ) -> UIElement {
+//     let children = children();
+//     // let root = tree.borrow_mut().insert(element);
+//     for child in children {
+//         let k = tree.borrow_mut().insert(child);
+//         tree.borrow_mut()[root].children.push(k);
+//     }
+//     element
+// }
+
+#[derive(Debug, Default)]
+pub struct Element {
+    pub children: Vec<Element>,
+
+    pub content: Option<ElementContent>,
+
+    pub direction: Direction,
+
+    // These names mirror the TS definitions, though they may be confusing.
+    pub horizontal_alignment: HorizontalAlignment,
+    pub vertical_alignment: VerticalAlignment,
+
+    pub width: Sizing,
+    pub height: Sizing,
+
+    pub child_gap: f32,
+
+    pub floating: Option<FloatingConfig>,
+    pub scroll: Option<ScrollConfig>,
+
+    pub background_color: Option<u32>,
+    pub color: Option<u32>,
+    pub word_break: Option<WordBreak>,
+    pub padding: BoxAmount,
+
+    pub id: Option<u64>,
+}
+
+fn to_shell(element: Element) -> (UIElement, Vec<Element>) {
+    let children = element.children;
+    (
+        UIElement {
+            children: Vec::new(),
+            content: element.content,
+            direction: element.direction,
+            horizontal_alignment: element.horizontal_alignment,
+            vertical_alignment: element.vertical_alignment,
+            width: element.width,
+            height: element.height,
+            child_gap: element.child_gap,
+            floating: element.floating,
+            scroll: element.scroll,
+            background_color: element.background_color,
+            color: element.color,
+            word_break: element.word_break,
+            padding: element.padding,
+            id: element.id,
+            ..Default::default()
+        },
+        children,
+    )
+}
+
+pub fn create_tree(
+    device_resources: &DeviceResources,
+    tree: &mut OwnedUITree,
+    root: Element,
+) -> UIKey {
+    let mut queue = vec![(root, None)];
+    let mut root_key = None;
+
+    tree.slots.clear();
+
+    while let Some((element, parent)) = queue.pop() {
+        let (mut shell, children) = to_shell(element);
+        shell.parent = parent;
+
+        // Initialize widget state if new
+        if let Some(ElementContent::Widget(ref widget)) = shell.content {
+            if let Some(id) = shell.id {
+                tree.state
+                    .entry(id)
+                    .or_insert(Instance::new(id, widget, device_resources));
+            }
+        }
+
+        let key = tree.slots.insert(shell);
+        if let Some(parent) = parent {
+            tree.slots[parent].children.push(key);
+        }
+        if parent.is_none() {
+            root_key = Some(key);
+        }
+
+        for child in children {
+            queue.push((child, Some(key)));
+        }
+    }
+
+    root_key.expect("no root found")
+}

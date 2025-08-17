@@ -1,10 +1,6 @@
 use std::collections::VecDeque;
 
-use slotmap::SlotMap;
-
-use crate::layout::model::UIKey;
-
-use super::model::UIElement;
+use crate::layout::{BorrowedUITree, model::UIKey};
 
 pub enum VisitAction {
     Continue,
@@ -34,12 +30,9 @@ impl From<()> for VisitAction {
 }
 
 /// Breadth-first traversal that visits nodes from leaves back to the root.
-pub fn visit_reverse_bfs<F, R>(
-    slots: &mut SlotMap<UIKey, UIElement>,
-    element: UIKey,
-    mut visitor: F,
-) where
-    F: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>) -> R,
+pub fn visit_reverse_bfs<F, R>(ui_tree: BorrowedUITree, element: UIKey, mut visitor: F)
+where
+    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
     R: Into<VisitAction>,
 {
     let mut queue: VecDeque<(UIKey, Option<UIKey>)> = VecDeque::from([(element, None)]);
@@ -48,32 +41,32 @@ pub fn visit_reverse_bfs<F, R>(
     // Collect in BFS order
     while let Some((current, parent)) = queue.pop_front() {
         stack.push((current, parent));
-        for &child in slots[current].children.iter() {
+        for &child in ui_tree.slots[current].children.iter() {
             queue.push_back((child, Some(current)));
         }
     }
 
     // Visit in reverse order (from leaves to root)
     while let Some((current, parent)) = stack.pop() {
-        if visitor(slots, current, parent).into().is_exit() {
+        if visitor(ui_tree, current, parent).into().is_exit() {
             break;
         }
     }
 }
 
 /// Standard breadth-first traversal.
-pub fn visit_bfs<F, R>(slots: &mut SlotMap<UIKey, UIElement>, element: UIKey, mut visitor: F)
+pub fn visit_bfs<F, R>(ui_tree: BorrowedUITree, element: UIKey, mut visitor: F)
 where
-    F: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>) -> R,
+    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
     R: Into<VisitAction>,
 {
     let mut queue: VecDeque<(UIKey, Option<UIKey>)> = VecDeque::from([(element, None)]);
 
     while let Some((current, parent)) = queue.pop_front() {
-        if visitor(slots, current, parent).into().is_exit() {
+        if visitor(ui_tree, current, parent).into().is_exit() {
             break;
         }
-        for &child in slots[current].children.iter() {
+        for &child in ui_tree.slots[current].children.iter() {
             queue.push_back((child, Some(current)));
         }
     }
@@ -82,13 +75,13 @@ where
 /// Breadth-first traversal that defers visiting nodes based on a predicate.
 /// Nodes that are deferred are revisited in subsequent passes until none are deferred.
 pub fn visit_deferring_bfs<S, F, R>(
-    slots: &mut SlotMap<UIKey, UIElement>,
+    ui_tree: BorrowedUITree,
     element: UIKey,
     mut should_defer: S,
     mut visitor: F,
 ) where
-    S: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>) -> bool,
-    F: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>) -> R,
+    S: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> bool,
+    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
     R: Into<VisitAction>,
 {
     let mut queue: VecDeque<(UIKey, Option<UIKey>)> = VecDeque::from([(element, None)]);
@@ -96,14 +89,14 @@ pub fn visit_deferring_bfs<S, F, R>(
 
     'exit: loop {
         while let Some((current, parent)) = queue.pop_front() {
-            if should_defer(slots, current, parent) {
+            if should_defer(ui_tree, current, parent) {
                 deferred.push((current, parent));
-            } else if visitor(slots, current, parent).into().is_exit() {
+            } else if visitor(ui_tree, current, parent).into().is_exit() {
                 break 'exit;
             }
 
             // Always enqueue children
-            for &child in slots[current].children.iter() {
+            for &child in ui_tree.slots[current].children.iter() {
                 queue.push_back((child, Some(current)));
             }
         }
@@ -119,13 +112,13 @@ pub fn visit_deferring_bfs<S, F, R>(
 
 /// Depth-first traversal with optional "exit-children" callback.
 pub fn visit_dfs<F, E, R>(
-    slots: &mut SlotMap<UIKey, UIElement>,
+    ui_tree: BorrowedUITree,
     element: UIKey,
     mut visitor: F,
     mut exit_children_visitor: Option<E>,
 ) where
-    F: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>) -> R,
-    E: FnMut(&mut SlotMap<UIKey, UIElement>, UIKey, Option<UIKey>),
+    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
+    E: FnMut(BorrowedUITree, UIKey, Option<UIKey>),
     R: Into<VisitAction>,
 {
     #[derive(Clone, Copy)]
@@ -144,11 +137,14 @@ pub fn visit_dfs<F, E, R>(
     while let Some(frame) = stack.pop() {
         if frame.exit {
             if let Some(f) = exit_children_visitor.as_mut() {
-                f(slots, frame.element, frame.parent);
+                f(ui_tree, frame.element, frame.parent);
             }
             continue;
         } else {
-            if visitor(slots, frame.element, frame.parent).into().is_exit() {
+            if visitor(ui_tree, frame.element, frame.parent)
+                .into()
+                .is_exit()
+            {
                 break;
             }
 
@@ -161,7 +157,7 @@ pub fn visit_dfs<F, E, R>(
         }
 
         // Push children in reverse so they are processed in original order
-        for &child in slots[frame.element].children.iter().rev() {
+        for &child in ui_tree.slots[frame.element].children.iter().rev() {
             stack.push(Frame {
                 element: child,
                 parent: Some(frame.element),

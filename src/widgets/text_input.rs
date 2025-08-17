@@ -1,11 +1,13 @@
+use std::any::Any;
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT;
 use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_HIT_TEST_METRICS, DWRITE_LINE_METRICS, DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE,
-    IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
+    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
+    DWRITE_HIT_TEST_METRICS, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING,
+    DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE};
@@ -15,16 +17,16 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
+use windows_core::{PCWSTR, w};
 use windows_numerics::Vector2;
 
 use crate::gfx::{PointDIP, RectDIP};
-use crate::layout::model::UIKey;
 use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::runtime::dragdrop::start_text_drag;
 use crate::widgets::{
-    BLACK, Color, DragData, DragInfo, DropResult, Renderer, Widget, WidgetDragDropTarget,
+    BLACK, Color, DragData, DragInfo, DropResult, Instance, Renderer, Widget, WidgetDragDropTarget,
 };
-use crate::{InputMethod, RedrawRequest, Shell};
+use crate::{InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
@@ -56,8 +58,15 @@ enum UndoOperationType {
 ///
 /// It encapsulates selection state, hit-testing, and cached layout bounds
 /// for cursor hit-testing.
-#[derive(Debug, Clone)]
-pub struct TextInput {
+#[derive(Debug, Clone, Default)]
+pub struct TextInput {}
+impl TextInput {
+    pub fn new() -> Self {
+        Self {}
+    }
+}
+
+struct WidgetState {
     // DirectWrite objects (shared/cloneable COM interfaces)
     dwrite_factory: IDWriteFactory,
     text_format: IDWriteTextFormat,
@@ -108,7 +117,12 @@ pub struct TextInput {
     // Undo/redo system
     undo_stack: Vec<UndoState>,
     redo_stack: Vec<UndoState>,
-    // last_operation_time: f64,
+}
+
+impl WidgetState {
+    pub fn as_any(self) -> Box<dyn Any> {
+        Box::new(self)
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,8 +133,36 @@ pub enum SelectionMode {
 }
 
 impl Widget for TextInput {
-    fn limits(&self, available: super::Limits) -> super::Limits {
-        if let Some(layout) = &self.layout {
+    fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
+        let text_format = unsafe {
+            let text_format = device_resources
+                .dwrite_factory
+                .CreateTextFormat(
+                    PCWSTR(w!("Segoe UI").as_ptr()),
+                    None,
+                    DWRITE_FONT_WEIGHT_REGULAR,
+                    DWRITE_FONT_STYLE_NORMAL,
+                    DWRITE_FONT_STRETCH_NORMAL,
+                    // 72.0,
+                    14.0,
+                    PCWSTR(w!("en-us").as_ptr()),
+                )
+                .unwrap();
+            text_format
+                .SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)
+                .unwrap();
+            text_format
+                .SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)
+                .unwrap();
+            text_format
+        };
+
+        Some(WidgetState::new(device_resources.dwrite_factory.clone(), text_format).as_any())
+    }
+
+    fn limits(&self, instance: &Instance, available: super::Limits) -> super::Limits {
+        let state = with_state!(instance as WidgetState);
+        if let Some(layout) = &state.layout {
             unsafe {
                 layout.SetMaxWidth(available.max.width).unwrap();
                 layout.SetMaxHeight(available.max.height).unwrap();
@@ -151,13 +193,13 @@ impl Widget for TextInput {
 
     fn update(
         &mut self,
-        id: Option<u64>,
-        ui_key: UIKey,
+        instance: &mut Instance,
         hwnd: HWND,
         shell: &mut Shell,
         event: &super::Event,
         bounds: RectDIP,
     ) {
+        let state = with_state!(mut instance as WidgetState);
         let RectDIP { x_dip, y_dip, .. } = bounds;
         match event {
             super::Event::MouseButtonDown {
@@ -167,8 +209,8 @@ impl Widget for TextInput {
                 modifiers,
             } => {
                 // Complete composition before altering selection
-                if self.ime_text.is_some() {
-                    self.ime_end();
+                if state.ime_text.is_some() {
+                    state.ime_end();
                     shell.request_input_method(hwnd, InputMethod::Disabled);
                 }
 
@@ -178,11 +220,11 @@ impl Widget for TextInput {
                 })
                 .within(bounds)
                 {
-                    if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
-                        shell.focus_manager.focus(id, ui_key);
+                    if let Ok(idx) = state.hit_test_index(x - x_dip, y - y_dip) {
+                        shell.focus_manager.focus(instance.id);
 
                         // Store the drag start position for OLE drag detection
-                        self.drag_start_position = Some(PointDIP {
+                        state.drag_start_position = Some(PointDIP {
                             x_dip: x - x_dip,
                             y_dip: y - y_dip,
                         });
@@ -193,139 +235,139 @@ impl Widget for TextInput {
                             x if x % 2 == 0 => SelectionMode::Word,
                             _ => SelectionMode::Paragraph,
                         };
-                        self.set_selection_mode(mode);
-                        self.begin_drag(idx, modifiers.shift);
+                        state.set_selection_mode(mode);
+                        state.begin_drag(idx, modifiers.shift);
                         if modifiers.shift {
-                            self.update_drag(x - x_dip, y - y_dip);
+                            state.update_drag(x - x_dip, y - y_dip);
                         }
                     }
                 } else {
-                    shell.focus_manager.release_focus(id, ui_key);
+                    shell.focus_manager.release_focus(instance.id);
                 }
             }
             super::Event::MouseButtonUp { x, y, .. } => {
-                if let Ok(idx) = self.hit_test_index(x - x_dip, y - y_dip) {
-                    self.end_drag(idx);
+                if let Ok(idx) = state.hit_test_index(x - x_dip, y - y_dip) {
+                    state.end_drag(idx);
                 } else {
-                    self.end_drag(0);
+                    state.end_drag(0);
                 }
 
                 // Reset OLE drag state
-                self.has_started_ole_drag = false;
-                self.drag_start_position = None;
+                state.has_started_ole_drag = false;
+                state.drag_start_position = None;
             }
             super::Event::MouseMove { x, y } => {
                 let widget_x = x - x_dip;
                 let widget_y = y - y_dip;
 
                 // Check if we should start an OLE drag operation
-                if self.is_dragging && self.can_drag_drop && !self.has_started_ole_drag {
+                if state.is_dragging && state.can_drag_drop && !state.has_started_ole_drag {
                     // Check if we have selected text and the drag started within the selection
-                    if let Some(start_pos) = self.drag_start_position {
-                        if let Some(drag_data) = self.can_ole_drag(start_pos) {
+                    if let Some(start_pos) = state.drag_start_position {
+                        if let Some(drag_data) = state.can_ole_drag(start_pos) {
                             // Start OLE drag operation
-                            self.handoff_ole_drag(&drag_data);
+                            state.handoff_ole_drag(&drag_data);
 
                             return; // Don't update text selection when starting OLE drag
                         }
                     }
                 }
 
-                if self.update_drag(widget_x, widget_y) {
+                if state.update_drag(widget_x, widget_y) {
                     let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
                 }
             }
             super::Event::KeyDown { key, modifiers, .. } => {
-                if shell.focus_manager.is_focused(id, ui_key) {
+                if shell.focus_manager.is_focused(instance.id) {
                     let shift_down = modifiers.shift;
                     let ctrl_down = modifiers.ctrl;
                     let _handled = match *key {
                         x if x == VK_LEFT.0 as u32 => {
                             if ctrl_down {
-                                self.move_word_left(shift_down);
+                                state.move_word_left(shift_down);
                             } else {
-                                self.move_left(shift_down);
+                                state.move_left(shift_down);
                             }
                             true
                         }
                         x if x == VK_RIGHT.0 as u32 => {
                             if ctrl_down {
-                                self.move_word_right(shift_down);
+                                state.move_word_right(shift_down);
                             } else {
-                                self.move_right(shift_down);
+                                state.move_right(shift_down);
                             }
                             true
                         }
                         x if x == VK_UP.0 as u32 => {
-                            self.move_up(shift_down);
+                            state.move_up(shift_down);
                             true
                         }
                         x if x == VK_DOWN.0 as u32 => {
-                            self.move_down(shift_down);
+                            state.move_down(shift_down);
                             true
                         }
                         x if x == VK_HOME.0 as u32 => {
-                            self.move_to_start(shift_down);
+                            state.move_to_start(shift_down);
                             true
                         }
                         x if x == VK_END.0 as u32 => {
-                            self.move_to_end(shift_down);
+                            state.move_to_end(shift_down);
                             true
                         }
                         x if x == VK_BACK.0 as u32 => {
                             if ctrl_down {
-                                let _ = self.backspace_word();
+                                let _ = state.backspace_word();
                             } else {
-                                let _ = self.backspace();
+                                let _ = state.backspace();
                             }
                             true
                         }
                         x if x == VK_DELETE.0 as u32 => {
                             if ctrl_down {
-                                let _ = self.delete_word_forward();
+                                let _ = state.delete_word_forward();
                             } else {
-                                let _ = self.delete_forward();
+                                let _ = state.delete_forward();
                             }
                             true
                         }
                         x if x == VK_A.0 as u32 && ctrl_down => {
-                            self.select_all();
+                            state.select_all();
                             true
                         }
                         x if x == VK_C.0 as u32 && ctrl_down => {
-                            if let Some(s) = self.selected_text() {
+                            if let Some(s) = state.selected_text() {
                                 let _ = set_clipboard_text(hwnd, &s);
                             }
                             true
                         }
                         x if x == VK_X.0 as u32 && ctrl_down => {
-                            if let Some(s) = self.selected_text() {
+                            if let Some(s) = state.selected_text() {
                                 let _ = set_clipboard_text(hwnd, &s);
-                                let _ = self.insert_str("");
+                                let _ = state.insert_str("");
                             }
                             true
                         }
                         x if x == VK_V.0 as u32 && ctrl_down => {
-                            if !self.is_composing() {
+                            if !state.is_composing() {
                                 if let Some(s) = get_clipboard_text(hwnd) {
-                                    let _ = self.insert_str(&s);
+                                    let _ = state.insert_str(&s);
                                 }
                             }
                             true
                         }
                         x if x == VK_Z.0 as u32 && ctrl_down && shift_down => {
-                            let _ = self.redo();
+                            let _ = state.redo();
                             true
                         }
                         x if x == VK_Z.0 as u32 && ctrl_down => {
-                            let _ = self.undo();
+                            let _ = state.undo();
                             true
                         }
                         x if x == VK_ESCAPE.0 as u32 => {
-                            if self.has_selection() {
-                                self.clear_selection();
+                            if state.has_selection() {
+                                state.clear_selection();
                             } else {
-                                shell.focus_manager.release_focus(id, ui_key);
+                                shell.focus_manager.release_focus(instance.id);
                             }
                             true
                         }
@@ -335,15 +377,15 @@ impl Widget for TextInput {
             }
             super::Event::KeyUp { .. } => {}
             super::Event::Char { text } => {
-                if shell.focus_manager.is_focused(id, ui_key) {
-                    let _ = self.insert_str(text.as_str());
+                if shell.focus_manager.is_focused(instance.id) {
+                    let _ = state.insert_str(text.as_str());
                 }
             }
             super::Event::ImeStartComposition => {
-                if shell.focus_manager.is_focused(id, ui_key) {
-                    self.ime_begin();
+                if shell.focus_manager.is_focused(instance.id) {
+                    state.ime_begin();
 
-                    if let Ok((c_x_dip, c_y_dip, h)) = self.caret_pos_dip(self.caret_active16()) {
+                    if let Ok((c_x_dip, c_y_dip, h)) = state.caret_pos_dip(state.caret_active16()) {
                         shell.request_input_method(
                             hwnd,
                             InputMethod::Enabled {
@@ -357,10 +399,10 @@ impl Widget for TextInput {
                 }
             }
             super::Event::ImeComposition { text, caret_units } => {
-                if shell.focus_manager.is_focused(id, ui_key) {
-                    self.ime_update(text.clone(), *caret_units);
+                if shell.focus_manager.is_focused(instance.id) {
+                    state.ime_update(text.clone(), *caret_units);
 
-                    if let Ok((c_x_dip, c_y_dip, h)) = self.caret_pos_dip(self.caret_active16()) {
+                    if let Ok((c_x_dip, c_y_dip, h)) = state.caret_pos_dip(state.caret_active16()) {
                         shell.request_input_method(
                             hwnd,
                             InputMethod::Enabled {
@@ -374,19 +416,19 @@ impl Widget for TextInput {
                 }
             }
             super::Event::ImeCommit { text } => {
-                if shell.focus_manager.is_focused(id, ui_key) {
-                    self.ime_commit(text.clone()).expect("ime commit failed");
+                if shell.focus_manager.is_focused(instance.id) {
+                    state.ime_commit(text.clone()).expect("ime commit failed");
                 }
             }
             super::Event::ImeEndComposition => {
-                if shell.focus_manager.is_focused(id, ui_key) {
-                    self.ime_end();
+                if shell.focus_manager.is_focused(instance.id) {
+                    state.ime_end();
                 }
             }
             super::Event::Redraw { now } => {
-                if shell.focus_manager.is_focused(id, ui_key) {
+                if shell.focus_manager.is_focused(instance.id) {
                     let next_blink =
-                        (0.05 + BLINK_TIME) - (*now - self.focused_at).as_secs_f64() % BLINK_TIME;
+                        (0.05 + BLINK_TIME) - (*now - state.focused_at).as_secs_f64() % BLINK_TIME;
                     shell.request_redraw(
                         hwnd,
                         RedrawRequest::At(*now + Duration::from_secs_f64(next_blink)),
@@ -402,23 +444,23 @@ impl Widget for TextInput {
 
     fn paint(
         &mut self,
-        id: Option<u64>,
-        ui_key: UIKey,
+        instance: &mut Instance,
         shell: &Shell,
         renderer: &Renderer,
         bounds: RectDIP,
         now: Instant,
     ) {
-        self.update_bounds(bounds).expect("update bounds failed");
+        let state = with_state!(mut instance as WidgetState);
+        state.update_bounds(bounds).expect("update bounds failed");
 
-        self.draw(id, ui_key, shell, renderer, bounds, now)
+        state
+            .draw(instance.id, shell, renderer, bounds, now)
             .expect("draw failed");
     }
 
     fn cursor(
         &self,
-        _id: Option<u64>,
-        _key: UIKey,
+        _instance: &Instance,
         point: PointDIP,
         bounds: RectDIP,
     ) -> Option<super::Cursor> {
@@ -437,17 +479,19 @@ impl Widget for TextInput {
 impl WidgetDragDropTarget for TextInput {
     fn drag_enter(
         &mut self,
+        instance: &mut Instance,
         drag_info: &DragInfo,
         widget_bounds: RectDIP,
     ) -> windows::Win32::System::Ole::DROPEFFECT {
+        let state = with_state!(mut instance as WidgetState);
         match &drag_info.data {
             DragData::Text(_) => {
                 let widget_x = drag_info.position.x_dip - widget_bounds.x_dip;
                 let widget_y = drag_info.position.y_dip - widget_bounds.y_dip;
 
-                if let Ok(idx) = self.hit_test_index(widget_x, widget_y) {
-                    self.set_ole_drop_preview(Some(idx));
-                    self.get_drop_effect(&drag_info.allowed_effects)
+                if let Ok(idx) = state.hit_test_index(widget_x, widget_y) {
+                    state.set_ole_drop_preview(Some(idx));
+                    state.get_drop_effect(&drag_info.allowed_effects)
                 } else {
                     DROPEFFECT_NONE
                 }
@@ -457,35 +501,38 @@ impl WidgetDragDropTarget for TextInput {
 
     fn drag_over(
         &mut self,
+        instance: &mut Instance,
         drag_info: &DragInfo,
         widget_bounds: RectDIP,
     ) -> windows::Win32::System::Ole::DROPEFFECT {
+        let state = with_state!(mut instance as WidgetState);
         match &drag_info.data {
             DragData::Text(_) => {
                 let widget_x = drag_info.position.x_dip - widget_bounds.x_dip;
                 let widget_y = drag_info.position.y_dip - widget_bounds.y_dip;
 
-                if let Ok(idx16) = self.hit_test_index(widget_x, widget_y) {
-                    self.set_ole_drop_preview(Some(idx16));
+                if let Ok(idx16) = state.hit_test_index(widget_x, widget_y) {
+                    state.set_ole_drop_preview(Some(idx16));
                 }
 
-                self.get_drop_effect(&drag_info.allowed_effects)
+                state.get_drop_effect(&drag_info.allowed_effects)
             }
         }
     }
 
-    fn drag_leave(&mut self, _widget_bounds: RectDIP) {
-        self.set_ole_drop_preview(None);
+    fn drag_leave(&mut self, instance: &mut Instance, _widget_bounds: RectDIP) {
+        let state = with_state!(mut instance as WidgetState);
+        state.set_ole_drop_preview(None);
     }
 
     fn drop(
         &mut self,
-        id: Option<u64>,
-        key: UIKey,
+        instance: &mut Instance,
         shell: &mut Shell,
         drag_info: &DragInfo,
         widget_bounds: RectDIP,
     ) -> DropResult {
+        let state = with_state!(mut instance as WidgetState);
         match &drag_info.data {
             DragData::Text(text) => {
                 // Convert client coordinates to widget-relative coordinates
@@ -494,12 +541,12 @@ impl WidgetDragDropTarget for TextInput {
                     y_dip: drag_info.position.y_dip - widget_bounds.y_dip,
                 };
 
-                if let Ok(drop_idx) = self.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
-                    let effect = self.get_drop_effect(&drag_info.allowed_effects);
+                if let Ok(drop_idx) = state.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
+                    let effect = state.get_drop_effect(&drag_info.allowed_effects);
 
-                    if let Some(result) = self.handle_text_drop(text, drop_idx, effect) {
-                        self.set_ole_drop_preview(None);
-                        shell.focus_manager.focus(id, key);
+                    if let Some(result) = state.handle_text_drop(text, drop_idx, effect) {
+                        state.set_ole_drop_preview(None);
+                        shell.focus_manager.focus(instance.id);
                         result
                     } else {
                         DropResult::default()
@@ -512,16 +559,12 @@ impl WidgetDragDropTarget for TextInput {
     }
 }
 
-impl TextInput {
-    pub fn new(
-        dwrite_factory: IDWriteFactory,
-        text_format: IDWriteTextFormat,
-        text: String,
-    ) -> Self {
+impl WidgetState {
+    pub fn new(dwrite_factory: IDWriteFactory, text_format: IDWriteTextFormat) -> Self {
         let mut s = Self {
             dwrite_factory,
             text_format,
-            text,
+            text: String::new(),
             bounds: RectDIP::default(),
             layout: None,
             selection_anchor: 0,
@@ -678,8 +721,7 @@ impl TextInput {
 
     pub fn draw(
         &mut self,
-        id: Option<u64>,
-        ui_key: UIKey,
+        id: u64,
         shell: &Shell,
         renderer: &Renderer,
         bounds: RectDIP,
@@ -730,7 +772,7 @@ impl TextInput {
                 // Draw caret if there's no selection (1 DIP wide bar)
                 let sel_start = self.selection_anchor.min(self.selection_active);
                 let sel_end = self.selection_anchor.max(self.selection_active);
-                if shell.focus_manager.is_focused(id, ui_key) && caret_visible {
+                if shell.focus_manager.is_focused(id) && caret_visible {
                     if self.is_composing() {
                         let ime_caret_pos = sel_start + self.ime_cursor16;
                         let mut x = 0.0f32;
@@ -1065,49 +1107,9 @@ impl TextInput {
         }
     }
 
-    /// Caret DIP position during IME composition (within preedit).
-    pub fn ime_caret_pos_dip(&self) -> Result<(f32, f32, f32)> {
-        unsafe {
-            if self.ime_text.is_none() {
-                return self.caret_pos_dip(self.selection_active);
-            }
-            let (start16, end16) = self.selection_range();
-            let base_w: Vec<u16> = self.text.encode_utf16().collect();
-            let ime_w: Vec<u16> = self.ime_text.as_ref().unwrap().encode_utf16().collect();
-            let mut composed = Vec::with_capacity(base_w.len() + ime_w.len());
-            composed.extend_from_slice(&base_w[..start16 as usize]);
-            let underline_start = composed.len() as u32;
-            composed.extend_from_slice(&ime_w);
-            composed.extend_from_slice(&base_w[end16 as usize..]);
-
-            let layout = self.dwrite_factory.CreateTextLayout(
-                &composed,
-                &self.text_format,
-                self.bounds.width_dip,
-                self.bounds.height_dip,
-            )?;
-            let caret_idx = underline_start;
-            let mut x = 0.0f32;
-            let mut y = 0.0f32;
-            let mut m = DWRITE_HIT_TEST_METRICS::default();
-            layout.HitTestTextPosition(caret_idx, false, &mut x, &mut y, &mut m)?;
-            Ok((x, m.top, m.height))
-        }
-    }
-
     /// Get the active caret position in UTF-16 code units.
     pub fn caret_active16(&self) -> u32 {
         self.selection_active
-    }
-
-    pub fn is_dragging(&self) -> bool {
-        self.is_dragging
-    }
-
-    /// Abort any ongoing manual drag/drag-move without altering selection or text.
-    pub fn cancel_drag(&mut self) {
-        self.is_dragging = false;
-        self.force_blink();
     }
 
     /// Set or clear OLE drop preview caret. Returns true if it changed.
@@ -1131,10 +1133,6 @@ impl TextInput {
         self.force_blink();
     }
 
-    pub fn metric_bounds(&self) -> RectDIP {
-        self.metric_bounds
-    }
-
     pub fn has_selection(&self) -> bool {
         self.selection_active != self.selection_anchor
     }
@@ -1142,57 +1140,6 @@ impl TextInput {
     pub fn clear_selection(&mut self) {
         self.selection_active = self.selection_anchor;
         self.force_blink();
-    }
-
-    /// Select the word containing or following the given UTF-16 index.
-    pub fn select_word_at(&mut self, idx16: u32) {
-        let (s, e) = self.word_range_at(idx16);
-        self.selection_anchor = self.snap_to_scalar_boundary(s);
-        self.selection_active = self.snap_to_scalar_boundary(e);
-        self.force_blink();
-    }
-
-    /// Select the entire wrapped line containing the given UTF-16 index.
-    /// This uses DirectWrite line metrics to honor wrapping and explicit newlines.
-    pub fn select_line_at(&mut self, idx16: u32) {
-        unsafe {
-            let layout = match self.layout.as_ref() {
-                Some(l) => l,
-                None => return,
-            };
-            // Query required line metrics count (expected to return an error but set count)
-            let mut needed: u32 = 0;
-            let _ = layout.GetLineMetrics(None, &mut needed);
-            if needed == 0 {
-                return;
-            }
-            let mut lines = vec![DWRITE_LINE_METRICS::default(); needed as usize];
-            let mut actual: u32 = 0;
-            let _ = layout.GetLineMetrics(Some(&mut lines), &mut actual);
-            if actual == 0 {
-                return;
-            }
-            let mut pos: u32 = 0;
-            for m in lines.iter().take(actual as usize) {
-                let line_start = pos;
-                let line_end_no_newline = pos.saturating_add(m.length);
-                let line_consumed = m.length.saturating_add(m.newlineLength);
-                let line_total_end = pos.saturating_add(line_consumed);
-                // Consider the newline as part of hit for containment test,
-                // but exclude it from the selected range.
-                if idx16 < line_total_end {
-                    self.selection_anchor = self.snap_to_scalar_boundary(line_start);
-                    self.selection_active = self.snap_to_scalar_boundary(line_end_no_newline);
-                    self.force_blink();
-                    return;
-                }
-                pos = line_total_end;
-            }
-            // If not found, clamp to end
-            self.selection_anchor = self.snap_to_scalar_boundary(pos);
-            self.selection_active = self.snap_to_scalar_boundary(pos);
-            self.force_blink();
-        }
     }
 
     // ===== Editing helpers =====
@@ -1443,47 +1390,6 @@ impl TextInput {
         let start_byte = self.utf16_index_to_byte(start16);
         let end_byte = self.utf16_index_to_byte(end16);
         Some(self.text[start_byte..end_byte].to_string())
-    }
-
-    pub fn finish_ole_drop(&mut self, s: &str, internal_move: bool) -> Result<()> {
-        let (start16, end16) = self.selection_range();
-        let start_byte = self.utf16_index_to_byte(start16);
-        let end_byte = self.utf16_index_to_byte(end16);
-
-        if let Some(drop_idx16) = self.ole_drop_preview16 {
-            if drop_idx16 >= start16 && drop_idx16 <= end16 {
-                // Drop inside existing selection: replace
-                self.text.replace_range(start_byte..end_byte, s);
-
-                let end16 = start16 + Self::utf16_len_of_str(s);
-                self.selection_anchor = end16;
-                self.selection_active = end16;
-            } else {
-                // Drop outside existing selection: insert
-                if internal_move {
-                    // Delete original selection on successful MOVE drop
-                    self.text.replace_range(start_byte..end_byte, "");
-
-                    // Adjust drop index to account for deleted text
-                    let drop_idx16 = if drop_idx16 > end16 {
-                        drop_idx16 - (end16 - start16)
-                    } else {
-                        drop_idx16
-                    };
-                    self.move_caret_to(drop_idx16);
-                    self.insert_str(s)?;
-                } else {
-                    self.move_caret_to(drop_idx16);
-                    self.insert_str(s)?;
-                }
-            }
-        }
-
-        self.build_text_layout()?;
-        self.recalc_metrics()?;
-
-        self.force_blink();
-        Ok(())
     }
 
     pub fn insert_str(&mut self, s: &str) -> Result<()> {
@@ -1858,15 +1764,5 @@ impl TextInput {
         } else {
             Ok(false)
         }
-    }
-
-    /// Check if undo is available
-    pub fn can_undo(&self) -> bool {
-        !self.undo_stack.is_empty()
-    }
-
-    /// Check if redo is available
-    pub fn can_redo(&self) -> bool {
-        !self.redo_stack.is_empty()
     }
 }

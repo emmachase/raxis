@@ -2,13 +2,13 @@
 #[derive(Copy, Clone, Debug, Default)]
 pub enum Easing {
     Linear,
+    #[default]
     EaseInOut, // cosine-based smoothstep
     EaseIn,
     EaseOut,
     EaseInOutQuad,
     EaseInQuad,
     EaseOutQuad,
-    #[default]
     EaseInOutCubic,
     EaseInCubic,
     EaseOutCubic,

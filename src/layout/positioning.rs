@@ -8,17 +8,18 @@ use crate::{
 };
 
 pub fn position_elements(
-    slots: BorrowedUITree<'_>,
+    ui_tree: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {
     // Clone root id_map to allow easy lookup while mutably borrowing slots in closures
-    let root_id_map = slots[root].id_map.clone();
+    let root_id_map = ui_tree.slots[root].id_map.clone();
 
     visitors::visit_deferring_bfs(
-        slots,
+        ui_tree,
         root,
-        |slots, key, parent| {
+        |ui_tree, key, parent| {
+            let slots = &ui_tree.slots;
             let floating = slots[key].floating.clone();
             if floating.is_none() {
                 return false;
@@ -43,7 +44,9 @@ pub fn position_elements(
                 false
             }
         },
-        |slots, key, parent| {
+        |ui_tree, key, parent| {
+            let slots = &mut ui_tree.slots;
+
             // Scroll handling
             let mut scroll_x: f32 = 0.0;
             let mut scroll_y: f32 = 0.0;

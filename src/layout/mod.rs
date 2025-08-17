@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{collections::HashMap, time::Instant};
 
 use slotmap::SlotMap;
 use windows::Win32::Graphics::Direct2D::{
@@ -15,7 +15,7 @@ use crate::{
         positioning::position_elements,
     },
     runtime::scroll::ScrollStateManager,
-    widgets::Renderer,
+    widgets::{Instance, Renderer},
 };
 
 pub mod model;
@@ -30,22 +30,26 @@ mod positioning;
 use fit_along_axis::fit_along_axis;
 use grow_and_shrink_along_axis::grow_and_shrink_along_axis;
 
-pub type OwnedUITree = SlotMap<UIKey, UIElement>;
+#[derive(Default)]
+pub struct OwnedUITree {
+    pub slots: SlotMap<UIKey, UIElement>,
+    pub state: HashMap<u64, Instance>,
+}
 pub type BorrowedUITree<'a> = &'a mut OwnedUITree;
 
 #[allow(dead_code)]
-fn set_parent_references(slots: BorrowedUITree<'_>, root: UIKey) {
-    visitors::visit_bfs(slots, root, |slots, key, parent| {
-        slots[key].parent = parent;
+fn set_parent_references(ui_tree: BorrowedUITree<'_>, root: UIKey) {
+    visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
+        ui_tree.slots[key].parent = parent;
     });
 }
 
 #[allow(dead_code)]
-fn propagate_inherited_properties(slots: BorrowedUITree<'_>, root: UIKey) {
-    visitors::visit_bfs(slots, root, |slots, key, parent| {
+fn propagate_inherited_properties(ui_tree: BorrowedUITree<'_>, root: UIKey) {
+    visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
         if let Some(parent_key) = parent {
-            if slots[key].color.is_none() && slots[parent_key].color.is_some() {
-                slots[key].color = slots[parent_key].color;
+            if ui_tree.slots[key].color.is_none() && ui_tree.slots[parent_key].color.is_some() {
+                ui_tree.slots[key].color = ui_tree.slots[parent_key].color;
             }
         }
 
@@ -53,10 +57,10 @@ fn propagate_inherited_properties(slots: BorrowedUITree<'_>, root: UIKey) {
     });
 }
 
-fn wrap_text(slots: BorrowedUITree<'_>, root: UIKey) {
-    visitors::visit_bfs(slots, root, |slots, key, _parent| {
-        if let Some(ElementContent::Text { layout, .. }) = slots[key].content.as_ref() {
-            let element = &slots[key];
+fn wrap_text(ui_tree: BorrowedUITree<'_>, root: UIKey) {
+    visitors::visit_bfs(ui_tree, root, |ui_tree, key, _parent| {
+        if let Some(ElementContent::Text { layout, .. }) = ui_tree.slots[key].content.as_ref() {
+            let element = &ui_tree.slots[key];
 
             let available_width =
                 element.computed_width - element.padding.left - element.padding.right;
@@ -73,22 +77,22 @@ fn wrap_text(slots: BorrowedUITree<'_>, root: UIKey) {
 }
 
 pub fn layout(
-    slots: BorrowedUITree<'_>,
+    ui_tree: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {
-    set_parent_references(slots, root);
-    propagate_inherited_properties(slots, root);
+    set_parent_references(ui_tree, root);
+    propagate_inherited_properties(ui_tree, root);
 
-    fit_along_axis(slots, root, Axis::X);
-    grow_and_shrink_along_axis(slots, root, Axis::X);
+    fit_along_axis(ui_tree, root, Axis::X);
+    grow_and_shrink_along_axis(ui_tree, root, Axis::X);
 
-    wrap_text(slots, root);
+    wrap_text(ui_tree, root);
 
-    fit_along_axis(slots, root, Axis::Y);
-    grow_and_shrink_along_axis(slots, root, Axis::Y);
+    fit_along_axis(ui_tree, root, Axis::Y);
+    grow_and_shrink_along_axis(ui_tree, root, Axis::Y);
 
-    position_elements(slots, root, scroll_state_manager);
+    position_elements(ui_tree, root, scroll_state_manager);
 }
 
 pub const DEFAULT_SCROLLBAR_TRACK_COLOR: u32 = 0x00000033;
@@ -101,7 +105,7 @@ pub fn paint(
     // brush: &ID2D1SolidColorBrush,
     shell: &Shell,
     renderer: &Renderer,
-    slots: BorrowedUITree<'_>,
+    ui_tree: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
     offset_x: f32,
@@ -110,10 +114,10 @@ pub fn paint(
     let now = Instant::now();
 
     visitors::visit_dfs(
-        slots,
+        ui_tree,
         root,
-        |slots, key, _parent| {
-            let element = &mut slots[key];
+        |ui_tree, key, _parent| {
+            let element = &mut ui_tree.slots[key];
             let x = element.x + offset_x;
             let y = element.y + offset_y;
             let width = element.computed_width;
@@ -179,128 +183,133 @@ pub fn paint(
                         }
                     }
                     ElementContent::Widget(widget) => {
+                        let state = ui_tree.state.get_mut(&element.id.unwrap()).unwrap();
+
                         widget.paint(
-                            element.id, key, shell, renderer, bounds,
-                            now,
+                            state, shell, renderer, bounds, now,
                             // 1.0 / 240.0, /* TODO: dt */
                         );
                     }
                 }
             }
         },
-        Some(&mut |slots: BorrowedUITree<'_>, key, _parent| {
-            let element = &slots[key];
+        Some(
+            &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_>, key, _parent| {
+                let element = &slots[key];
 
-            let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
-            let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
+                let has_scroll_x =
+                    matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
+                let has_scroll_y =
+                    matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
 
-            if has_scroll_x || has_scroll_y {
-                // Draw Scrollbars
+                if has_scroll_x || has_scroll_y {
+                    // Draw Scrollbars
 
-                // Get scrollbar appearance from element
-                let scroll_config = element.scroll.as_ref().unwrap();
-                let scrollbar_track_color = scroll_config
-                    .scrollbar_track_color
-                    .unwrap_or(DEFAULT_SCROLLBAR_TRACK_COLOR);
-                let scrollbar_thumb_color = scroll_config
-                    .scrollbar_thumb_color
-                    .unwrap_or(DEFAULT_SCROLLBAR_THUMB_COLOR);
+                    // Get scrollbar appearance from element
+                    let scroll_config = element.scroll.as_ref().unwrap();
+                    let scrollbar_track_color = scroll_config
+                        .scrollbar_track_color
+                        .unwrap_or(DEFAULT_SCROLLBAR_TRACK_COLOR);
+                    let scrollbar_thumb_color = scroll_config
+                        .scrollbar_thumb_color
+                        .unwrap_or(DEFAULT_SCROLLBAR_THUMB_COLOR);
 
-                if let Some(ScrollbarGeom {
-                    track_rect,
-                    thumb_rect,
-                    ..
-                }) = compute_scrollbar_geom(element, Axis::X, scroll_state_manager)
-                {
+                    if let Some(ScrollbarGeom {
+                        track_rect,
+                        thumb_rect,
+                        ..
+                    }) = compute_scrollbar_geom(element, Axis::X, scroll_state_manager)
+                    {
+                        unsafe {
+                            // Draw track
+                            renderer.brush.SetColor(&D2D1_COLOR_F {
+                                r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
+                                g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
+                                b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
+                                a: (0xFF & scrollbar_track_color) as f32 / 255.0,
+                            });
+
+                            renderer.render_target.FillRectangle(
+                                &D2D_RECT_F {
+                                    left: track_rect.x_dip,
+                                    top: track_rect.y_dip,
+                                    right: track_rect.x_dip + track_rect.width_dip,
+                                    bottom: track_rect.y_dip + track_rect.height_dip,
+                                },
+                                renderer.brush,
+                            );
+
+                            // Draw thumb
+                            renderer.brush.SetColor(&D2D1_COLOR_F {
+                                r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
+                                g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
+                                b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
+                                a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
+                            });
+
+                            renderer.render_target.FillRectangle(
+                                &D2D_RECT_F {
+                                    left: thumb_rect.x_dip,
+                                    top: thumb_rect.y_dip,
+                                    right: thumb_rect.x_dip + thumb_rect.width_dip,
+                                    bottom: thumb_rect.y_dip + thumb_rect.height_dip,
+                                },
+                                renderer.brush,
+                            );
+                        }
+                    }
+
+                    if let Some(ScrollbarGeom {
+                        track_rect,
+                        thumb_rect,
+                        ..
+                    }) = compute_scrollbar_geom(element, Axis::Y, scroll_state_manager)
+                    {
+                        unsafe {
+                            // Draw track
+                            renderer.brush.SetColor(&D2D1_COLOR_F {
+                                r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
+                                g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
+                                b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
+                                a: (0xFF & scrollbar_track_color) as f32 / 255.0,
+                            });
+
+                            renderer.render_target.FillRectangle(
+                                &D2D_RECT_F {
+                                    left: track_rect.x_dip,
+                                    top: track_rect.y_dip,
+                                    right: track_rect.x_dip + track_rect.width_dip,
+                                    bottom: track_rect.y_dip + track_rect.height_dip,
+                                },
+                                renderer.brush,
+                            );
+
+                            // Draw thumb
+                            renderer.brush.SetColor(&D2D1_COLOR_F {
+                                r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
+                                g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
+                                b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
+                                a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
+                            });
+
+                            renderer.render_target.FillRectangle(
+                                &D2D_RECT_F {
+                                    left: thumb_rect.x_dip,
+                                    top: thumb_rect.y_dip,
+                                    right: thumb_rect.x_dip + thumb_rect.width_dip,
+                                    bottom: thumb_rect.y_dip + thumb_rect.height_dip,
+                                },
+                                renderer.brush,
+                            );
+                        }
+                    }
+
                     unsafe {
-                        // Draw track
-                        renderer.brush.SetColor(&D2D1_COLOR_F {
-                            r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
-                            g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
-                            b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
-                            a: (0xFF & scrollbar_track_color) as f32 / 255.0,
-                        });
-
-                        renderer.render_target.FillRectangle(
-                            &D2D_RECT_F {
-                                left: track_rect.x_dip,
-                                top: track_rect.y_dip,
-                                right: track_rect.x_dip + track_rect.width_dip,
-                                bottom: track_rect.y_dip + track_rect.height_dip,
-                            },
-                            renderer.brush,
-                        );
-
-                        // Draw thumb
-                        renderer.brush.SetColor(&D2D1_COLOR_F {
-                            r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
-                            g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
-                            b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
-                            a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
-                        });
-
-                        renderer.render_target.FillRectangle(
-                            &D2D_RECT_F {
-                                left: thumb_rect.x_dip,
-                                top: thumb_rect.y_dip,
-                                right: thumb_rect.x_dip + thumb_rect.width_dip,
-                                bottom: thumb_rect.y_dip + thumb_rect.height_dip,
-                            },
-                            renderer.brush,
-                        );
+                        renderer.render_target.PopAxisAlignedClip();
                     }
                 }
-
-                if let Some(ScrollbarGeom {
-                    track_rect,
-                    thumb_rect,
-                    ..
-                }) = compute_scrollbar_geom(element, Axis::Y, scroll_state_manager)
-                {
-                    unsafe {
-                        // Draw track
-                        renderer.brush.SetColor(&D2D1_COLOR_F {
-                            r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
-                            g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
-                            b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
-                            a: (0xFF & scrollbar_track_color) as f32 / 255.0,
-                        });
-
-                        renderer.render_target.FillRectangle(
-                            &D2D_RECT_F {
-                                left: track_rect.x_dip,
-                                top: track_rect.y_dip,
-                                right: track_rect.x_dip + track_rect.width_dip,
-                                bottom: track_rect.y_dip + track_rect.height_dip,
-                            },
-                            renderer.brush,
-                        );
-
-                        // Draw thumb
-                        renderer.brush.SetColor(&D2D1_COLOR_F {
-                            r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
-                            g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
-                            b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
-                            a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
-                        });
-
-                        renderer.render_target.FillRectangle(
-                            &D2D_RECT_F {
-                                left: thumb_rect.x_dip,
-                                top: thumb_rect.y_dip,
-                                right: thumb_rect.x_dip + thumb_rect.width_dip,
-                                bottom: thumb_rect.y_dip + thumb_rect.height_dip,
-                            },
-                            renderer.brush,
-                        );
-                    }
-                }
-
-                unsafe {
-                    renderer.render_target.PopAxisAlignedClip();
-                }
-            }
-        }),
+            },
+        ),
     );
 }
 

@@ -5,14 +5,14 @@ use crate::layout::{
     visitors,
 };
 
-pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
+pub fn grow_and_shrink_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
     let x_axis = matches!(axis, Axis::X);
 
-    visitors::visit_bfs(slots, root, |slots, key, _parent| {
+    visitors::visit_bfs(ui_tree, root, |ui_tree, key, _parent| {
         // Use a macro to safely obtain multiple mutable reads/writes separated by operations
         macro_rules! element {
             () => {
-                slots[key]
+                ui_tree.slots[key]
             };
         }
 
@@ -41,7 +41,7 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
             .children
             .iter()
             .copied()
-            .filter(|c| slots[*c].floating.is_none())
+            .filter(|c| ui_tree.slots[*c].floating.is_none())
             .collect();
 
         // Children which are resizable in this pass (i.e., not Percent sizing)
@@ -50,9 +50,9 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
             .copied()
             .filter(|c| {
                 let s = if x_axis {
-                    slots[*c].width
+                    ui_tree.slots[*c].width
                 } else {
-                    slots[*c].height
+                    ui_tree.slots[*c].height
                 };
                 !matches!(s, Sizing::Percent { .. })
             })
@@ -71,7 +71,7 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
 
         // Precompute inner content size from resizable non-percent children
         for child in &resizable_children {
-            let c = &slots[*child];
+            let c = &ui_tree.slots[*child];
             if element!().direction == axis_direction {
                 if x_axis {
                     inner_content_size += c.computed_width;
@@ -91,20 +91,20 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
         let children_all = element!().children.clone();
         for child in &children_all {
             let sizing = if x_axis {
-                slots[*child].width
+                ui_tree.slots[*child].width
             } else {
-                slots[*child].height
+                ui_tree.slots[*child].height
             };
             if let Sizing::Percent { percent } = sizing {
                 let assign = available_size * percent;
                 if x_axis {
-                    slots[*child].computed_width = assign;
+                    ui_tree.slots[*child].computed_width = assign;
                 } else {
-                    slots[*child].computed_height = assign;
+                    ui_tree.slots[*child].computed_height = assign;
                 }
 
                 // For non-floating children, subtract from remaining and add to content size
-                if slots[*child].floating.is_none() {
+                if ui_tree.slots[*child].floating.is_none() {
                     remaining_size -= assign;
                     inner_content_size += assign;
                 }
@@ -125,9 +125,9 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
             .filter(|c| {
                 matches!(
                     if x_axis {
-                        slots[*c].width
+                        ui_tree.slots[*c].width
                     } else {
-                        slots[*c].height
+                        ui_tree.slots[*c].height
                     },
                     Sizing::Grow { .. }
                 )
@@ -137,7 +137,7 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
         if element!().direction == axis_direction {
             // Subtract current sizes of resizable children
             remaining_size -= resizable_children.iter().fold(0.0_f32, |acc, ckey| {
-                let c = &slots[*ckey];
+                let c = &ui_tree.slots[*ckey];
                 if x_axis {
                     acc + c.computed_width
                 } else {
@@ -154,7 +154,7 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
                 let mut count_smallest = 0usize;
 
                 for ck in &growable_children {
-                    let c = &slots[*ck];
+                    let c = &ui_tree.slots[*ck];
                     let size = if x_axis {
                         c.computed_width
                     } else {
@@ -194,32 +194,32 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
                 while i < growable_children.len() {
                     let ck = growable_children[i];
                     let size = if x_axis {
-                        slots[ck].computed_width
+                        ui_tree.slots[ck].computed_width
                     } else {
-                        slots[ck].computed_height
+                        ui_tree.slots[ck].computed_height
                     };
                     if size.eq_eps(&smallest_size) {
                         if x_axis {
-                            slots[ck].computed_width += size_to_add;
+                            ui_tree.slots[ck].computed_width += size_to_add;
                         } else {
-                            slots[ck].computed_height += size_to_add;
+                            ui_tree.slots[ck].computed_height += size_to_add;
                         }
                         remaining_size -= size_to_add;
 
                         // Remove if reached max
                         let sizing = if x_axis {
-                            slots[ck].width
+                            ui_tree.slots[ck].width
                         } else {
-                            slots[ck].height
+                            ui_tree.slots[ck].height
                         };
                         let max_allowed = match sizing {
                             Sizing::Grow { max, .. } => max,
                             _ => f32::INFINITY,
                         };
                         let new_size = if x_axis {
-                            slots[ck].computed_width
+                            ui_tree.slots[ck].computed_width
                         } else {
-                            slots[ck].computed_height
+                            ui_tree.slots[ck].computed_height
                         };
                         if new_size.eq_eps(&max_allowed) {
                             growable_children.remove(i);
@@ -254,7 +254,7 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
                 .iter()
                 .copied()
                 .filter(|c| {
-                    let e = &slots[*c];
+                    let e = &ui_tree.slots[*c];
                     let size = if x_axis {
                         e.computed_width
                     } else {
@@ -272,7 +272,7 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
                 let mut count_largest = 0usize;
 
                 for ck in &shrinkable_children {
-                    let c = &slots[*ck];
+                    let c = &ui_tree.slots[*ck];
                     let size = if x_axis {
                         c.computed_width
                     } else {
@@ -302,28 +302,28 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
                 while i < shrinkable_children.len() {
                     let ck = shrinkable_children[i];
                     let size = if x_axis {
-                        slots[ck].computed_width
+                        ui_tree.slots[ck].computed_width
                     } else {
-                        slots[ck].computed_height
+                        ui_tree.slots[ck].computed_height
                     };
                     if size.eq_eps(&largest_size) {
                         if x_axis {
-                            slots[ck].computed_width -= size_to_sub;
+                            ui_tree.slots[ck].computed_width -= size_to_sub;
                         } else {
-                            slots[ck].computed_height -= size_to_sub;
+                            ui_tree.slots[ck].computed_height -= size_to_sub;
                         }
                         remaining_size += size_to_sub;
 
                         // Remove if reached min
                         let min_allowed = if x_axis {
-                            slots[ck].min_width
+                            ui_tree.slots[ck].min_width
                         } else {
-                            slots[ck].min_height
+                            ui_tree.slots[ck].min_height
                         };
                         let new_size = if x_axis {
-                            slots[ck].computed_width
+                            ui_tree.slots[ck].computed_width
                         } else {
-                            slots[ck].computed_height
+                            ui_tree.slots[ck].computed_height
                         };
                         if new_size.eq_eps(&min_allowed) {
                             shrinkable_children.remove(i);
@@ -357,25 +357,25 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
             // Grow
             for ck in &growable_children {
                 let size = if x_axis {
-                    slots[*ck].computed_width
+                    ui_tree.slots[*ck].computed_width
                 } else {
-                    slots[*ck].computed_height
+                    ui_tree.slots[*ck].computed_height
                 };
                 if size.lt_eps(&grow_to_size) {
                     // cap by max
                     let max_allowed = match if x_axis {
-                        slots[*ck].width
+                        ui_tree.slots[*ck].width
                     } else {
-                        slots[*ck].height
+                        ui_tree.slots[*ck].height
                     } {
                         Sizing::Grow { max, .. } => max,
                         _ => f32::INFINITY,
                     };
                     let new_size = grow_to_size.min(max_allowed);
                     if x_axis {
-                        slots[*ck].computed_width = new_size;
+                        ui_tree.slots[*ck].computed_width = new_size;
                     } else {
-                        slots[*ck].computed_height = new_size;
+                        ui_tree.slots[*ck].computed_height = new_size;
                     }
                 }
             }
@@ -390,7 +390,7 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
                 .iter()
                 .copied()
                 .filter(|c| {
-                    let e = &slots[*c];
+                    let e = &ui_tree.slots[*c];
                     let size = if x_axis {
                         e.computed_width
                     } else {
@@ -403,21 +403,21 @@ pub fn grow_and_shrink_along_axis(slots: BorrowedUITree<'_>, root: UIKey, axis: 
 
             for ck in shrinkable_children {
                 let size = if x_axis {
-                    slots[ck].computed_width
+                    ui_tree.slots[ck].computed_width
                 } else {
-                    slots[ck].computed_height
+                    ui_tree.slots[ck].computed_height
                 };
                 if size.gt_eps(&available_size) {
                     let min_allowed = if x_axis {
-                        slots[ck].min_width
+                        ui_tree.slots[ck].min_width
                     } else {
-                        slots[ck].min_height
+                        ui_tree.slots[ck].min_height
                     };
                     let new_size = available_size.max(min_allowed);
                     if x_axis {
-                        slots[ck].computed_width = new_size;
+                        ui_tree.slots[ck].computed_width = new_size;
                     } else {
-                        slots[ck].computed_height = new_size;
+                        ui_tree.slots[ck].computed_height = new_size;
                     }
                 }
             }

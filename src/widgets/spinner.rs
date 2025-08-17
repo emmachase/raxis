@@ -1,4 +1,4 @@
-use std::time::Instant;
+use std::{any::Any, time::Instant};
 
 use windows::Win32::Graphics::Direct2D::{
     Common::D2D1_COLOR_F, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
@@ -8,9 +8,9 @@ use windows_numerics::Vector2;
 use crate::{
     Shell,
     gfx::circle_arc::CircleArc,
-    layout::model::UIKey,
     math::easing::Easing,
-    widgets::{Renderer, Widget},
+    widgets::{Instance, Renderer, Widget},
+    with_state,
 };
 
 // A simple spinner widget built on top of CircleArc. It animates the arc fill
@@ -28,16 +28,43 @@ pub struct Spinner {
     grow_period_s: f32, // full grow+shrink cycle duration
     extent: f32,        // min fill fraction (0..0.5); max is 1 - extent
     easing: Easing,     // easing for the phase interpolation
+}
 
-    // state
+#[derive(Debug)]
+struct WidgetState {
     anchor_deg: f32,    // the anchored endpoint angle (deg)
     phase_elapsed: f32, // time within current half-cycle [0, half)
     is_growing: bool,   // true: growing (10%->90%), false: shrinking (90%->10%)
     last_update: Instant,
 }
 
+impl WidgetState {
+    pub fn new() -> Self {
+        Self {
+            anchor_deg: 0.0,
+            phase_elapsed: 0.0,
+            is_growing: true,
+            last_update: Instant::now(),
+        }
+    }
+
+    pub fn as_any(self) -> Box<dyn Any> {
+        Box::new(self)
+    }
+}
+
+impl Default for WidgetState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Widget for Spinner {
-    fn limits(&self, _available: super::Limits) -> super::Limits {
+    fn state(&self, _device_resources: &crate::runtime::DeviceResources) -> super::State {
+        Some(WidgetState::default().as_any())
+    }
+
+    fn limits(&self, _instance: &Instance, _available: super::Limits) -> super::Limits {
         super::Limits {
             min: super::Size {
                 width: self.radius * 2.0,
@@ -52,13 +79,13 @@ impl Widget for Spinner {
 
     fn paint(
         &mut self, // TODO: this shouldnt need to be mut right
-        _id: Option<u64>,
-        _ui_key: UIKey,
+        instance: &mut Instance,
         _shell: &Shell,
         renderer: &Renderer,
         bounds: crate::gfx::RectDIP,
         now: Instant,
     ) {
+        let state = with_state!(mut instance as WidgetState);
         let center = Vector2 {
             X: bounds.x_dip + bounds.width_dip * 0.5,
             Y: bounds.y_dip + bounds.height_dip * 0.5,
@@ -66,14 +93,18 @@ impl Widget for Spinner {
         // let radius = bounds.width_dip.min(bounds.height_dip) * 0.5;
         // self.set_layout(center, radius);
         self.center = center;
-        self.update(now);
-        let _ = self.draw(renderer.factory, renderer.render_target, renderer.brush);
+        state.update(self, now);
+        let _ = state.draw(
+            self,
+            renderer.factory,
+            renderer.render_target,
+            renderer.brush,
+        );
     }
 
     fn update(
         &mut self,
-        _id: Option<u64>,
-        _key: UIKey,
+        _instance: &mut Instance,
         hwnd: windows::Win32::Foundation::HWND,
         shell: &mut Shell,
         event: &super::Event,
@@ -95,10 +126,6 @@ impl Spinner {
             grow_period_s,
             extent: 0.05,
             easing: Easing::EaseInOut,
-            anchor_deg: 0.0,
-            phase_elapsed: 0.0,
-            is_growing: true,
-            last_update: Instant::now(),
         }
     }
 
@@ -111,24 +138,26 @@ impl Spinner {
     pub fn set_easing(&mut self, easing: Easing) {
         self.easing = easing;
     }
+}
 
-    pub fn update(&mut self, now: Instant) {
+impl WidgetState {
+    pub fn update(&mut self, config: &Spinner, now: Instant) {
         let dt_seconds = now.duration_since(self.last_update).as_secs_f32();
         self.last_update = now;
 
-        let half = self.grow_period_s * 0.5;
+        let half = config.grow_period_s * 0.5;
         // advance slow rotation
-        self.anchor_deg += self.base_speed_dps * dt_seconds;
+        self.anchor_deg += config.base_speed_dps * dt_seconds;
         // advance phase and handle boundaries
         self.phase_elapsed += dt_seconds;
         while self.phase_elapsed >= half {
             self.phase_elapsed -= half;
             if self.is_growing {
                 // Grow finished at max: end becomes the new anchor
-                self.anchor_deg += 360.0 * (1.0 - self.extent);
+                self.anchor_deg += 360.0 * (1.0 - config.extent);
             } else {
                 // Shrink finished at min: begin becomes the new anchor
-                self.anchor_deg -= 360.0 * self.extent;
+                self.anchor_deg -= 360.0 * config.extent;
             }
             self.is_growing = !self.is_growing;
         }
@@ -143,15 +172,16 @@ impl Spinner {
 
     pub fn draw(
         &self,
+        config: &Spinner,
         factory: &ID2D1Factory,
         rt: &ID2D1HwndRenderTarget,
         brush: &ID2D1SolidColorBrush,
     ) -> windows::core::Result<()> {
-        let half = self.grow_period_s * 0.5;
+        let half = config.grow_period_s * 0.5;
         let p = (self.phase_elapsed / half).clamp(0.0, 1.0);
-        let p = self.easing.apply(p);
-        let min = self.extent;
-        let max = 1.0 - self.extent;
+        let p = config.easing.apply(p);
+        let min = config.extent;
+        let max = 1.0 - config.extent;
         let span = (max - min).max(0.0);
         let fill_frac = if self.is_growing {
             min + span * p
@@ -168,8 +198,8 @@ impl Spinner {
         };
 
         let arc = CircleArc::new(
-            self.center,
-            self.radius - self.stroke * 0.5,
+            config.center,
+            config.radius - config.stroke * 0.5,
             begin_deg,
             end_deg,
         );
@@ -182,7 +212,7 @@ impl Spinner {
                 a: 1.0,
             });
 
-            rt.DrawGeometry(&geom, brush, self.stroke, None);
+            rt.DrawGeometry(&geom, brush, config.stroke, None);
         }
         Ok(())
     }
