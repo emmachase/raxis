@@ -414,11 +414,7 @@ fn to_shell(element: Element) -> (UIElement, Vec<Element>) {
     )
 }
 
-pub fn create_tree(
-    device_resources: &DeviceResources,
-    tree: &mut OwnedUITree,
-    root: Element,
-) -> UIKey {
+pub fn create_tree(device_resources: &DeviceResources, tree: &mut OwnedUITree, root: Element) {
     let mut queue = vec![(root, None)];
     let mut root_key = None;
 
@@ -450,5 +446,5 @@ pub fn create_tree(
         }
     }
 
-    root_key.expect("no root found")
+    tree.root = root_key.expect("no root found");
 }

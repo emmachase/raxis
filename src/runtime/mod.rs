@@ -6,7 +6,7 @@ pub mod smooth_scroll;
 
 use crate::gfx::PointDIP;
 use crate::layout::model::{
-    Axis, BoxAmount, Direction, Element, ElementContent, ScrollConfig, Sizing, UIKey, create_tree,
+    Axis, Direction, Element, ElementContent, ScrollConfig, Sizing, create_tree,
 };
 use crate::layout::visitors::VisitAction;
 use crate::layout::{
@@ -150,7 +150,6 @@ struct AppState {
     // spinner: Spinner,
     view_fn: Box<dyn Fn() -> Element>,
     ui_tree: OwnedUITree,
-    root_key: UIKey,
 
     shell: Shell,
 
@@ -375,7 +374,7 @@ impl AppState {
 
             let mut ui_tree = OwnedUITree::default();
 
-            let root_key = create_tree_root(&view_fn, &device_resources, &mut ui_tree);
+            create_tree_root(&view_fn, &device_resources, &mut ui_tree);
 
             // println!("root: {:?}", root);
             // println!("ui_tree: {:#?}", ui_tree);
@@ -387,7 +386,6 @@ impl AppState {
                 clock: 0.0,
                 timing_info: DWM_TIMING_INFO::default(),
                 ui_tree,
-                root_key,
                 view_fn,
                 shell,
                 scroll_state_manager: ScrollStateManager::default(),
@@ -501,9 +499,8 @@ impl AppState {
                 });
 
                 // let root = self.root_key;
-                let root =
-                    create_tree_root(&self.view_fn, &self.device_resources, &mut self.ui_tree);
-                self.root_key = root;
+                create_tree_root(&self.view_fn, &self.device_resources, &mut self.ui_tree);
+                let root = self.ui_tree.root;
 
                 self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width_dip);
                 self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height_dip);
@@ -615,7 +612,7 @@ impl AppState {
             }
         }
 
-        let root = self.root_key;
+        let root = self.ui_tree.root;
         let mut result = None;
         dfs(self, root, x, y, &mut result);
         result
@@ -638,7 +635,7 @@ fn create_tree_root(
     view_fn: &dyn Fn() -> Element,
     device_resources: &DeviceResources,
     ui_tree: &mut OwnedUITree,
-) -> UIKey {
+) {
     create_tree(
         device_resources,
         ui_tree,
@@ -936,7 +933,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     if state.shell.capture_event() {
                         let point = PointDIP { x_dip, y_dip };
 
-                        let root = state.root_key;
+                        let root = state.ui_tree.root;
                         visitors::visit_reverse_bfs(&mut state.ui_tree, root, |ui_tree, key, _| {
                             let element = &mut ui_tree.slots[key];
                             let bounds = element.bounds();
@@ -1228,7 +1225,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         let point = PointDIP { x_dip, y_dip };
 
                         let mut cursor = None;
-                        let root = state.root_key;
+                        let root = state.ui_tree.root;
                         visitors::visit_reverse_bfs(
                             &mut state.ui_tree,
                             root,

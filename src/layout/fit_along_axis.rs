@@ -4,7 +4,7 @@ use crate::{
         model::{Axis, Direction, ElementContent, Sizing, UIElement, UIKey},
         visitors,
     },
-    widgets::{Limits, Size},
+    widgets::limit_response,
 };
 
 pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
@@ -37,34 +37,16 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
             };
         }
 
-        if element!().content.is_some() {
-            if matches!(
+        if element!().content.is_some()
+            && matches!(
                 element!().content.as_ref().unwrap(),
                 ElementContent::Text { .. }
-            ) {
-                if x_axis {
-                    // Max width is infinite for now, this will get adjusted during the Text Wrap phase
-                    let metrics = unsafe {
-                        let layout = element!()
-                            .content
-                            .as_ref()
-                            .unwrap()
-                            .unwrap_text()
-                            .as_ref()
-                            .unwrap();
-
-                        layout.SetMaxWidth(f32::INFINITY).unwrap();
-
-                        let mut metrics =
-                            windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
-
-                        layout.GetMetrics(&mut metrics).unwrap();
-
-                        metrics
-                    };
-
-                    element!().computed_width = metrics.width + axis_padding;
-
+            )
+        {
+            // Text sizing
+            if x_axis {
+                // Max width is infinite for now, this will get adjusted during the Text Wrap phase
+                let metrics = unsafe {
                     let layout = element!()
                         .content
                         .as_ref()
@@ -73,85 +55,53 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                         .as_ref()
                         .unwrap();
 
-                    // Minimum width
-                    let min_base = unsafe { layout.DetermineMinWidth().unwrap() };
-                    element!().min_width = min_base + axis_padding;
-                } else {
-                    let metrics = unsafe {
-                        let layout = element!()
-                            .content
-                            .as_ref()
-                            .unwrap()
-                            .unwrap_text()
-                            .as_ref()
-                            .unwrap();
+                    layout.SetMaxWidth(f32::INFINITY).unwrap();
 
-                        let mut metrics =
-                            windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
+                    let mut metrics =
+                        windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
 
-                        layout.GetMetrics(&mut metrics).unwrap();
+                    layout.GetMetrics(&mut metrics).unwrap();
 
-                        metrics
-                    };
+                    metrics
+                };
 
-                    // Sum of wrapped line heights
-                    element!().computed_height = metrics.height + axis_padding;
-                    element!().min_height = metrics.height + axis_padding;
-                }
+                element!().computed_width = metrics.width + axis_padding;
+
+                let layout = element!()
+                    .content
+                    .as_ref()
+                    .unwrap()
+                    .unwrap_text()
+                    .as_ref()
+                    .unwrap();
+
+                // Minimum width
+                let min_base = unsafe { layout.DetermineMinWidth().unwrap() };
+                element!().min_width = min_base + axis_padding;
             } else {
-                // Widget sizing
-                // let widget = element!().content.as_ref().unwrap().unwrap_widget();
-                let widget =
-                    if let ElementContent::Widget(widget) = element!().content.as_ref().unwrap() {
-                        widget
-                    } else {
-                        panic!("ElementContent is not a Widget");
-                    };
+                let metrics = unsafe {
+                    let layout = element!()
+                        .content
+                        .as_ref()
+                        .unwrap()
+                        .unwrap_text()
+                        .as_ref()
+                        .unwrap();
 
-                if let Some(id) = element!().id
-                    && let Some(instance) = ui_tree.state.get(&id)
-                {
-                    if x_axis {
-                        let Limits { min, max } = widget.limits(
-                            instance,
-                            Limits {
-                                min: Size {
-                                    width: 0.0,
-                                    height: 0.0,
-                                },
-                                max: Size {
-                                    width: f32::INFINITY,
-                                    height: f32::INFINITY,
-                                },
-                            },
-                        );
+                    let mut metrics =
+                        windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
 
-                        let element = &mut ui_tree.slots[key];
-                        element.computed_width = max.width;
-                        element.min_width = min.width;
-                    } else {
-                        let Limits { min, max } = widget.limits(
-                            instance,
-                            Limits {
-                                min: Size {
-                                    width: 0.0,
-                                    height: 0.0,
-                                },
-                                max: Size {
-                                    width: element!().computed_width,
-                                    height: f32::INFINITY,
-                                },
-                            },
-                        );
+                    layout.GetMetrics(&mut metrics).unwrap();
 
-                        let element = &mut ui_tree.slots[key];
-                        element.computed_height = max.height;
-                        element.min_height = min.height;
-                    }
-                }
+                    metrics
+                };
+
+                // Sum of wrapped line heights
+                element!().computed_height = metrics.height + axis_padding;
+                element!().min_height = metrics.height + axis_padding;
             }
         } else {
-            // Container sizing
+            // Container sizing (applies to both regular containers and widgets)
             let axis_direction = if x_axis {
                 Direction::LeftToRight
             } else {
@@ -228,6 +178,39 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                     if !is_scroll_enabled(&element!(), Axis::Y) {
                         element!().min_height = children_max_min_size + axis_padding;
                     }
+                }
+            }
+
+            // Apply widget limits as additional constraints if this is a widget
+            if let Some((widget, instance)) =
+                element!()
+                    .content
+                    .as_ref()
+                    .and_then(|content| match content {
+                        ElementContent::Widget(widget) => element!().id.and_then(|id| {
+                            ui_tree.state.get(&id).map(|instance| (widget, instance))
+                        }),
+                        _ => None,
+                    })
+            {
+                if x_axis {
+                    let limit_response::SizingForX {
+                        min_width,
+                        preferred_width,
+                    } = widget.limits_x(instance);
+
+                    // Apply widget limits as constraints to the computed container size
+                    element!().computed_width = element!().computed_width.max(preferred_width);
+                    element!().min_width = element!().min_width.max(min_width);
+                } else {
+                    let limit_response::SizingForY {
+                        min_height,
+                        preferred_height,
+                    } = widget.limits_y(instance, element!().computed_width);
+
+                    // Apply widget limits as constraints to the computed container size
+                    element!().computed_height = element!().computed_height.max(preferred_height);
+                    element!().min_height = element!().min_height.max(min_height);
                 }
             }
         }

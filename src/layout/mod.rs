@@ -34,6 +34,7 @@ use grow_and_shrink_along_axis::grow_and_shrink_along_axis;
 pub struct OwnedUITree {
     pub slots: SlotMap<UIKey, UIElement>,
     pub state: HashMap<u64, Instance>,
+    pub root: UIKey,
 }
 pub type BorrowedUITree<'a> = &'a mut OwnedUITree;
 

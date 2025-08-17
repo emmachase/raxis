@@ -3,7 +3,7 @@
 use raxis::{
     layout::model::{BoxAmount, Direction, Element, ElementContent, ScrollConfig, Sizing},
     w_id,
-    widgets::text_input::TextInput,
+    widgets::{button::Button, text_input::TextInput},
 };
 
 fn view() -> Element {
@@ -22,18 +22,43 @@ fn view() -> Element {
             horizontal: Some(true),
             ..Default::default()
         }),
-        children: vec![Element {
-            id: Some(w_id!()),
-            background_color: Some(0x00FF00FF),
-            width: Sizing::grow(),
-            height: Sizing::Fit {
-                min: 100.0,
-                max: f32::INFINITY,
-            },
+        children: vec![
+            Element {
+                id: Some(w_id!()),
+                background_color: Some(0x00FF00FF),
+                width: Sizing::Fit {
+                    min: 10.0,
+                    max: 100.0,
+                },
+                height: Sizing::Fit {
+                    min: 100.0,
+                    max: f32::INFINITY,
+                },
+                // scroll: Some(ScrollConfig {
+                //     // horizontal: Some(true),
+                //     ..Default::default()
+                // }),
 
-            content: Some(ElementContent::Widget(Box::new(TextInput::new()))),
-            ..Default::default()
-        }],
+                // content: Some(ElementContent::Widget(Box::new(TextInput::new()))),
+                children: vec![Element {
+                    id: Some(w_id!()),
+                    background_color: Some(0x00FF00FF),
+                    width: Sizing::grow(),
+                    height: Sizing::grow(),
+
+                    content: Some(ElementContent::Widget(Box::new(TextInput::new()))),
+                    ..Default::default()
+                }],
+                ..Default::default()
+            },
+            Element {
+                id: Some(w_id!()),
+                content: Some(ElementContent::Widget(Box::new(
+                    Button::new("Button").with_click_handler(|| println!("Button clicked")),
+                ))),
+                ..Default::default()
+            },
+        ],
 
         ..Default::default()
     }

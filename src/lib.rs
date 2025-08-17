@@ -123,25 +123,22 @@ impl Shell {
         self.event_captured = false;
 
         // Handle regular events with reverse BFS traversal
-        if let Some(root) = ui_tree.slots.keys().next() {
-            visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _| {
-                let element = &mut ui_tree.slots[key];
-                let bounds = element.bounds();
-                if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content
-                {
-                    if let Some(id) = element.id {
-                        let instance = ui_tree.state.get_mut(&id).unwrap();
-                        widget.update(instance, hwnd, self, &event, bounds);
-                    }
-
-                    if self.event_captured {
-                        return VisitAction::Exit;
-                    }
+        visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
+            let element = &mut ui_tree.slots[key];
+            let bounds = element.bounds();
+            if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content {
+                if let Some(id) = element.id {
+                    let instance = ui_tree.state.get_mut(&id).unwrap();
+                    widget.update(instance, hwnd, self, &event, bounds);
                 }
 
-                VisitAction::Continue
-            });
-        }
+                if self.event_captured {
+                    return VisitAction::Exit;
+                }
+            }
+
+            VisitAction::Continue
+        });
     }
 
     pub fn dispatch_operations(&mut self, ui_tree: BorrowedUITree) {
@@ -157,123 +154,114 @@ impl Shell {
         event: &DragEvent,
         position: gfx::PointDIP,
     ) -> Option<DropResult> {
-        if let Some(root) = ui_tree.slots.keys().next() {
-            let mut result = None;
-            let mut new_drag_widget = None;
-            let prev_drag_widget = self.current_drag_widget;
+        let mut result = None;
+        let mut new_drag_widget = None;
+        let prev_drag_widget = self.current_drag_widget;
 
-            // First, handle drag_leave if we're moving away from a widget
-            if matches!(event, DragEvent::DragOver { .. }) && prev_drag_widget.is_some() {
-                // Check if we need to call drag_leave on the previous widget
-                let mut should_call_drag_leave = false;
-                let mut found_new_widget = false;
+        // First, handle drag_leave if we're moving away from a widget
+        if matches!(event, DragEvent::DragOver { .. }) && prev_drag_widget.is_some() {
+            // Check if we need to call drag_leave on the previous widget
+            let mut should_call_drag_leave = false;
+            let mut found_new_widget = false;
 
-                // Quick check to see if we're still over the same widget or moved to a new one
-                visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _| {
-                    let element = &ui_tree.slots[key];
-                    let bounds = element.bounds();
-
-                    if position.within(bounds) {
-                        if let Some(layout::model::ElementContent::Widget(_)) = element.content {
-                            if key != prev_drag_widget.unwrap() {
-                                should_call_drag_leave = true;
-                            }
-                            found_new_widget = true;
-                            return VisitAction::Exit;
-                        }
-                    }
-                    VisitAction::Continue
-                });
-
-                if should_call_drag_leave || !found_new_widget {
-                    // Call drag_leave on the previous widget
-                    if let Some(prev_key) = prev_drag_widget {
-                        if let Some(prev_element) = ui_tree.slots.get_mut(prev_key) {
-                            let prev_bounds = prev_element.bounds();
-                            if let Some(layout::model::ElementContent::Widget(
-                                ref mut prev_widget,
-                            )) = prev_element.content
-                            {
-                                if let Some(prev_text_input) = prev_widget.as_drop_target()
-                                    && let Some(id) = prev_element.id
-                                    && let Some(instance) = ui_tree.state.get_mut(&id)
-                                {
-                                    prev_text_input.drag_leave(instance, prev_bounds);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Now find the widget under the current position and handle the event
-            visitors::visit_reverse_bfs(ui_tree, root, |ui_tree, key, _| {
-                let element = &mut ui_tree.slots[key];
+            // Quick check to see if we're still over the same widget or moved to a new one
+            visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
+                let element = &ui_tree.slots[key];
                 let bounds = element.bounds();
 
-                // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
-                if position.within(bounds) || matches!(event, DragEvent::DragLeave) {
-                    if let Some(layout::model::ElementContent::Widget(ref mut widget)) =
-                        element.content
-                    {
-                        if let Some(text_input) = widget.as_drop_target()
-                            && let Some(id) = element.id
-                            && let Some(instance) = ui_tree.state.get_mut(&id)
-                        {
-                            new_drag_widget = Some(key);
-
-                            match event {
-                                DragEvent::DragEnter { drag_info } => {
-                                    let effect = text_input.drag_enter(instance, drag_info, bounds);
-                                    result = Some(DropResult {
-                                        effect,
-                                        handled: true,
-                                    });
-                                }
-                                DragEvent::DragOver { drag_info } => {
-                                    if prev_drag_widget != Some(key) {
-                                        // Moving to a new widget, call drag_enter
-                                        let effect =
-                                            text_input.drag_enter(instance, drag_info, bounds);
-                                        result = Some(DropResult {
-                                            effect,
-                                            handled: true,
-                                        });
-                                    } else {
-                                        // Same widget, call drag_over
-                                        let effect =
-                                            text_input.drag_over(instance, drag_info, bounds);
-                                        result = Some(DropResult {
-                                            effect,
-                                            handled: true,
-                                        });
-                                    }
-                                }
-                                DragEvent::Drop { drag_info } => {
-                                    result =
-                                        Some(text_input.drop(instance, self, drag_info, bounds));
-                                }
-                                DragEvent::DragLeave => {
-                                    text_input.drag_leave(instance, bounds);
-                                }
-                            }
-
-                            if !matches!(event, DragEvent::DragLeave) {
-                                return VisitAction::Exit;
-                            }
+                if position.within(bounds) {
+                    if let Some(layout::model::ElementContent::Widget(_)) = element.content {
+                        if key != prev_drag_widget.unwrap() {
+                            should_call_drag_leave = true;
                         }
+                        found_new_widget = true;
+                        return VisitAction::Exit;
                     }
                 }
                 VisitAction::Continue
             });
 
-            // Update the current drag widget
-            self.current_drag_widget = new_drag_widget;
-
-            result
-        } else {
-            None
+            if should_call_drag_leave || !found_new_widget {
+                // Call drag_leave on the previous widget
+                if let Some(prev_key) = prev_drag_widget {
+                    if let Some(prev_element) = ui_tree.slots.get_mut(prev_key) {
+                        let prev_bounds = prev_element.bounds();
+                        if let Some(layout::model::ElementContent::Widget(ref mut prev_widget)) =
+                            prev_element.content
+                        {
+                            if let Some(prev_text_input) = prev_widget.as_drop_target()
+                                && let Some(id) = prev_element.id
+                                && let Some(instance) = ui_tree.state.get_mut(&id)
+                            {
+                                prev_text_input.drag_leave(instance, prev_bounds);
+                            }
+                        }
+                    }
+                }
+            }
         }
+
+        // Now find the widget under the current position and handle the event
+        visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
+            let element = &mut ui_tree.slots[key];
+            let bounds = element.bounds();
+
+            // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
+            if position.within(bounds) || matches!(event, DragEvent::DragLeave) {
+                if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content
+                {
+                    if let Some(text_input) = widget.as_drop_target()
+                        && let Some(id) = element.id
+                        && let Some(instance) = ui_tree.state.get_mut(&id)
+                    {
+                        new_drag_widget = Some(key);
+
+                        match event {
+                            DragEvent::DragEnter { drag_info } => {
+                                let effect = text_input.drag_enter(instance, drag_info, bounds);
+                                result = Some(DropResult {
+                                    effect,
+                                    handled: true,
+                                });
+                            }
+                            DragEvent::DragOver { drag_info } => {
+                                if prev_drag_widget != Some(key) {
+                                    // Moving to a new widget, call drag_enter
+                                    let effect = text_input.drag_enter(instance, drag_info, bounds);
+                                    result = Some(DropResult {
+                                        effect,
+                                        handled: true,
+                                    });
+                                } else {
+                                    // Same widget, call drag_over
+                                    let effect = text_input.drag_over(instance, drag_info, bounds);
+                                    result = Some(DropResult {
+                                        effect,
+                                        handled: true,
+                                    });
+                                }
+                            }
+                            DragEvent::Drop { drag_info } => {
+                                result = Some(text_input.drop(instance, self, drag_info, bounds));
+                            }
+                            DragEvent::DragLeave => {
+                                text_input.drag_leave(instance, bounds);
+                            }
+                        }
+
+                        if !matches!(event, DragEvent::DragLeave) {
+                            return VisitAction::Exit;
+                        }
+                    }
+                }
+            }
+            VisitAction::Continue
+        });
+
+        // Update the current drag widget
+        self.current_drag_widget = new_drag_widget;
+
+        result
     }
 
     /// Captures the event, preventing further traversal.

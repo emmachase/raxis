@@ -25,6 +25,7 @@ use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::runtime::dragdrop::start_text_drag;
 use crate::widgets::{
     BLACK, Color, DragData, DragInfo, DropResult, Instance, Renderer, Widget, WidgetDragDropTarget,
+    limit_response,
 };
 use crate::{InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
@@ -160,33 +161,48 @@ impl Widget for TextInput {
         Some(WidgetState::new(device_resources.dwrite_factory.clone(), text_format).into_any())
     }
 
-    fn limits(&self, instance: &Instance, available: super::Limits) -> super::Limits {
+    fn limits_x(&self, instance: &Instance) -> limit_response::SizingForX {
         let state = with_state!(instance as WidgetState);
         if let Some(layout) = &state.layout {
+            let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
+
             unsafe {
-                layout.SetMaxWidth(available.max.width).unwrap();
-                layout.SetMaxHeight(available.max.height).unwrap();
+                layout.SetMaxWidth(f32::INFINITY).unwrap();
             }
 
             let mut max_metrics = DWRITE_TEXT_METRICS::default();
             unsafe { layout.GetMetrics(&mut max_metrics).unwrap() };
 
-            let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
-
-            super::Limits {
-                min: super::Size {
-                    width: min_width,
-                    height: max_metrics.height,
-                },
-                max: super::Size {
-                    width: max_metrics.widthIncludingTrailingWhitespace,
-                    height: max_metrics.height,
-                },
+            limit_response::SizingForX {
+                min_width: min_width,
+                preferred_width: max_metrics.widthIncludingTrailingWhitespace,
             }
         } else {
-            super::Limits {
-                min: available.min,
-                max: available.min,
+            limit_response::SizingForX {
+                min_width: 0.0,
+                preferred_width: 0.0,
+            }
+        }
+    }
+
+    fn limits_y(&self, instance: &Instance, width: f32) -> limit_response::SizingForY {
+        let state = with_state!(instance as WidgetState);
+        if let Some(layout) = &state.layout {
+            unsafe {
+                layout.SetMaxWidth(width).unwrap();
+            }
+
+            let mut max_metrics = DWRITE_TEXT_METRICS::default();
+            unsafe { layout.GetMetrics(&mut max_metrics).unwrap() };
+
+            limit_response::SizingForY {
+                min_height: max_metrics.height,
+                preferred_height: max_metrics.height,
+            }
+        } else {
+            limit_response::SizingForY {
+                min_height: 0.0,
+                preferred_height: 0.0,
             }
         }
     }
@@ -635,23 +651,24 @@ impl WidgetState {
     }
 
     pub fn update_bounds(&mut self, bounds: RectDIP) -> Result<()> {
-        if bounds != self.bounds {
-            self.bounds = bounds;
+        self.bounds = bounds;
+        if self.layout.is_none() {
             self.build_text_layout()?;
+        }
 
-            unsafe {
-                let mut metrics = DWRITE_TEXT_METRICS::default();
-                self.layout
-                    .as_ref()
-                    .expect("layout not built")
-                    .GetMetrics(&mut metrics)?;
-                self.metric_bounds = RectDIP {
-                    x_dip: metrics.left,
-                    y_dip: metrics.top,
-                    width_dip: metrics.width,
-                    height_dip: metrics.height,
-                };
-            }
+        unsafe {
+            let layout = self.layout.as_ref().expect("layout not built");
+            layout.SetMaxWidth(bounds.width_dip).unwrap();
+            layout.SetMaxHeight(bounds.height_dip).unwrap();
+
+            let mut metrics = DWRITE_TEXT_METRICS::default();
+            layout.GetMetrics(&mut metrics).unwrap();
+            self.metric_bounds = RectDIP {
+                x_dip: metrics.left,
+                y_dip: metrics.top,
+                width_dip: metrics.width,
+                height_dip: metrics.height,
+            };
         }
 
         Ok(())
@@ -790,6 +807,7 @@ impl WidgetState {
                         let mut x = 0.0f32;
                         let mut y = 0.0f32;
                         let mut m = DWRITE_HIT_TEST_METRICS::default();
+
                         layout.HitTestTextPosition(
                             self.selection_active,
                             false,

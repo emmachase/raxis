@@ -22,21 +22,22 @@ use crate::{
 
 pub use dragdrop::{DragData, DragInfo, DropResult, WidgetDragDropTarget};
 
+pub mod button;
 pub mod dragdrop;
 pub mod drop_target;
 pub mod spinner;
 pub mod text_input;
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Size {
-    pub width: f32,
-    pub height: f32,
-}
+pub mod limit_response {
+    pub struct SizingForX {
+        pub min_width: f32,
+        pub preferred_width: f32,
+    }
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Limits {
-    pub min: Size,
-    pub max: Size,
+    pub struct SizingForY {
+        pub min_height: f32,
+        pub preferred_height: f32,
+    }
 }
 
 pub struct Modifiers {
@@ -106,6 +107,7 @@ pub struct Renderer<'a> {
     pub brush: &'a ID2D1SolidColorBrush,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
     pub r: f32,
     pub g: f32,
@@ -132,6 +134,29 @@ impl From<u32> for Color {
 }
 
 impl Renderer<'_> {
+    pub fn draw_rectangle<C: Into<Color>>(&self, rect: &RectDIP, color: C, stroke_width: f32) {
+        unsafe {
+            let color = color.into();
+            self.brush.SetColor(&D2D1_COLOR_F {
+                r: color.r,
+                g: color.g,
+                b: color.b,
+                a: color.a,
+            });
+            self.render_target.DrawRectangle(
+                &D2D_RECT_F {
+                    left: rect.x_dip,
+                    top: rect.y_dip,
+                    right: rect.x_dip + rect.width_dip,
+                    bottom: rect.y_dip + rect.height_dip,
+                },
+                self.brush,
+                stroke_width,
+                None,
+            );
+        }
+    }
+
     pub fn fill_rectangle<C: Into<Color>>(&self, rect: &RectDIP, color: C) {
         unsafe {
             let color = color.into();
@@ -198,7 +223,8 @@ impl Instance {
 
 #[allow(unused)]
 pub trait Widget: std::fmt::Debug {
-    fn limits(&self, instance: &Instance, available: Limits) -> Limits;
+    fn limits_x(&self, instance: &Instance) -> limit_response::SizingForX;
+    fn limits_y(&self, instance: &Instance, width: f32) -> limit_response::SizingForY;
 
     fn state(&self, device_resources: &DeviceResources) -> State {
         None
@@ -252,8 +278,7 @@ pub trait Operation {
 }
 
 pub fn dispatch_operation(ui_tree: BorrowedUITree, operation: &dyn Operation) {
-    let root = ui_tree.slots.keys().next().unwrap();
-    visitors::visit_bfs(ui_tree, root, |ui_tree, key, _| {
+    visitors::visit_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
         let element = &mut ui_tree.slots[key];
         if let Some(ElementContent::Widget(widget)) = element.content.as_mut() {
             if let Some(id) = element.id {
