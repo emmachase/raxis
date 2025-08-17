@@ -27,13 +27,10 @@ impl FocusManager {
     }
 
     pub fn release_focus(&mut self, target_id: u64) {
-        match &self.focused_widget {
-            Some(id) => {
-                if *id == target_id {
-                    self.focused_widget = None;
-                }
+        if let Some(id) = &self.focused_widget {
+            if *id == target_id {
+                self.focused_widget = None;
             }
-            None => {}
         }
     }
 }

@@ -635,7 +635,7 @@ impl AppState {
 }
 
 fn create_tree_root(
-    view_fn: &Box<dyn Fn() -> Element>,
+    view_fn: &dyn Fn() -> Element,
     device_resources: &DeviceResources,
     ui_tree: &mut OwnedUITree,
 ) -> UIKey {

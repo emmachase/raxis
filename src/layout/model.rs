@@ -433,7 +433,7 @@ pub fn create_tree(
             if let Some(id) = shell.id {
                 tree.state
                     .entry(id)
-                    .or_insert(Instance::new(id, widget, device_resources));
+                    .or_insert(Instance::new(id, &**widget, device_resources));
             }
         }
 

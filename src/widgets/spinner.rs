@@ -48,7 +48,7 @@ impl WidgetState {
         }
     }
 
-    pub fn as_any(self) -> Box<dyn Any> {
+    pub fn into_any(self) -> Box<dyn Any> {
         Box::new(self)
     }
 }
@@ -61,7 +61,7 @@ impl Default for WidgetState {
 
 impl Widget for Spinner {
     fn state(&self, _device_resources: &crate::runtime::DeviceResources) -> super::State {
-        Some(WidgetState::default().as_any())
+        Some(WidgetState::default().into_any())
     }
 
     fn limits(&self, _instance: &Instance, _available: super::Limits) -> super::Limits {

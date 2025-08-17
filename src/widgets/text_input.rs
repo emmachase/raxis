@@ -120,7 +120,7 @@ struct WidgetState {
 }
 
 impl WidgetState {
-    pub fn as_any(self) -> Box<dyn Any> {
+    pub fn into_any(self) -> Box<dyn Any> {
         Box::new(self)
     }
 }
@@ -157,7 +157,7 @@ impl Widget for TextInput {
             text_format
         };
 
-        Some(WidgetState::new(device_resources.dwrite_factory.clone(), text_format).as_any())
+        Some(WidgetState::new(device_resources.dwrite_factory.clone(), text_format).into_any())
     }
 
     fn limits(&self, instance: &Instance, available: super::Limits) -> super::Limits {

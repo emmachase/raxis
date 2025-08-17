@@ -188,7 +188,7 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub fn new(id: u64, widget: &Box<dyn Widget>, device_resources: &DeviceResources) -> Self {
+    pub fn new(id: u64, widget: &dyn Widget, device_resources: &DeviceResources) -> Self {
         Self {
             id,
             state: widget.state(device_resources),
