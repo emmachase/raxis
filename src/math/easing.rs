@@ -1,5 +1,5 @@
 // Phase easing for grow/shrink interpolation.
-#[derive(Copy, Clone, Debug)]
+#[derive(Copy, Clone, Debug, Default)]
 pub enum Easing {
     Linear,
     EaseInOut, // cosine-based smoothstep
@@ -8,6 +8,7 @@ pub enum Easing {
     EaseInOutQuad,
     EaseInQuad,
     EaseOutQuad,
+    #[default]
     EaseInOutCubic,
     EaseInCubic,
     EaseOutCubic,

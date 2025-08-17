@@ -20,6 +20,7 @@ use crate::{
 
 pub mod model;
 pub mod scroll_manager;
+pub mod smooth_scroll;
 
 mod float;
 pub mod visitors;

@@ -5,6 +5,7 @@ use raxis::layout::model::{
     Axis, ElementContent, HorizontalAlignment, ScrollConfig, Sizing, UIElement, VerticalAlignment,
 };
 use raxis::layout::scroll_manager::{ScrollPosition, ScrollStateManager};
+use raxis::layout::smooth_scroll::SmoothScrollManager;
 use raxis::layout::visitors::VisitAction;
 use raxis::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
@@ -161,6 +162,7 @@ struct AppState {
     shell: Shell,
 
     scroll_state_manager: ScrollStateManager,
+    smooth_scroll_manager: SmoothScrollManager,
 
     // Selectable text widget encapsulating layout, selection, and bounds
     // text_widget: SelectableText,
@@ -377,6 +379,7 @@ impl AppState {
                 ui_tree,
                 shell,
                 scroll_state_manager: ScrollStateManager::default(),
+                smooth_scroll_manager: SmoothScrollManager::new(),
                 drop_target: None,
                 pending_high_surrogate: None,
                 last_click_time: 0,
@@ -451,6 +454,9 @@ impl AppState {
         let dt = self.timing_info.rateCompose.uiDenominator as f64
             / self.timing_info.rateCompose.uiNumerator as f64;
 
+        // Update smooth scroll animations and apply positions to scroll state manager
+        self.update_smooth_scroll_animations();
+
         unsafe {
             self.create_device_resources(hwnd)?;
             // Refresh target DPI in case it changed (e.g. monitor move)
@@ -511,6 +517,11 @@ impl AppState {
         }
 
         self.clock += dt;
+
+        // Schedule next frame if we have active animations
+        if self.smooth_scroll_manager.has_any_active_animations() {
+            self.shell.request_redraw(hwnd, RedrawRequest::Immediate);
+        }
 
         Ok(())
     }
@@ -588,6 +599,18 @@ impl AppState {
         let mut result = None;
         dfs(self, root, x, y, &mut result);
         result
+    }
+
+    fn update_smooth_scroll_animations(&mut self) {
+        // Update all smooth scroll animations and apply current positions
+        self.smooth_scroll_manager.update_animations();
+
+        // Apply current animated positions to the scroll state manager
+        for (&element_id, animation) in self.smooth_scroll_manager.get_active_animations() {
+            let current_pos = animation.current_position(std::time::Instant::now());
+            self.scroll_state_manager
+                .set_scroll_position(element_id, current_pos);
+        }
     }
 }
 
@@ -909,9 +932,28 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                         (wheel_delta, 0.0)
                                     };
 
+                                    // Get current scroll position (either from active animation or actual position)
+                                    let current_pos =
+                                        state.scroll_state_manager.get_scroll_position(element_id);
+                                    let current_animated_pos = state
+                                        .smooth_scroll_manager
+                                        .get_current_position(element_id, current_pos);
+
+                                    // Use accumulate_scroll_delta for fast scrolling support
+                                    let delta = ScrollPosition {
+                                        x: delta_x,
+                                        y: delta_y,
+                                    };
+
+                                    state.smooth_scroll_manager.accumulate_scroll_delta(
+                                        element_id,
+                                        current_animated_pos,
+                                        delta,
+                                    );
+
                                     state
-                                        .scroll_state_manager
-                                        .update_scroll_position(element_id, delta_x, delta_y);
+                                        .shell
+                                        .request_redraw(hwnd, crate::RedrawRequest::Immediate);
 
                                     return VisitAction::Exit;
                                 }
