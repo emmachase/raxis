@@ -11,8 +11,11 @@ fn view() -> Element {
         id: Some(w_id!()),
         background_color: Some(0xFF0000FF),
         direction: Direction::TopToBottom,
-        width: Sizing::Fixed { px: 800.0 },
-        height: Sizing::Fixed { px: 200.0 },
+        width: Sizing::grow(),
+        height: Sizing::Fit {
+            min: 200.0,
+            max: f32::INFINITY,
+        },
         child_gap: 10.0,
         padding: BoxAmount::all(10.0),
         scroll: Some(ScrollConfig {
@@ -22,14 +25,13 @@ fn view() -> Element {
         children: vec![Element {
             id: Some(w_id!()),
             background_color: Some(0x00FF00FF),
-            width: Sizing::fixed(500.0),
-            height: Sizing::fixed(100.0),
+            width: Sizing::grow(),
+            height: Sizing::Fit {
+                min: 100.0,
+                max: f32::INFINITY,
+            },
 
-            content: Some(ElementContent::Widget(Box::new(TextInput::new(
-                // dwrite_factory.clone(),
-                // text_format.clone(),
-                // TEXT.to_string(),
-            )))),
+            content: Some(ElementContent::Widget(Box::new(TextInput::new()))),
             ..Default::default()
         }],
 

@@ -644,14 +644,10 @@ fn create_tree_root(
         ui_tree,
         Element {
             id: Some(w_id!()),
-            background_color: Some(0xFFFF00FF),
+            background_color: Some(0xFFFFFFFF),
             direction: Direction::TopToBottom,
-            width: Sizing::Fixed { px: 800.0 },
-            height: Sizing::Fixed { px: 200.0 },
-            child_gap: 10.0,
-            padding: BoxAmount::all(10.0),
             scroll: Some(ScrollConfig {
-                horizontal: Some(true),
+                vertical: Some(true),
                 ..Default::default()
             }),
             children: vec![view_fn()],
