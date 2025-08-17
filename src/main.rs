@@ -4,13 +4,13 @@ use raxis::gfx::PointDIP;
 use raxis::layout::model::{
     Axis, ElementContent, HorizontalAlignment, ScrollConfig, Sizing, UIElement, VerticalAlignment,
 };
-use raxis::layout::scroll_manager::{ScrollPosition, ScrollStateManager};
-use raxis::layout::smooth_scroll::SmoothScrollManager;
 use raxis::layout::visitors::VisitAction;
 use raxis::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
 };
-use raxis::widgets::integrated_drop_target::IntegratedDropTarget;
+use raxis::runtime::scroll::{ScrollPosition, ScrollStateManager};
+use raxis::runtime::smooth_scroll::SmoothScrollManager;
+use raxis::widgets::drop_target::DropTarget;
 use raxis::widgets::{Cursor, DragEvent, Event, Modifiers, Renderer};
 use raxis::{RedrawRequest, Shell, w_id};
 use raxis::{
@@ -1110,7 +1110,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 
                     // Register OLE drop target
                     if state.drop_target.is_none() {
-                        let dt: IDropTarget = IntegratedDropTarget::new(hwnd, |hwnd, event| {
+                        let dt: IDropTarget = DropTarget::new(hwnd, |hwnd, event| {
                             // Dispatch drag/drop events to the Shell
                             if let Some(app_state) = state_mut_from_hwnd(hwnd) {
                                 if let Some(result) = app_state.shell.dispatch_drag_event(

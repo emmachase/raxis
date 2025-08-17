@@ -22,7 +22,7 @@ use crate::{
 pub use dragdrop::{DragData, DragInfo, DropResult, WidgetDragDropTarget};
 
 pub mod dragdrop;
-pub mod integrated_drop_target;
+pub mod drop_target;
 pub mod spinner;
 pub mod text_input;
 

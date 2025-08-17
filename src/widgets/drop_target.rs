@@ -17,13 +17,13 @@ use crate::{
 
 /// Integrated drop target that works with the Shell and widget system
 #[implement(IDropTarget)]
-pub struct IntegratedDropTarget {
+pub struct DropTarget {
     hwnd: HWND,
     /// Callback to dispatch events to the Shell, receives HWND as parameter
     event_dispatcher: Box<dyn Fn(HWND, DragEvent) -> DROPEFFECT + Send>,
 }
 
-impl IntegratedDropTarget {
+impl DropTarget {
     pub fn new<F>(hwnd: HWND, event_dispatcher: F) -> Self
     where
         F: Fn(HWND, DragEvent) -> DROPEFFECT + Send + 'static,
@@ -80,7 +80,7 @@ impl IntegratedDropTarget {
 // We don't control the trait so we can't mark the functions unsafe
 #[allow(clippy::not_unsafe_ptr_arg_deref)]
 #[allow(non_snake_case)]
-impl IDropTarget_Impl for IntegratedDropTarget_Impl {
+impl IDropTarget_Impl for DropTarget_Impl {
     fn DragEnter(
         &self,
         pDataObj: windows_core::Ref<'_, IDataObject>,

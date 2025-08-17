@@ -1,6 +1,5 @@
 use std::time::{Duration, Instant};
 
-use crate::dragdrop::start_text_drag;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT;
@@ -18,9 +17,10 @@ use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
 use windows_numerics::Vector2;
 
-use crate::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::model::UIKey;
+use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
+use crate::runtime::dragdrop::start_text_drag;
 use crate::widgets::{
     BLACK, Color, DragData, DragInfo, DropResult, Renderer, Widget, WidgetDragDropTarget,
 };

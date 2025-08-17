@@ -189,5 +189,3 @@ pub fn start_text_drag(text: &str, allow_move: bool) -> windows::core::Result<DR
         Ok(effect)
     }
 }
-
-// end

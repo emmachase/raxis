@@ -1,8 +1,10 @@
-use crate::layout::{
-    ScrollStateManager, BorrowedUITree,
-    model::{Direction, HorizontalAlignment, UIKey, VerticalAlignment},
-    scroll_manager::ScrollPosition,
-    visitors,
+use crate::{
+    layout::{
+        BorrowedUITree, ScrollStateManager,
+        model::{Direction, HorizontalAlignment, UIKey, VerticalAlignment},
+        visitors,
+    },
+    runtime::scroll::ScrollPosition,
 };
 
 pub fn position_elements(

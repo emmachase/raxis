@@ -13,14 +13,12 @@ use crate::{
     layout::{
         model::{Axis, ElementContent, UIElement, UIKey},
         positioning::position_elements,
-        scroll_manager::ScrollStateManager,
     },
+    runtime::scroll::ScrollStateManager,
     widgets::Renderer,
 };
 
 pub mod model;
-pub mod scroll_manager;
-pub mod smooth_scroll;
 
 mod float;
 pub mod visitors;
