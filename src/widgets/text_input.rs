@@ -1,3 +1,5 @@
+use std::time::{Duration, Instant};
+
 use crate::dragdrop::start_text_drag;
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
@@ -22,14 +24,14 @@ use crate::layout::model::UIKey;
 use crate::widgets::{
     BLACK, Color, DragData, DragInfo, DropResult, Renderer, Widget, WidgetDragDropTarget,
 };
-use crate::{InputMethod, Shell};
+use crate::{InputMethod, RedrawRequest, Shell};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
 const CARET_WIDTH: f32 = 1.0;
 const LINE_OFFSET: f32 = 1.0;
 const MAX_UNDO_LEVELS: usize = 100;
-const UNDO_MERGE_TIME_MS: f64 = 1000.0; // 1 second
+const UNDO_MERGE_TIME_MS: u128 = 1000; // 1 second
 
 /// Represents a state that can be undone/redone
 #[derive(Debug, Clone)]
@@ -37,7 +39,7 @@ struct UndoState {
     text: String,
     selection_anchor: u32,
     selection_active: u32,
-    timestamp: f64,
+    timestamp: u128,
     operation_type: UndoOperationType,
 }
 
@@ -71,8 +73,11 @@ pub struct TextInput {
     is_dragging: bool,
     has_started_ole_drag: bool,
     drag_start_position: Option<PointDIP>,
-    caret_blink_timer: f64,
-    caret_visible: bool,
+
+    // caret_blink_timer: f64,
+    // caret_visible: bool,
+    focused_at: Instant,
+    created_at: Instant,
 
     // Preferred horizontal position (DIPs) for vertical navigation (sticky X)
     sticky_x_dip: Option<f32>,
@@ -103,7 +108,7 @@ pub struct TextInput {
     // Undo/redo system
     undo_stack: Vec<UndoState>,
     redo_stack: Vec<UndoState>,
-    last_operation_time: f64,
+    // last_operation_time: f64,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -378,6 +383,16 @@ impl Widget for TextInput {
                     self.ime_end();
                 }
             }
+            super::Event::Redraw { now } => {
+                if shell.focus_manager.is_focused(id, ui_key) {
+                    let next_blink =
+                        (0.05 + BLINK_TIME) - (*now - self.focused_at).as_secs_f64() % BLINK_TIME;
+                    shell.request_redraw(
+                        hwnd,
+                        RedrawRequest::At(*now + Duration::from_secs_f64(next_blink)),
+                    );
+                }
+            }
 
             _ => {
                 // Unhandled event
@@ -392,13 +407,11 @@ impl Widget for TextInput {
         shell: &Shell,
         renderer: &Renderer,
         bounds: RectDIP,
-        dt: f64,
+        now: Instant,
     ) {
-        // Update timing for undo system
-        self.last_operation_time += dt * 1000.0; // Convert to milliseconds
         self.update_bounds(bounds).expect("update bounds failed");
 
-        self.draw(id, ui_key, shell, renderer, bounds, dt)
+        self.draw(id, ui_key, shell, renderer, bounds, now)
             .expect("draw failed");
     }
 
@@ -516,8 +529,8 @@ impl TextInput {
             is_dragging: false,
             has_started_ole_drag: false,
             drag_start_position: None,
-            caret_blink_timer: 0.0,
-            caret_visible: true,
+            focused_at: Instant::now(),
+            created_at: Instant::now(),
             sticky_x_dip: None,
             metric_bounds: RectDIP::default(),
             utf16_boundaries: Vec::new(),
@@ -531,9 +544,9 @@ impl TextInput {
             can_drag_drop: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
-            last_operation_time: 0.0,
         };
         s.recompute_text_boundaries();
+        s.build_text_layout().expect("build text layout failed");
         s
     }
 
@@ -670,16 +683,12 @@ impl TextInput {
         shell: &Shell,
         renderer: &Renderer,
         bounds: RectDIP,
-        dt: f64,
+        now: Instant,
     ) -> Result<()> {
         unsafe {
             let layout = self.layout.as_ref().expect("layout not built");
 
-            self.caret_blink_timer += dt;
-            if self.caret_blink_timer >= BLINK_TIME {
-                self.caret_blink_timer = 0.0;
-                self.caret_visible = !self.caret_visible;
-            }
+            let caret_visible = (((now - self.focused_at).as_secs_f64()) / BLINK_TIME) % 2.0 < 1.0;
 
             // Normal rendering: selection, base text, caret
             self.draw_selection(layout, renderer, bounds)?;
@@ -721,7 +730,7 @@ impl TextInput {
                 // Draw caret if there's no selection (1 DIP wide bar)
                 let sel_start = self.selection_anchor.min(self.selection_active);
                 let sel_end = self.selection_anchor.max(self.selection_active);
-                if shell.focus_manager.is_focused(id, ui_key) && self.caret_visible {
+                if shell.focus_manager.is_focused(id, ui_key) && caret_visible {
                     if self.is_composing() {
                         let ime_caret_pos = sel_start + self.ime_cursor16;
                         let mut x = 0.0f32;
@@ -784,8 +793,7 @@ impl TextInput {
     }
 
     fn force_blink(&mut self) {
-        self.caret_blink_timer = 0.0;
-        self.caret_visible = true;
+        self.focused_at = Instant::now();
     }
 
     fn clear_sticky_x(&mut self) {
@@ -1490,7 +1498,7 @@ impl TextInput {
         } else {
             UndoOperationType::Other
         };
-        self.save_undo_state(operation_type, self.last_operation_time);
+        self.save_undo_state(operation_type);
         let start_byte = self.utf16_index_to_byte(start16);
         let end_byte = self.utf16_index_to_byte(end16);
         self.text.replace_range(start_byte..end_byte, s);
@@ -1524,10 +1532,7 @@ impl TextInput {
         }
 
         // Save undo state before modification
-        self.save_undo_state(
-            UndoOperationType::CharacterDeletion,
-            self.last_operation_time,
-        );
+        self.save_undo_state(UndoOperationType::CharacterDeletion);
         // Delete previous Unicode scalar
         let prev16 = self.prev_scalar_index(start16);
         let prev_byte = self.utf16_index_to_byte(prev16);
@@ -1556,10 +1561,7 @@ impl TextInput {
         }
 
         // Save undo state before modification
-        self.save_undo_state(
-            UndoOperationType::CharacterDeletion,
-            self.last_operation_time,
-        );
+        self.save_undo_state(UndoOperationType::CharacterDeletion);
         // Delete next Unicode scalar
         let next16 = self.next_scalar_index(start16);
         let caret_byte = self.utf16_index_to_byte(start16);
@@ -1586,7 +1588,7 @@ impl TextInput {
         }
 
         // Save undo state before modification
-        self.save_undo_state(UndoOperationType::WordDeletion, self.last_operation_time);
+        self.save_undo_state(UndoOperationType::WordDeletion);
         let prev16 = self.prev_word_index(start16);
         let prev_byte = self.utf16_index_to_byte(prev16);
         let caret_byte = self.utf16_index_to_byte(start16);
@@ -1616,7 +1618,7 @@ impl TextInput {
         }
 
         // Save undo state before modification
-        self.save_undo_state(UndoOperationType::WordDeletion, self.last_operation_time);
+        self.save_undo_state(UndoOperationType::WordDeletion);
         let next16 = self.next_word_index(start16);
         let caret_byte = self.utf16_index_to_byte(start16);
         let next_byte = self.utf16_index_to_byte(next16);
@@ -1759,7 +1761,9 @@ impl TextInput {
     // ===== Undo/Redo system =====
 
     /// Save the current state to the undo stack before making modifications
-    fn save_undo_state(&mut self, operation_type: UndoOperationType, current_time: f64) {
+    fn save_undo_state(&mut self, operation_type: UndoOperationType) {
+        let current_time = self.created_at.elapsed().as_millis();
+
         // Check if we can merge with the previous operation
         if let Some(last_state) = self.undo_stack.last_mut() {
             let time_diff = current_time - last_state.timestamp;
@@ -1772,7 +1776,7 @@ impl TextInput {
             {
                 // Don't create a new undo state, the previous one will be updated
                 // when the actual operation completes
-                self.last_operation_time = current_time;
+                last_state.timestamp = current_time;
                 return;
             }
         }
@@ -1794,7 +1798,6 @@ impl TextInput {
 
         // Clear redo stack when new action is performed
         self.redo_stack.clear();
-        self.last_operation_time = current_time;
     }
 
     /// Undo the last action
@@ -1805,7 +1808,7 @@ impl TextInput {
                 text: self.text.clone(),
                 selection_anchor: self.selection_anchor,
                 selection_active: self.selection_active,
-                timestamp: self.last_operation_time,
+                timestamp: self.created_at.elapsed().as_millis(),
                 operation_type: UndoOperationType::Other,
             };
             self.redo_stack.push(current_state);
@@ -1835,7 +1838,7 @@ impl TextInput {
                 text: self.text.clone(),
                 selection_anchor: self.selection_anchor,
                 selection_active: self.selection_active,
-                timestamp: self.last_operation_time,
+                timestamp: self.created_at.elapsed().as_millis(),
                 operation_type: UndoOperationType::Other,
             };
             self.undo_stack.push(current_state);

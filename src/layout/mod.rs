@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use slotmap::SlotMap;
 use windows::Win32::Graphics::Direct2D::{
     Common::{D2D_RECT_F, D2D1_COLOR_F},
@@ -106,6 +108,8 @@ pub fn paint(
     offset_x: f32,
     offset_y: f32,
 ) {
+    let now = Instant::now();
+
     visitors::visit_dfs(
         slots,
         root,
@@ -177,12 +181,9 @@ pub fn paint(
                     }
                     ElementContent::Widget(widget) => {
                         widget.paint(
-                            element.id,
-                            key,
-                            shell,
-                            renderer,
-                            bounds,
-                            1.0 / 240.0, /* TODO: dt */
+                            element.id, key, shell, renderer, bounds,
+                            now,
+                            // 1.0 / 240.0, /* TODO: dt */
                         );
                     }
                 }

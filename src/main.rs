@@ -11,7 +11,7 @@ use raxis::layout::{
 };
 use raxis::widgets::integrated_drop_target::IntegratedDropTarget;
 use raxis::widgets::{Cursor, DragEvent, Event, Modifiers, Renderer};
-use raxis::{Shell, w_id};
+use raxis::{RedrawRequest, Shell, w_id};
 use raxis::{
     current_dpi, dips_scale, dips_scale_for_dpi,
     gfx::RectDIP,
@@ -19,6 +19,7 @@ use raxis::{
 };
 use slotmap::DefaultKey;
 use std::ffi::c_void;
+use std::time::Instant;
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING,
 };
@@ -27,7 +28,7 @@ use windows::Win32::System::SystemServices::MK_SHIFT;
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SystemParametersInfoW, WM_DPICHANGED, WM_KEYUP, WM_MOUSEWHEEL,
+    SystemParametersInfoW, WM_DPICHANGED, WM_KEYUP, WM_MOUSEWHEEL, WM_TIMER,
 };
 use windows::{
     Win32::{
@@ -507,9 +508,6 @@ impl AppState {
             }
 
             let _ = EndPaint(hwnd, &ps);
-
-            // Request a paint so that we can animate
-            let _ = InvalidateRect(Some(hwnd), None, false);
         }
 
         self.clock += dt;
@@ -598,17 +596,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         match msg {
             WM_IME_STARTCOMPOSITION => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
-                    // state.text_widget.ime_begin();
-                    // // Position IME window at current caret
-
-                    // if let Ok((x_dip, y_dip, h)) = state
-                    //     .text_widget
-                    //     .caret_pos_dip(state.text_widget.caret_active16())
-                    // {
-                    //     let x_px = (x_dip / to_dip).round() as i32;
-                    //     let y_px = ((y_dip + h) / to_dip).round() as i32;
-                    // }
-                    // let _ = InvalidateRect(Some(hwnd), None, false);
                     state.shell.dispatch_event(
                         hwnd,
                         &mut state.ui_tree,
@@ -697,6 +684,14 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
+                LRESULT(0)
+            }
+            WM_TIMER => {
+                let timer_id = wparam.0;
+                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    state.shell.kill_redraw_timer(hwnd, timer_id);
+                }
+                let _ = InvalidateRect(Some(hwnd), None, false);
                 LRESULT(0)
             }
             WM_LBUTTONDOWN => {
@@ -831,40 +826,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         return LRESULT(0);
                     }
 
-                    // TODO
-                    // if state.text_widget.can_drag_drop() {
-                    //     // If we've exceeded the system drag threshold,
-                    //     // escalate to OLE DoDragDrop with CF_UNICODETEXT.
-                    //     let dx = (xi - state.last_click_pos.x).unsigned_abs();
-                    //     let dy = (yi - state.last_click_pos.y).unsigned_abs();
-                    //     let w = GetSystemMetrics(SM_CXDRAG) as u32 / 2;
-                    //     let h = GetSystemMetrics(SM_CYDRAG) as u32 / 2;
-                    //     if dx > w || dy > h {
-                    //         if let Some(s) = state.text_widget.selected_text() {
-                    //             // Hand control to OLE DnD
-                    //             let _ = ReleaseCapture();
-                    //             state.text_widget.cancel_drag();
-                    //             let effect = start_text_drag(&s, true).unwrap_or_default();
-                    //             if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
-                    //                 // Delete original selection on successful MOVE drop
-                    //                 let _ = state.text_widget.insert_str("");
-                    //             }
-                    //             state.text_widget.set_can_drag_drop(false);
-                    //             let _ = InvalidateRect(Some(hwnd), None, false);
-                    //             return LRESULT(0);
-                    //         }
-                    //     }
-                    // }
-
                     // Continue manual drag (selection or preview drop position)
                     let x_px = xi as f32;
                     let y_px = yi as f32;
                     let to_dip = dips_scale(hwnd);
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
-                    // if state.text_widget.update_drag(x, y) {
-                    //     let _ = InvalidateRect(Some(hwnd), None, false);
-                    // }
 
                     state
                         .shell
@@ -968,12 +935,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let to_dip = dips_scale(hwnd);
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
-                    // if let Ok(idx) = state.text_widget.hit_test_index(x, y) {
-                    //     state.text_widget.end_drag(idx);
-                    // } else {
-                    //     // Even on failure, ensure drag ends
-                    //     state.text_widget.end_drag(0);
-                    // }
 
                     let modifiers = get_modifiers();
                     state.shell.dispatch_event(
@@ -1123,6 +1084,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                         }, // Position not needed for DragLeave
                                     },
                                 ) {
+                                    // We don't get any other events while drag is ongoing, assume we need to redraw
+                                    let _ = InvalidateRect(Some(hwnd), None, false);
                                     result.effect
                                 } else {
                                     windows::Win32::System::Ole::DROPEFFECT_NONE
@@ -1221,9 +1184,16 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_PAINT => {
                 if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    state.shell.replace_redraw_request(RedrawRequest::Wait);
+
                     if let Err(e) = state.on_paint(hwnd) {
                         eprintln!("Failed to paint: {e}");
                     }
+
+                    let now = Instant::now();
+                    state
+                        .shell
+                        .dispatch_event(hwnd, &mut state.ui_tree, Event::Redraw { now });
                 }
                 LRESULT(0)
             }

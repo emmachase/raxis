@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use windows::Win32::Graphics::Direct2D::{
     Common::D2D1_COLOR_F, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
 };
@@ -31,6 +33,7 @@ pub struct Spinner {
     anchor_deg: f32,    // the anchored endpoint angle (deg)
     phase_elapsed: f32, // time within current half-cycle [0, half)
     is_growing: bool,   // true: growing (10%->90%), false: shrinking (90%->10%)
+    last_update: Instant,
 }
 
 impl Widget for Spinner {
@@ -54,7 +57,7 @@ impl Widget for Spinner {
         _shell: &Shell,
         renderer: &Renderer,
         bounds: crate::gfx::RectDIP,
-        dt: f64,
+        now: Instant,
     ) {
         let center = Vector2 {
             X: bounds.x_dip + bounds.width_dip * 0.5,
@@ -63,7 +66,7 @@ impl Widget for Spinner {
         // let radius = bounds.width_dip.min(bounds.height_dip) * 0.5;
         // self.set_layout(center, radius);
         self.center = center;
-        self.update(dt as f32);
+        self.update(now);
         let _ = self.draw(renderer.factory, renderer.render_target, renderer.brush);
     }
 
@@ -71,12 +74,14 @@ impl Widget for Spinner {
         &mut self,
         _id: Option<u64>,
         _key: UIKey,
-        _hwnd: windows::Win32::Foundation::HWND,
-        _shell: &mut Shell,
-        _event: &super::Event,
+        hwnd: windows::Win32::Foundation::HWND,
+        shell: &mut Shell,
+        event: &super::Event,
         _bounds: crate::gfx::RectDIP,
     ) {
-        // Nothing to do
+        if matches!(event, super::Event::Redraw { .. }) {
+            shell.request_redraw(hwnd, crate::RedrawRequest::Immediate);
+        }
     }
 }
 
@@ -93,6 +98,7 @@ impl Spinner {
             anchor_deg: 0.0,
             phase_elapsed: 0.0,
             is_growing: true,
+            last_update: Instant::now(),
         }
     }
 
@@ -106,7 +112,10 @@ impl Spinner {
         self.easing = easing;
     }
 
-    pub fn update(&mut self, dt_seconds: f32) {
+    pub fn update(&mut self, now: Instant) {
+        let dt_seconds = now.duration_since(self.last_update).as_secs_f32();
+        self.last_update = now;
+
         let half = self.grow_period_s * 0.5;
         // advance slow rotation
         self.anchor_deg += self.base_speed_dps * dt_seconds;

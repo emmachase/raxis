@@ -1,11 +1,15 @@
+use std::time::Instant;
+
 use windows::Win32::{
     Foundation::{HWND, POINT, RECT},
+    Graphics::Gdi::InvalidateRect,
     UI::{
         HiDpi::GetDpiForWindow,
         Input::Ime::{
             CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmGetContext, ImmNotifyIME, ImmReleaseContext,
             ImmSetCandidateWindow, NI_COMPOSITIONSTR,
         },
+        WindowsAndMessaging::{KillTimer, SetTimer},
     },
 };
 
@@ -36,6 +40,18 @@ pub struct Shell {
     current_drag_widget: Option<layout::model::UIKey>,
 
     operation_queue: Vec<Box<dyn Operation>>,
+
+    // requested_next_redraw: bool,
+    // redraw_timers: Vec<usize>,
+    // next_timer_id: usize,
+    redraw_request: RedrawRequest,
+}
+
+#[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
+pub enum RedrawRequest {
+    Immediate,
+    At(Instant),
+    Wait,
 }
 
 pub enum InputMethod {
@@ -49,6 +65,8 @@ impl Default for Shell {
     }
 }
 
+pub const REDRAW_TIMER_ID: usize = 50;
+
 impl Shell {
     pub fn new() -> Self {
         Self {
@@ -58,11 +76,48 @@ impl Shell {
             event_captured: false,
             current_drag_widget: None,
             operation_queue: Vec::new(),
+            redraw_request: RedrawRequest::Wait,
         }
     }
 
     pub fn queue_operation(&mut self, operation: Box<dyn Operation>) {
         self.operation_queue.push(operation);
+    }
+
+    /// Replaces the current redraw request with the given request.
+    /// This will override any existing request, you almost never want to use this.
+    pub fn replace_redraw_request(&mut self, request: RedrawRequest) {
+        self.redraw_request = request;
+    }
+
+    pub fn request_redraw(&mut self, hwnd: HWND, request: RedrawRequest) {
+        if request < self.redraw_request {
+            self.redraw_request = request;
+
+            if matches!(request, RedrawRequest::Immediate) {
+                unsafe {
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
+            } else {
+                let uelapse = match request {
+                    RedrawRequest::Wait => return,
+                    RedrawRequest::At(instant) => {
+                        instant.duration_since(Instant::now()).as_millis() as u32
+                    }
+                    _ => 0,
+                };
+                unsafe { SetTimer(Some(hwnd), REDRAW_TIMER_ID, uelapse, None) };
+            }
+        }
+    }
+
+    pub fn kill_redraw_timer(&mut self, hwnd: HWND, timer_id: usize) {
+        if timer_id == REDRAW_TIMER_ID {
+            self.redraw_request = RedrawRequest::Wait;
+            unsafe {
+                let _ = KillTimer(Some(hwnd), timer_id);
+            }
+        }
     }
 
     pub fn dispatch_event(&mut self, hwnd: HWND, ui_tree: BorrowedUITree, event: Event) {

@@ -1,3 +1,5 @@
+use std::time::Instant;
+
 use smol_str::SmolStr;
 use windows::Win32::{
     Foundation::HWND,
@@ -85,6 +87,9 @@ pub enum Event {
     Char {
         text: SmolStr,
     },
+    Redraw {
+        now: Instant,
+    },
 }
 
 pub enum DragEvent {
@@ -163,7 +168,7 @@ pub trait Widget: std::fmt::Debug {
         shell: &Shell,
         renderer: &Renderer,
         bounds: RectDIP,
-        dt: f64,
+        now: Instant,
     );
 
     fn update(
