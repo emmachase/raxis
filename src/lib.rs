@@ -19,7 +19,7 @@ use crate::{
         visitors::{self, VisitAction},
     },
     runtime::focus,
-    widgets::{DragEvent, DropResult, Event, Operation, dispatch_operation},
+    widgets::{DragData, DragEvent, DropResult, Event, Operation, dispatch_operation},
 };
 
 pub mod gfx;
@@ -28,6 +28,10 @@ pub mod math;
 pub mod runtime;
 pub mod util;
 pub mod widgets;
+
+pub enum DeferredControl {
+    StartDrag { data: DragData, src_id: u64 },
+}
 
 pub struct Shell {
     focus_manager: focus::FocusManager,
@@ -44,6 +48,8 @@ pub struct Shell {
     // redraw_timers: Vec<usize>,
     // next_timer_id: usize,
     redraw_request: RedrawRequest,
+
+    deferred_controls: Vec<DeferredControl>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -76,11 +82,24 @@ impl Shell {
             current_drag_widget: None,
             operation_queue: Vec::new(),
             redraw_request: RedrawRequest::Wait,
+            deferred_controls: Vec::new(),
         }
     }
 
     pub fn queue_operation(&mut self, operation: Box<dyn Operation>) {
         self.operation_queue.push(operation);
+    }
+
+    pub fn queue_deferred_control(&mut self, control: DeferredControl) {
+        self.deferred_controls.push(control);
+    }
+
+    pub fn drain_deferred_controls(&mut self) -> Option<Vec<DeferredControl>> {
+        if self.deferred_controls.is_empty() {
+            None
+        } else {
+            Some(std::mem::take(&mut self.deferred_controls))
+        }
     }
 
     /// Replaces the current redraw request with the given request.
@@ -128,6 +147,38 @@ impl Shell {
             let bounds = element.bounds();
             if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content {
                 if let Some(id) = element.id {
+                    let instance = ui_tree.state.get_mut(&id).unwrap();
+                    widget.update(instance, hwnd, self, &event, bounds);
+                }
+
+                if self.event_captured {
+                    return VisitAction::Exit;
+                }
+            }
+
+            VisitAction::Continue
+        });
+    }
+
+    pub fn dispatch_event_to(
+        &mut self,
+        hwnd: HWND,
+        ui_tree: BorrowedUITree,
+        event: Event,
+        target_id: u64,
+    ) {
+        self.event_captured = false;
+
+        // TODO: Make some map for id to avoid a traversal
+
+        // Handle regular events with reverse BFS traversal
+        visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
+            let element = &mut ui_tree.slots[key];
+            let bounds = element.bounds();
+            if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content {
+                if let Some(id) = element.id
+                    && target_id == id
+                {
                     let instance = ui_tree.state.get_mut(&id).unwrap();
                     widget.update(instance, hwnd, self, &event, bounds);
                 }

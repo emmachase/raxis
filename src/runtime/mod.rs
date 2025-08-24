@@ -12,14 +12,17 @@ use crate::layout::visitors::VisitAction;
 use crate::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
 };
+use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::widgets::drop_target::DropTarget;
-use crate::widgets::{Cursor, DragEvent, Event, Modifiers, Renderer};
-use crate::{RedrawRequest, Shell, w_id};
+use crate::widgets::{Cursor, DragData, DragEvent, Event, Modifiers, Renderer};
+use crate::{DeferredControl, RedrawRequest, Shell, w_id};
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
 use slotmap::DefaultKey;
 use std::ffi::c_void;
+use std::ops::DerefMut;
+use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
@@ -106,14 +109,17 @@ struct ScrollDragState {
 // which properly integrates with the widget system
 
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
-fn state_mut_from_hwnd(hwnd: HWND) -> Option<&'static mut AppState> {
+fn state_mut_from_hwnd(hwnd: HWND) -> Option<MutexGuard<'static, AppState>> {
     unsafe {
         let ptr = WAM::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-        if ptr != 0 {
-            Some(&mut *(ptr as *mut AppState))
+        // println!("ptr: {:?}", ptr);
+        let x = if ptr != 0 {
+            Some((&mut *(ptr as *mut Mutex<AppState>)).lock().unwrap())
         } else {
             None
-        }
+        };
+        // println!("x: locked");
+        x
     }
 }
 
@@ -473,6 +479,7 @@ impl AppState {
             // Refresh target DPI in case it changed (e.g. monitor move)
             self.update_dpi(hwnd);
             let mut ps = PAINTSTRUCT::default();
+            // println!("BeginPaint");
             BeginPaint(hwnd, &mut ps);
 
             if let (Some(rt), Some(brush)) = (
@@ -531,6 +538,7 @@ impl AppState {
             }
 
             let _ = EndPaint(hwnd, &ps);
+            // println!("EndPaint");
         }
 
         self.clock += dt;
@@ -658,7 +666,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
     let result = unsafe {
         match msg {
             WM_IME_STARTCOMPOSITION => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_IME_STARTCOMPOSITION");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
+
                     state.shell.dispatch_event(
                         hwnd,
                         &mut state.ui_tree,
@@ -668,7 +679,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_IME_COMPOSITION => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_IME_COMPOSITION");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
+
                     let himc = ImmGetContext(hwnd);
                     if !himc.is_invalid() {
                         let flags = lparam.0 as u32;
@@ -740,7 +754,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_IME_ENDCOMPOSITION => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_IME_ENDCOMPOSITION");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
+
                     state
                         .shell
                         .dispatch_event(hwnd, &mut state.ui_tree, Event::ImeEndComposition);
@@ -750,15 +767,19 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_TIMER => {
+                // println!("WM_TIMER");
                 let timer_id = wparam.0;
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     state.shell.kill_redraw_timer(hwnd, timer_id);
                 }
                 let _ = InvalidateRect(Some(hwnd), None, false);
                 LRESULT(0)
             }
             WM_LBUTTONDOWN => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_LBUTTONDOWN");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     // Capture mouse & keyboard input
                     let _ = SetFocus(Some(hwnd));
                     let _ = SetCapture(hwnd);
@@ -819,7 +840,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_MOUSEMOVE => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_MOUSEMOVE");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     // Current mouse in pixels
                     let xi = (lparam.0 & 0xFFFF) as i16 as i32;
                     let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
@@ -896,6 +919,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let x = x_px * to_dip;
                     let y = y_px * to_dip;
 
+                    // println!("MouseMove {} {}", x, y);
                     state
                         .shell
                         .dispatch_event(hwnd, &mut state.ui_tree, Event::MouseMove { x, y });
@@ -903,6 +927,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_MOUSEWHEEL => {
+                // println!("WM_MOUSEWHEEL");
                 let wheel_delta = (wparam.0 >> 16) as i16;
                 let modifiers = (wparam.0 & 0xFFFF) as u16;
                 let x = (lparam.0 & 0xFFFF) as i16 as i32 as f32;
@@ -911,7 +936,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 let shift = (modifiers & MK_SHIFT.0 as u16) != 0;
                 let axis = if shift { Axis::X } else { Axis::Y };
 
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     let rect = window_rect(hwnd).unwrap();
 
                     let to_dip = dips_scale(hwnd);
@@ -1004,7 +1030,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_LBUTTONUP => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_LBUTTONUP");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     if state.scroll_drag.take().is_some() {
                         let _ = ReleaseCapture();
                         let _ = InvalidateRect(Some(hwnd), None, false);
@@ -1028,15 +1056,23 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         },
                     );
 
-                    // Release mouse capture
-                    let _ = ReleaseCapture();
-                    let _ = InvalidateRect(Some(hwnd), None, false);
+                    // println!("WM_LBUTTONUP dispatch finished");
                 }
+
+                // Release mouse capture
+                let _ = ReleaseCapture();
+                // println!("WM_LBUTTONUP release capture");
+                let _ = InvalidateRect(Some(hwnd), None, false);
+                // println!("WM_LBUTTONUP invalidate rect");
+
+                // println!("WM_LBUTTONUP finished");
                 LRESULT(0)
             }
 
             WM_CHAR => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_CHAR");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     // Suppress WM_CHAR while IME composition is active to avoid duplicate input
                     // TODO
                     // if state.text_widget.is_composing() {
@@ -1087,7 +1123,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_KEYDOWN => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_KEYDOWN");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     let vk = wparam.0 as u32;
 
                     let modifiers = get_modifiers();
@@ -1102,10 +1140,13 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     return LRESULT(0);
                     // }
                 }
+
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_KEYUP => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_KEYUP");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     let vk = wparam.0 as u32;
 
                     let modifiers = get_modifiers();
@@ -1120,14 +1161,17 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     return LRESULT(0);
                     // }
                 }
+
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_CREATE => {
+                // println!("WM_CREATE");
                 let pcs = lparam.0 as *const CREATESTRUCTW;
                 let ptr = (*pcs).lpCreateParams;
                 SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as isize);
 
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     // Get the composition refresh rate. If the DWM isn't running,
                     // get the refresh rate from GDI -- probably going to be 60Hz
                     let timing_info = &mut state.timing_info;
@@ -1150,7 +1194,8 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     if state.drop_target.is_none() {
                         let dt: IDropTarget = DropTarget::new(hwnd, |hwnd, event| {
                             // Dispatch drag/drop events to the Shell
-                            if let Some(app_state) = state_mut_from_hwnd(hwnd) {
+                            if let Some(mut app_state) = state_mut_from_hwnd(hwnd) {
+                                let app_state = app_state.deref_mut();
                                 if let Some(result) = app_state.shell.dispatch_drag_event(
                                     &mut app_state.ui_tree,
                                     &event,
@@ -1183,7 +1228,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_SIZE => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_SIZE");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     let width = (lparam.0 & 0xFFFF) as u32;
                     let height = ((lparam.0 >> 16) & 0xFFFF) as u32;
                     if let Err(e) = state.on_resize(width, height) {
@@ -1193,8 +1240,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_DPICHANGED => {
+                // println!("WM_DPICHANGED");
                 // Resize window to the suggested rect and update render target DPI
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     let suggested = &*(lparam.0 as *const RECT);
                     let _ = SetWindowPos(
                         hwnd,
@@ -1211,10 +1260,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_SETCURSOR => {
+                // println!("WM_SETCURSOR");
                 // Set I-beam cursor when hovering over visible text bounds (in client area)
                 let hit_test = (lparam.0 & 0xFFFF) as u32;
                 if hit_test == HTCLIENT {
-                    if let Some(state) = state_mut_from_hwnd(hwnd) {
+                    if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                        let state = state.deref_mut();
                         // Get mouse in client pixels and convert to DIPs
                         let mut pt = POINT { x: 0, y: 0 };
                         let _ = GetCursorPos(&mut pt);
@@ -1259,10 +1310,13 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         }
                     }
                 }
+
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_PAINT => {
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                // println!("WM_PAINT");
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     state.shell.replace_redraw_request(RedrawRequest::Wait);
 
                     if let Err(e) = state.on_paint(hwnd) {
@@ -1277,13 +1331,16 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 LRESULT(0)
             }
             WM_DISPLAYCHANGE => {
+                // println!("WM_DISPLAYCHANGE");
                 let _ = InvalidateRect(Some(hwnd), None, false);
                 LRESULT(0)
             }
             WM_DESTROY => {
+                // println!("WM_DESTROY");
                 // Revoke drop target first
                 let _ = RevokeDragDrop(hwnd);
-                if let Some(state) = state_mut_from_hwnd(hwnd) {
+                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                    let state = state.deref_mut();
                     // state.text_widget.set_ole_drop_preview(None);
                     state.drop_target = None;
                 }
@@ -1299,8 +1356,45 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
         }
     };
 
-    if let Some(state) = state_mut_from_hwnd(hwnd) {
+    let deferred_controls = if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+        let state = state.deref_mut();
         state.shell.dispatch_operations(&mut state.ui_tree);
+
+        state.shell.drain_deferred_controls()
+    } else {
+        None
+    };
+
+    if let Some(deferred_controls) = deferred_controls {
+        for control in deferred_controls {
+            match control {
+                DeferredControl::StartDrag { data, src_id } => {
+                    let DragData::Text(text) = data;
+
+                    if let Ok(effect) = start_text_drag(&text, true) {
+                        // If it was a move operation, delete the selected text
+                        // if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
+                        //     // && self.can_drag_drop() {
+                        //     // let _ = self.insert_str("");
+                        //     println!("Move operation");
+                        // }
+
+                        // println!("Drag operation");
+                        // self.reset_drag_state();
+
+                        if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                            let state = state.deref_mut();
+
+                            let event = Event::DragFinish { effect };
+
+                            state
+                                .shell
+                                .dispatch_event_to(hwnd, &mut state.ui_tree, event, src_id);
+                        }
+                    }
+                }
+            }
+        }
     }
 
     result
@@ -1346,6 +1440,8 @@ pub fn run_event_loop(view_fn: impl Fn() -> Element + 'static) -> Result<()> {
         app.device_resources
             .d2d_factory
             .GetDesktopDpi(&mut dpi_x, &mut dpi_y);
+
+        let app = Mutex::new(app);
 
         let boxed = Box::new(app);
         let ptr = Box::into_raw(boxed) as isize;

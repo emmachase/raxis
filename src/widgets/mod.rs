@@ -7,6 +7,7 @@ use windows::Win32::{
         Common::{D2D_RECT_F, D2D1_COLOR_F},
         ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
     },
+    System::Ole::DROPEFFECT,
 };
 
 use crate::{
@@ -91,6 +92,9 @@ pub enum Event {
     },
     Redraw {
         now: Instant,
+    },
+    DragFinish {
+        effect: DROPEFFECT,
     },
 }
 

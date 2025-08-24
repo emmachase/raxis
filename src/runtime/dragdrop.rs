@@ -175,7 +175,9 @@ impl IDataObject_Impl for TextDataObject_Impl {
 // Public helper: start a text drag with COPY and MOVE allowed/forbidden
 pub fn start_text_drag(text: &str, allow_move: bool) -> windows::core::Result<DROPEFFECT> {
     unsafe {
-        let data: IDataObject = TextDataObject::new(text).into();
+        let text = text.to_owned();
+
+        let data: IDataObject = TextDataObject::new(&text).into();
         let src: IDropSource = DropSource::new().into();
         let mut effect = DROPEFFECT(0);
         let allowed = if allow_move {
@@ -183,7 +185,10 @@ pub fn start_text_drag(text: &str, allow_move: bool) -> windows::core::Result<DR
         } else {
             DROPEFFECT_COPY.0
         };
+
+        // println!("DoDragDrop");
         let hr = DoDragDrop(&data, &src, DROPEFFECT(allowed), &mut effect);
+        // println!("DoDragDrop done {:?}", hr.message());
         // DoDragDrop returns DRAGDROP_S_DROP, DRAGDROP_S_CANCEL, or error; we ignore hr and return effect
         let _ = hr; // suppress unused
         Ok(effect)

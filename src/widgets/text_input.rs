@@ -22,12 +22,11 @@ use windows_numerics::Vector2;
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
-use crate::runtime::dragdrop::start_text_drag;
 use crate::widgets::{
     BLACK, Color, DragData, DragInfo, DropResult, Instance, Renderer, Widget, WidgetDragDropTarget,
     limit_response,
 };
-use crate::{InputMethod, RedrawRequest, Shell, with_state};
+use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
@@ -282,7 +281,7 @@ impl Widget for TextInput {
                     if let Some(start_pos) = state.drag_start_position {
                         if let Some(drag_data) = state.can_ole_drag(start_pos) {
                             // Start OLE drag operation
-                            state.handoff_ole_drag(&drag_data);
+                            state.handoff_ole_drag(instance.id, shell, &drag_data);
 
                             return; // Don't update text selection when starting OLE drag
                         }
@@ -449,6 +448,17 @@ impl Widget for TextInput {
                         hwnd,
                         RedrawRequest::At(*now + Duration::from_secs_f64(next_blink)),
                     );
+                }
+            }
+
+            super::Event::DragFinish { effect } => {
+                if state.has_started_ole_drag {
+                    // If it was a move operation, delete the selected text
+                    if (effect.0 & DROPEFFECT_MOVE.0) != 0 && state.can_drag_drop() {
+                        let _ = state.insert_str("");
+                    }
+
+                    state.reset_drag_state();
                 }
             }
 
@@ -875,21 +885,17 @@ impl WidgetState {
         None
     }
 
-    fn handoff_ole_drag(&mut self, data: &DragData) {
+    fn handoff_ole_drag(&mut self, instance_id: u64, shell: &mut Shell, data: &DragData) {
         // Mark that we can perform drag-to-move
         self.set_can_drag_drop(true);
 
         // Start OLE drag operation with the selected text
         let DragData::Text(text) = data;
         self.has_started_ole_drag = true;
-        if let Ok(effect) = start_text_drag(text, true) {
-            // If it was a move operation, delete the selected text
-            if (effect.0 & DROPEFFECT_MOVE.0) != 0 && self.can_drag_drop() {
-                let _ = self.insert_str("");
-            }
-
-            self.reset_drag_state();
-        }
+        shell.queue_deferred_control(DeferredControl::StartDrag {
+            data: DragData::Text(text.clone()),
+            src_id: instance_id,
+        });
     }
 
     // Drag/select helpers
