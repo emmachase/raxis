@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt::Debug;
 use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
@@ -26,11 +27,20 @@ pub enum ButtonState {
 }
 
 /// Button widget with text label and click handling
-#[derive(Debug, Clone)]
+// #[derive()]
 pub struct Button {
     pub text: String,
     pub enabled: bool,
-    pub on_click: Option<fn()>,
+    pub on_click: Option<Box<dyn Fn()>>,
+}
+
+impl Debug for Button {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Button")
+            .field("text", &self.text)
+            .field("enabled", &self.enabled)
+            .finish()
+    }
 }
 
 impl Button {
@@ -42,8 +52,8 @@ impl Button {
         }
     }
 
-    pub fn with_click_handler(mut self, handler: fn()) -> Self {
-        self.on_click = Some(handler);
+    pub fn with_click_handler(mut self, handler: impl Fn() + 'static) -> Self {
+        self.on_click = Some(Box::new(handler));
         self
     }
 
@@ -64,6 +74,7 @@ struct ButtonWidgetState {
     dwrite_factory: IDWriteFactory,
     text_format: IDWriteTextFormat,
     text_layout: Option<IDWriteTextLayout>,
+    cached_text: String,
 
     // Button state
     state: ButtonState,
@@ -80,6 +91,7 @@ impl ButtonWidgetState {
             dwrite_factory,
             text_format,
             text_layout: None,
+            cached_text: String::new(),
             state: ButtonState::Normal,
             is_mouse_down: false,
             is_mouse_over: false,
@@ -107,8 +119,9 @@ impl ButtonWidgetState {
     }
 
     fn build_text_layout(&mut self, text: &str, bounds: RectDIP) -> Result<()> {
-        if bounds != self.bounds {
+        if bounds != self.bounds || text != self.cached_text {
             self.bounds = bounds;
+            self.cached_text = text.to_string();
 
             let wtext: Vec<u16> = text.encode_utf16().collect();
 
@@ -329,7 +342,7 @@ impl Widget for Button {
 
                 // Trigger click if mouse was released over the button
                 if was_pressed && point.within(bounds) && self.enabled {
-                    if let Some(handler) = self.on_click {
+                    if let Some(handler) = self.on_click.as_ref() {
                         handler();
                     }
                 }

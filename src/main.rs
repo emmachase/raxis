@@ -1,12 +1,21 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
+
+use std::{cell::RefCell, rc::Rc};
 
 use raxis::{
-    layout::model::{BoxAmount, Direction, Element, ElementContent, ScrollConfig, Sizing},
+    HookManager,
+    layout::{
+        BorrowedUITree,
+        model::{BoxAmount, Direction, Element, ElementContent, ScrollConfig, Sizing},
+    },
     w_id,
     widgets::{button::Button, text_input::TextInput},
 };
 
-fn view() -> Element {
+fn view(mut hook: HookManager) -> Element {
+    let mut instance = hook.instance(w_id!());
+    let mut state = instance.use_hook(|| Rc::new(RefCell::new(0))).clone();
+
     Element {
         id: Some(w_id!()),
         background_color: Some(0xFF0000FF),
@@ -54,7 +63,12 @@ fn view() -> Element {
             Element {
                 id: Some(w_id!()),
                 content: Some(ElementContent::Widget(Box::new(
-                    Button::new("Button").with_click_handler(|| println!("Button clicked")),
+                    Button::new(format!("Button {}", state.borrow())).with_click_handler(
+                        move || {
+                            println!("Button clicked");
+                            *state.borrow_mut() += 1;
+                        },
+                    ),
                 ))),
                 ..Default::default()
             },

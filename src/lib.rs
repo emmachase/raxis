@@ -1,4 +1,9 @@
-use std::time::Instant;
+use std::{
+    any::{Any, TypeId},
+    cell::RefCell,
+    collections::HashMap,
+    time::Instant,
+};
 
 use windows::Win32::{
     Foundation::{HWND, POINT, RECT},
@@ -16,6 +21,7 @@ use windows::Win32::{
 use crate::{
     layout::{
         BorrowedUITree,
+        model::Element,
         visitors::{self, VisitAction},
     },
     runtime::focus,
@@ -28,6 +34,48 @@ pub mod math;
 pub mod runtime;
 pub mod util;
 pub mod widgets;
+
+#[derive(Default)]
+pub struct HookState {
+    // TODO: Discriminate by TypeId?
+    hooks: Vec<RefCell<Box<dyn Any>>>,
+}
+
+pub struct HookManager<'a> {
+    ui_tree: BorrowedUITree<'a>,
+}
+
+pub struct HookInstance<'a> {
+    state: &'a mut HookState,
+    position: usize,
+}
+
+impl<'a> HookInstance<'a> {
+    pub fn use_hook<T: 'static>(&mut self, initializer: impl FnOnce() -> T) -> &mut T {
+        if self.position >= self.state.hooks.len() {
+            self.state.hooks.push(RefCell::new(Box::new(initializer())));
+        }
+        let hook = self.state.hooks[self.position]
+            .get_mut()
+            .downcast_mut::<T>()
+            .unwrap();
+        self.position += 1;
+        hook
+    }
+}
+
+impl HookManager<'_> {
+    pub fn instance(&mut self, id: u64) -> HookInstance {
+        let state = self.ui_tree.hook_state.entry(id).or_insert_with(|| {
+            println!("Creating hook state for {}", id);
+            HookState::default()
+        });
+
+        HookInstance { state, position: 0 }
+    }
+}
+
+pub type ViewFn = dyn Fn(HookManager) -> Element;
 
 pub enum DeferredControl {
     StartDrag { data: DragData, src_id: u64 },
@@ -147,7 +195,7 @@ impl Shell {
             let bounds = element.bounds();
             if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content {
                 if let Some(id) = element.id {
-                    let instance = ui_tree.state.get_mut(&id).unwrap();
+                    let instance = ui_tree.widget_state.get_mut(&id).unwrap();
                     widget.update(instance, hwnd, self, &event, bounds);
                 }
 
@@ -179,7 +227,7 @@ impl Shell {
                 if let Some(id) = element.id
                     && target_id == id
                 {
-                    let instance = ui_tree.state.get_mut(&id).unwrap();
+                    let instance = ui_tree.widget_state.get_mut(&id).unwrap();
                     widget.update(instance, hwnd, self, &event, bounds);
                 }
 
@@ -242,7 +290,7 @@ impl Shell {
                         {
                             if let Some(prev_text_input) = prev_widget.as_drop_target()
                                 && let Some(id) = prev_element.id
-                                && let Some(instance) = ui_tree.state.get_mut(&id)
+                                && let Some(instance) = ui_tree.widget_state.get_mut(&id)
                             {
                                 prev_text_input.drag_leave(instance, prev_bounds);
                             }
@@ -263,7 +311,7 @@ impl Shell {
                 {
                     if let Some(text_input) = widget.as_drop_target()
                         && let Some(id) = element.id
-                        && let Some(instance) = ui_tree.state.get_mut(&id)
+                        && let Some(instance) = ui_tree.widget_state.get_mut(&id)
                     {
                         new_drag_widget = Some(key);
 

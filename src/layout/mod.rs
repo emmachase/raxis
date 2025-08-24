@@ -8,7 +8,7 @@ use windows::Win32::Graphics::Direct2D::{
 use windows_numerics::Vector2;
 
 use crate::{
-    Shell,
+    HookState, Shell,
     gfx::RectDIP,
     layout::{
         model::{Axis, ElementContent, UIElement, UIKey},
@@ -32,9 +32,10 @@ use grow_and_shrink_along_axis::grow_and_shrink_along_axis;
 
 #[derive(Default)]
 pub struct OwnedUITree {
-    pub slots: SlotMap<UIKey, UIElement>,
-    pub state: HashMap<u64, Instance>,
     pub root: UIKey,
+    pub slots: SlotMap<UIKey, UIElement>,
+    pub widget_state: HashMap<u64, Instance>,
+    pub hook_state: HashMap<u64, HookState>,
 }
 pub type BorrowedUITree<'a> = &'a mut OwnedUITree;
 
@@ -184,7 +185,7 @@ pub fn paint(
                         }
                     }
                     ElementContent::Widget(widget) => {
-                        let state = ui_tree.state.get_mut(&element.id.unwrap()).unwrap();
+                        let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
 
                         widget.paint(
                             state, shell, renderer, bounds, now,

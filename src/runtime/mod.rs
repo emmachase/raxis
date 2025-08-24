@@ -10,14 +10,15 @@ use crate::layout::model::{
 };
 use crate::layout::visitors::VisitAction;
 use crate::layout::{
-    self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
+    self, BorrowedUITree, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom,
+    visitors,
 };
 use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::{Cursor, DragData, DragEvent, Event, Modifiers, Renderer};
-use crate::{DeferredControl, RedrawRequest, Shell, w_id};
+use crate::{DeferredControl, HookManager, RedrawRequest, Shell, ViewFn, w_id};
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
 use slotmap::DefaultKey;
 use std::ffi::c_void;
@@ -191,7 +192,7 @@ struct AppState {
     clock: f64,
     timing_info: DWM_TIMING_INFO,
     // spinner: Spinner,
-    view_fn: Box<dyn Fn() -> Element>,
+    view_fn: Box<ViewFn>,
     ui_tree: OwnedUITree,
 
     shell: Shell,
@@ -226,7 +227,7 @@ pub struct DeviceResources {
 }
 
 impl AppState {
-    fn new(view_fn: Box<dyn Fn() -> Element>) -> Result<Self> {
+    fn new(view_fn: Box<ViewFn>) -> Result<Self> {
         unsafe {
             let options = D2D1_FACTORY_OPTIONS {
                 debugLevel: D2D1_DEBUG_LEVEL_NONE,
@@ -502,10 +503,11 @@ impl AppState {
 }
 
 fn create_tree_root(
-    view_fn: &dyn Fn() -> Element,
+    view_fn: &ViewFn,
     device_resources: &DeviceResources,
     ui_tree: &mut OwnedUITree,
 ) {
+    let children = view_fn(HookManager { ui_tree });
     create_tree(
         device_resources,
         ui_tree,
@@ -517,7 +519,7 @@ fn create_tree_root(
                 vertical: Some(true),
                 ..Default::default()
             }),
-            children: vec![view_fn()],
+            children: vec![children],
 
             ..Default::default()
         },
@@ -1148,7 +1150,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                     ui_tree.slots[element].content
                                 {
                                     if let Some(id) = ui_tree.slots[element].id {
-                                        if let Some(instance) = ui_tree.state.get(&id) {
+                                        if let Some(instance) = ui_tree.widget_state.get(&id) {
                                             if point.within(bounds) {
                                                 cursor = widget.cursor(instance, point, bounds);
                                             }
@@ -1263,7 +1265,7 @@ fn get_modifiers() -> Modifiers {
     }
 }
 
-pub fn run_event_loop(view_fn: impl Fn() -> Element + 'static) -> Result<()> {
+pub fn run_event_loop(view_fn: impl Fn(HookManager) -> Element + 'static) -> Result<()> {
     unsafe {
         // Opt-in to Per-Monitor V2 DPI awareness for crisp rendering on high-DPI displays
         let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);

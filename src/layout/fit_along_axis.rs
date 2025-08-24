@@ -188,7 +188,10 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                     .as_ref()
                     .and_then(|content| match content {
                         ElementContent::Widget(widget) => element!().id.and_then(|id| {
-                            ui_tree.state.get(&id).map(|instance| (widget, instance))
+                            ui_tree
+                                .widget_state
+                                .get(&id)
+                                .map(|instance| (widget, instance))
                         }),
                         _ => None,
                     })

@@ -286,7 +286,7 @@ pub fn dispatch_operation(ui_tree: BorrowedUITree, operation: &dyn Operation) {
         let element = &mut ui_tree.slots[key];
         if let Some(ElementContent::Widget(widget)) = element.content.as_mut() {
             if let Some(id) = element.id {
-                let instance = ui_tree.state.get_mut(&id).unwrap();
+                let instance = ui_tree.widget_state.get_mut(&id).unwrap();
                 widget.operate(instance, operation);
             }
         }

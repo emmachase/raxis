@@ -427,9 +427,11 @@ pub fn create_tree(device_resources: &DeviceResources, tree: &mut OwnedUITree, r
         // Initialize widget state if new
         if let Some(ElementContent::Widget(ref widget)) = shell.content {
             if let Some(id) = shell.id {
-                tree.state
-                    .entry(id)
-                    .or_insert(Instance::new(id, &**widget, device_resources));
+                tree.widget_state.entry(id).or_insert(Instance::new(
+                    id,
+                    &**widget,
+                    device_resources,
+                ));
             }
         }
 
