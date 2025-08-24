@@ -21,6 +21,7 @@ use crate::{DeferredControl, RedrawRequest, Shell, w_id};
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
 use slotmap::DefaultKey;
 use std::ffi::c_void;
+use std::ops::Deref;
 use std::ops::DerefMut;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
@@ -104,29 +105,58 @@ struct ScrollDragState {
     grab_offset: f32,
 }
 
-// ===== OLE Drop Target integration =====
-// The old DropTarget implementation has been replaced with IntegratedDropTarget
-// which properly integrates with the widget system
+struct MaybeGuard {
+    #[cfg(debug_assertions)]
+    guard: MutexGuard<'static, AppState>,
+
+    #[cfg(not(debug_assertions))]
+    guard: &'static mut AppState,
+}
+
+impl Deref for MaybeGuard {
+    type Target = AppState;
+
+    fn deref(&self) -> &Self::Target {
+        #[cfg(debug_assertions)]
+        return self.guard.deref();
+
+        #[cfg(not(debug_assertions))]
+        return self.guard;
+    }
+}
+
+impl DerefMut for MaybeGuard {
+    fn deref_mut(&mut self) -> &mut Self::Target {
+        #[cfg(debug_assertions)]
+        return self.guard.deref_mut();
+
+        #[cfg(not(debug_assertions))]
+        return self.guard;
+    }
+}
 
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
-fn state_mut_from_hwnd(hwnd: HWND) -> Option<MutexGuard<'static, AppState>> {
+fn state_mut_from_hwnd(hwnd: HWND) -> Option<MaybeGuard> {
     unsafe {
         let ptr = WAM::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
-        // println!("ptr: {:?}", ptr);
-        // #[cfg(debug_assertions)]
+
+        #[cfg(debug_assertions)]
         if ptr != 0 {
-            Some((&*(ptr as *const Mutex<AppState>)).lock().unwrap())
+            Some(MaybeGuard {
+                guard: (&*(ptr as *const Mutex<AppState>)).lock().unwrap(),
+            })
         } else {
             None
         }
 
-        // TODO: Would like to use the direct get_mut in release mode
-        // #[cfg(not(debug_assertions))]
-        // if ptr != 0 {
-        //     Some((&mut *(ptr as *mut Mutex<AppState>)).get_mut().unwrap())
-        // } else {
-        //     None
-        // }
+        #[cfg(not(debug_assertions))]
+        if ptr != 0 {
+            Some(MaybeGuard {
+                guard: (&mut *(ptr as *mut Mutex<AppState>)).get_mut().unwrap(),
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -206,178 +236,6 @@ impl AppState {
 
             let dwrite_factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
 
-            // let text_format = dwrite_factory.CreateTextFormat(
-            //     PCWSTR(w!("Segoe UI").as_ptr()),
-            //     None,
-            //     DWRITE_FONT_WEIGHT_REGULAR,
-            //     DWRITE_FONT_STYLE_NORMAL,
-            //     DWRITE_FONT_STRETCH_NORMAL,
-            //     // 72.0,
-            //     14.0,
-            //     PCWSTR(w!("en-us").as_ptr()),
-            // )?;
-            // text_format.SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)?;
-            // text_format.SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)?;
-
-            // let spinner = Spinner::new(6.0, 200.0, 1.6, 64.0);
-
-            // Build selectable text widget using shared DWrite factory/format
-            // let text_widget = ;
-
-            // let mut ui_tree = OwnedUITree::new();
-
-            // let root = ui_tree.insert(UIElement {
-            //     id: Some(w_id!()),
-
-            //     background_color: Some(0xFF000044),
-
-            //     width: Sizing::Fixed { px: 800.0 },
-            //     height: Sizing::Fixed { px: 200.0 },
-
-            //     child_gap: 10.0,
-
-            //     ..Default::default()
-            // });
-
-            // let child = ui_tree.insert(UIElement {
-            //     id: Some(w_id!()),
-
-            //     background_color: Some(0x00FF00FF),
-
-            //     width: Sizing::Grow {
-            //         min: 32.0,
-            //         max: f32::INFINITY,
-            //     },
-            //     height: Sizing::grow(),
-
-            //     ..Default::default()
-            // });
-            // ui_tree[root].children.push(child);
-
-            // let child = ui_tree.insert(UIElement {
-            //     id: Some(w_id!()),
-
-            //     direction: layout::model::Direction::TopToBottom,
-            //     child_gap: 16.0,
-
-            //     background_color: Some(0xFFFF00FF),
-
-            //     scroll: Some(ScrollConfig {
-            //         horizontal: Some(true),
-            //         vertical: Some(true),
-
-            //         sticky_right: Some(true),
-            //         sticky_bottom: Some(true),
-
-            //         ..Default::default()
-            //     }),
-
-            //     horizontal_alignment: HorizontalAlignment::Center,
-            //     vertical_alignment: VerticalAlignment::Center,
-
-            //     width: Sizing::grow(),
-            //     height: Sizing::grow(),
-
-            //     ..Default::default()
-            // });
-            // ui_tree[root].children.push(child);
-
-            // let text_widget_ui_key = ui_tree.insert(UIElement {
-            //     id: Some(w_id!()),
-            //     background_color: Some(0xFFFFFFFF),
-
-            //     vertical_alignment: VerticalAlignment::Center,
-
-            //     width: Sizing::grow(),
-
-            //     // content: Some(ElementContent::Text {
-            //     //     layout: dwrite_factory
-            //     //         .CreateTextLayout(
-            //     //             &w!("Hello, World!").as_wide(),
-            //     //             Some(&text_format),
-            //     //             f32::INFINITY,
-            //     //             f32::INFINITY,
-            //     //         )
-            //     //         .ok(),
-            //     // }),
-            //     content: Some(ElementContent::Widget(Box::new(TextInput::new(
-            //         dwrite_factory.clone(),
-            //         text_format.clone(),
-            //         TEXT.to_string(),
-            //     )))),
-
-            //     color: Some(0x6030F0FF),
-
-            //     ..Default::default()
-            // });
-            // ui_tree[child].children.push(text_widget_ui_key);
-
-            // let text_widget_ui_key = ui_tree.insert(UIElement {
-            //     id: Some(w_id!()),
-            //     background_color: Some(0xFFFFFFFF),
-
-            //     vertical_alignment: VerticalAlignment::Center,
-
-            //     // content: Some(ElementContent::Text {
-            //     //     layout: dwrite_factory
-            //     //         .CreateTextLayout(
-            //     //             &w!("Hello, World!").as_wide(),
-            //     //             Some(&text_format),
-            //     //             f32::INFINITY,
-            //     //             f32::INFINITY,
-            //     //         )
-            //     //         .ok(),
-            //     // }),
-            //     content: Some(ElementContent::Widget(Box::new(TextInput::new(
-            //         dwrite_factory.clone(),
-            //         text_format.clone(),
-            //         TEXT.to_string(),
-            //     )))),
-
-            //     color: Some(0x6030F0FF),
-
-            //     ..Default::default()
-            // });
-            // ui_tree[child].children.push(text_widget_ui_key);
-
-            // let spinner_ui_key = ui_tree.insert(UIElement {
-            //     id: Some(w_id!()),
-
-            //     vertical_alignment: VerticalAlignment::Center,
-
-            //     // content: Some(ElementContent::Text {
-            //     //     layout: dwrite_factory
-            //     //         .CreateTextLayout(
-            //     //             &w!("Hello, World!").as_wide(),
-            //     //             Some(&text_format),
-            //     //             f32::INFINITY,
-            //     //             f32::INFINITY,
-            //     //         )
-            //     //         .ok(),
-            //     // }),
-            //     content: Some(ElementContent::Widget(Box::new(spinner))),
-
-            //     color: Some(0x6030F0FF),
-
-            //     ..Default::default()
-            // });
-            // ui_tree[child].children.push(spinner_ui_key);
-
-            // let child = ui_tree.insert(UIElement {
-            //     id: Some(w_id!()),
-
-            //     background_color: Some(0x00FFFFFF),
-
-            //     width: Sizing::Grow {
-            //         min: 32.0,
-            //         max: f32::INFINITY,
-            //     },
-            //     height: Sizing::grow(),
-
-            //     ..Default::default()
-            // });
-            // ui_tree[root].children.push(child);
-
             let device_resources = DeviceResources {
                 dwrite_factory,
                 d2d_factory,
@@ -388,9 +246,6 @@ impl AppState {
             let mut ui_tree = OwnedUITree::default();
 
             create_tree_root(&view_fn, &device_resources, &mut ui_tree);
-
-            // println!("root: {:?}", root);
-            // println!("ui_tree: {:#?}", ui_tree);
 
             let shell = Shell::new();
 
@@ -1379,16 +1234,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     let DragData::Text(text) = data;
 
                     if let Ok(effect) = start_text_drag(&text, true) {
-                        // If it was a move operation, delete the selected text
-                        // if (effect.0 & DROPEFFECT_MOVE.0) != 0 {
-                        //     // && self.can_drag_drop() {
-                        //     // let _ = self.insert_str("");
-                        //     println!("Move operation");
-                        // }
-
-                        // println!("Drag operation");
-                        // self.reset_drag_state();
-
                         if let Some(mut state) = state_mut_from_hwnd(hwnd) {
                             let state = state.deref_mut();
 

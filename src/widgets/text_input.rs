@@ -173,7 +173,7 @@ impl Widget for TextInput {
             unsafe { layout.GetMetrics(&mut max_metrics).unwrap() };
 
             limit_response::SizingForX {
-                min_width: min_width,
+                min_width,
                 preferred_width: max_metrics.widthIncludingTrailingWhitespace,
             }
         } else {

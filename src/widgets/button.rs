@@ -85,7 +85,7 @@ impl ButtonWidgetState {
             is_mouse_over: false,
             bounds: RectDIP::default(),
         };
-        s.build_text_layout(&"", s.bounds)
+        s.build_text_layout("", s.bounds)
             .expect("build text layout failed");
         s
     }
@@ -219,7 +219,7 @@ impl ButtonWidgetState {
 
         // Draw border (simple 1px border by drawing slightly smaller rect)
         let border_width = 1.0;
-        renderer.draw_rectangle(&bounds, border_color.clone(), border_width);
+        renderer.draw_rectangle(&bounds, border_color, border_width);
     }
 
     fn draw_button_text(&self, renderer: &Renderer, bounds: RectDIP) -> Result<()> {
