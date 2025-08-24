@@ -113,13 +113,20 @@ fn state_mut_from_hwnd(hwnd: HWND) -> Option<MutexGuard<'static, AppState>> {
     unsafe {
         let ptr = WAM::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
         // println!("ptr: {:?}", ptr);
-        let x = if ptr != 0 {
-            Some((&mut *(ptr as *mut Mutex<AppState>)).lock().unwrap())
+        // #[cfg(debug_assertions)]
+        if ptr != 0 {
+            Some((&*(ptr as *const Mutex<AppState>)).lock().unwrap())
         } else {
             None
-        };
-        // println!("x: locked");
-        x
+        }
+
+        // TODO: Would like to use the direct get_mut in release mode
+        // #[cfg(not(debug_assertions))]
+        // if ptr != 0 {
+        //     Some((&mut *(ptr as *mut Mutex<AppState>)).get_mut().unwrap())
+        // } else {
+        //     None
+        // }
     }
 }
 
