@@ -24,7 +24,7 @@ use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ops::DerefMut;
-use std::sync::{Mutex, MutexGuard};
+use std::sync::Mutex;
 use std::time::Instant;
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_IGNORE;
@@ -132,7 +132,7 @@ struct ScrollDragState {
 
 struct MaybeGuard {
     #[cfg(debug_assertions)]
-    guard: MutexGuard<'static, AppState>,
+    guard: std::sync::MutexGuard<'static, AppState>,
 
     #[cfg(not(debug_assertions))]
     guard: &'static mut AppState,
