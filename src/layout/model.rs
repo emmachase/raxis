@@ -296,6 +296,35 @@ impl DropShadow {
             color: Color::default(),
         }
     }
+
+    pub fn offset(self, offset_x: f32, offset_y: f32) -> Self {
+        Self {
+            offset_x,
+            offset_y,
+            ..self
+        }
+    }
+
+    pub fn spread_radius(self, spread_radius: f32) -> Self {
+        Self {
+            spread_radius,
+            ..self
+        }
+    }
+
+    pub fn blur_radius(self, blur_radius: f32) -> Self {
+        Self {
+            blur_radius,
+            ..self
+        }
+    }
+
+    pub fn color(self, color: u32) -> Self {
+        Self {
+            color: Color::from(color),
+            ..self
+        }
+    }
 }
 
 // ---------- Scrolling ----------

@@ -1,4 +1,4 @@
-// #![windows_subsystem = "windows"]
+#![windows_subsystem = "windows"]
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -35,7 +35,7 @@ fn view(mut hook: HookManager) -> Element {
             Element {
                 id: Some(w_id!()),
                 background_color: Some(0x00FF00FF),
-                drop_shadow: Some(DropShadow::simple(5.0, 5.0)),
+                drop_shadow: Some(DropShadow::simple(5.0, 5.0).blur_radius(5.0)),
                 width: Sizing::Fit {
                     min: 10.0,
                     max: 100.0,
