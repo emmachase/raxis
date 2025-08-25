@@ -9,7 +9,7 @@ use raxis::{
         Sizing,
     },
     w_id,
-    widgets::{button::Button, text_input::TextInput},
+    widgets::{button::Button, text::Text, text_input::TextInput},
 };
 
 fn view(mut hook: HookManager) -> Element {
@@ -59,6 +59,22 @@ fn view(mut hook: HookManager) -> Element {
                     content: Some(ElementContent::Widget(Box::new(TextInput::new()))),
                     ..Default::default()
                 }],
+                ..Default::default()
+            },
+            Element {
+                id: Some(w_id!()),
+                // background_color: Some(0x00FF00FF),
+                // drop_shadow: Some(DropShadow::simple(5.0, 5.0).blur_radius(5.0)),
+                width: Sizing::fit(),
+                height: Sizing::fit(),
+                // scroll: Some(ScrollConfig {
+                //     // horizontal: Some(true),
+                //     ..Default::default()
+                // }),
+                content: Some(ElementContent::Widget(Box::new(
+                    Text::new("Hello world!").with_font_size(24.0),
+                ))),
+
                 ..Default::default()
             },
             Element {

@@ -294,14 +294,14 @@ impl Widget for Button {
         )
     }
 
-    fn limits_x(&self, _instance: &Instance) -> super::limit_response::SizingForX {
+    fn limits_x(&self, _instance: &mut Instance) -> super::limit_response::SizingForX {
         super::limit_response::SizingForX {
             min_width: 80.0,
             preferred_width: 80.0,
         }
     }
 
-    fn limits_y(&self, _instance: &Instance, _width: f32) -> super::limit_response::SizingForY {
+    fn limits_y(&self, _instance: &mut Instance, _width: f32) -> super::limit_response::SizingForY {
         super::limit_response::SizingForY {
             min_height: 32.0,
             preferred_height: 32.0,

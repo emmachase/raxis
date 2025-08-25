@@ -190,7 +190,7 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                         ElementContent::Widget(widget) => element!().id.and_then(|id| {
                             ui_tree
                                 .widget_state
-                                .get(&id)
+                                .get_mut(&id)
                                 .map(|instance| (widget, instance))
                         }),
                         _ => None,

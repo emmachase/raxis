@@ -160,7 +160,7 @@ impl Widget for TextInput {
         Some(WidgetState::new(device_resources.dwrite_factory.clone(), text_format).into_any())
     }
 
-    fn limits_x(&self, instance: &Instance) -> limit_response::SizingForX {
+    fn limits_x(&self, instance: &mut Instance) -> limit_response::SizingForX {
         let state = with_state!(instance as WidgetState);
         if let Some(layout) = &state.layout {
             let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
@@ -184,7 +184,7 @@ impl Widget for TextInput {
         }
     }
 
-    fn limits_y(&self, instance: &Instance, width: f32) -> limit_response::SizingForY {
+    fn limits_y(&self, instance: &mut Instance, width: f32) -> limit_response::SizingForY {
         let state = with_state!(instance as WidgetState);
         if let Some(layout) = &state.layout {
             unsafe {

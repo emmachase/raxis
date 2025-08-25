@@ -37,6 +37,7 @@ pub mod button;
 pub mod dragdrop;
 pub mod drop_target;
 pub mod spinner;
+pub mod text;
 pub mod text_input;
 
 pub mod limit_response {
@@ -681,8 +682,8 @@ impl Instance {
 
 #[allow(unused)]
 pub trait Widget: std::fmt::Debug {
-    fn limits_x(&self, instance: &Instance) -> limit_response::SizingForX;
-    fn limits_y(&self, instance: &Instance, width: f32) -> limit_response::SizingForY;
+    fn limits_x(&self, instance: &mut Instance) -> limit_response::SizingForX;
+    fn limits_y(&self, instance: &mut Instance, width: f32) -> limit_response::SizingForY;
 
     fn state(&self, device_resources: &DeviceResources) -> State {
         None
