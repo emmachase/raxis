@@ -4,12 +4,9 @@ use std::{cell::RefCell, rc::Rc};
 
 use raxis::{
     HookManager,
-    layout::{
-        BorrowedUITree,
-        model::{
-            BorderRadius, BoxAmount, Direction, DropShadow, Element, ElementContent, ScrollConfig,
-            Sizing,
-        },
+    layout::model::{
+        BorderRadius, BoxAmount, Direction, DropShadow, Element, ElementContent, ScrollConfig,
+        Sizing,
     },
     w_id,
     widgets::{button::Button, text_input::TextInput},
@@ -17,7 +14,7 @@ use raxis::{
 
 fn view(mut hook: HookManager) -> Element {
     let mut instance = hook.instance(w_id!());
-    let mut state = instance.use_hook(|| Rc::new(RefCell::new(0))).clone();
+    let state = instance.use_hook(|| Rc::new(RefCell::new(0))).clone();
 
     Element {
         id: Some(w_id!()),

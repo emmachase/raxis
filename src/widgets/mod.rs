@@ -6,14 +6,14 @@ use windows::Win32::{
     Graphics::Direct2D::{
         CLSID_D2D1Shadow,
         Common::{
-            D2D_RECT_F, D2D_SIZE_F, D2D_VECTOR_3F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
+            D2D_RECT_F, D2D_SIZE_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
             D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED,
         },
         D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
         D2D1_INTERPOLATION_MODE_LINEAR, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4,
-        D2D1_RENDER_TARGET_USAGE_NONE, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
-        D2D1_SHADOW_PROP_COLOR, D2D1_SWEEP_DIRECTION_CLOCKWISE, ID2D1DeviceContext7, ID2D1Factory,
-        ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
+        D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
+        D2D1_SWEEP_DIRECTION_CLOCKWISE, ID2D1DeviceContext7, ID2D1Factory, ID2D1GeometrySink,
+        ID2D1Image, ID2D1SolidColorBrush,
     },
     System::Ole::DROPEFFECT,
 };
@@ -169,11 +169,10 @@ impl Renderer<'_> {
                     width_dip: rect.width_dip + shadow.spread_radius * 2.0,
                     height_dip: rect.height_dip + shadow.spread_radius * 2.0,
                 };
-                let shadow_color = Color::from(shadow.color);
                 if let Some(border_radius) = border_radius {
-                    self.fill_rounded_rectangle(&shadow_rect, border_radius, shadow_color);
+                    self.fill_rounded_rectangle(&shadow_rect, border_radius, shadow.color);
                 } else {
-                    self.fill_rectangle(&shadow_rect, shadow_color);
+                    self.fill_rectangle(&shadow_rect, shadow.color);
                 }
                 return;
             }

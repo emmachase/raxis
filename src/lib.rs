@@ -1,19 +1,10 @@
-use std::{
-    any::{Any, TypeId},
-    cell::RefCell,
-    collections::HashMap,
-    time::Instant,
-};
+use std::{any::Any, cell::RefCell, time::Instant};
 
 use windows::Win32::{
-    Foundation::{HWND, POINT, RECT},
+    Foundation::HWND,
     Graphics::Gdi::InvalidateRect,
     UI::{
         HiDpi::GetDpiForWindow,
-        Input::Ime::{
-            CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmGetContext, ImmNotifyIME, ImmReleaseContext,
-            ImmSetCandidateWindow, NI_COMPOSITIONSTR,
-        },
         WindowsAndMessaging::{KillTimer, SetTimer},
     },
 };
@@ -67,7 +58,7 @@ impl<'a> HookInstance<'a> {
 impl HookManager<'_> {
     pub fn instance(&mut self, id: u64) -> HookInstance {
         let state = self.ui_tree.hook_state.entry(id).or_insert_with(|| {
-            println!("Creating hook state for {}", id);
+            println!("Creating hook state for {id}");
             HookState::default()
         });
 

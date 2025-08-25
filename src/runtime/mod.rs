@@ -10,8 +10,7 @@ use crate::layout::model::{
 };
 use crate::layout::visitors::VisitAction;
 use crate::layout::{
-    self, BorrowedUITree, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom,
-    visitors,
+    self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
 };
 use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
@@ -31,24 +30,24 @@ use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_IGNORE;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
-    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1CreateDevice, ID2D1Bitmap1, ID2D1Device7,
-    ID2D1DeviceContext, ID2D1DeviceContext7, ID2D1Factory8,
+    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, ID2D1Bitmap1, ID2D1Device7, ID2D1DeviceContext7,
+    ID2D1Factory8,
 };
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
 };
 use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice,
-    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
+    ID3D11DeviceContext, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice,
-    IDXGIDevice4, IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
+    DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
+    IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
 };
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
@@ -65,12 +64,9 @@ use windows::{
         Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
         Graphics::{
             Direct2D::{
-                Common::{D2D_SIZE_U, D2D1_ALPHA_MODE_UNKNOWN, D2D1_COLOR_F, D2D1_PIXEL_FORMAT},
+                Common::{D2D1_COLOR_F, D2D1_PIXEL_FORMAT},
                 D2D1_DEBUG_LEVEL_NONE, D2D1_FACTORY_OPTIONS, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                D2D1_FEATURE_LEVEL_DEFAULT, D2D1_HWND_RENDER_TARGET_PROPERTIES,
-                D2D1_PRESENT_OPTIONS_NONE, D2D1_RENDER_TARGET_PROPERTIES,
-                D2D1_RENDER_TARGET_TYPE_DEFAULT, D2D1_RENDER_TARGET_USAGE_NONE, D2D1CreateFactory,
-                ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
+                D2D1CreateFactory, ID2D1SolidColorBrush,
             },
             DirectWrite::{DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory},
             Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo},
@@ -210,11 +206,6 @@ fn window_rect(hwnd: HWND) -> Result<RECT> {
         GetWindowRect(hwnd, &mut rc)?;
         Ok(rc)
     }
-}
-
-fn apply_dpi_to_rt(rt: &ID2D1HwndRenderTarget, hwnd: HWND) {
-    let dpi = current_dpi(hwnd);
-    unsafe { rt.SetDpi(dpi, dpi) };
 }
 
 struct AppState {
@@ -470,13 +461,6 @@ impl AppState {
                     .unwrap();
             }
         }
-    }
-
-    fn update_dpi(&mut self, hwnd: HWND) {
-        // if let Some(rt) = &self.device_resources.render_target {
-        //     apply_dpi_to_rt(rt, hwnd);
-        // }
-        // self.device_resources.d2d_target_bitmap = None;
     }
 
     fn on_paint(&mut self, hwnd: HWND) -> Result<()> {
