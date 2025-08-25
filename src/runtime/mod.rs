@@ -1282,22 +1282,22 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_DPICHANGED => {
                 // println!("WM_DPICHANGED");
-                // Resize window to the suggested rect and update render target DPI
-                // TODO: It started crashing with this
+
+                let suggested = &*(lparam.0 as *const RECT);
+                SetWindowPos(
+                    hwnd,
+                    None,
+                    suggested.left,
+                    suggested.top,
+                    suggested.right - suggested.left,
+                    suggested.bottom - suggested.top,
+                    SWP_NOZORDER | SWP_NOACTIVATE,
+                )
+                .unwrap();
+
                 if let Some(mut state) = state_mut_from_hwnd(hwnd) {
                     let state = state.deref_mut();
-                    let suggested = &*(lparam.0 as *const RECT);
-                    // state.discard_device_resources();
-                    // let _ = SetWindowPos(
-                    //     hwnd,
-                    //     None,
-                    //     suggested.left,
-                    //     suggested.top,
-                    //     suggested.right - suggested.left,
-                    //     suggested.bottom - suggested.top,
-                    //     SWP_NOZORDER | SWP_NOACTIVATE,
-                    // );
-                    // state.update_dpi(hwnd);
+                    state.discard_device_resources();
 
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
