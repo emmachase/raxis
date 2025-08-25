@@ -6,7 +6,7 @@ use raxis::{
     HookManager,
     layout::{
         BorrowedUITree,
-        model::{BoxAmount, Direction, Element, ElementContent, ScrollConfig, Sizing},
+        model::{BoxAmount, Direction, DropShadow, Element, ElementContent, ScrollConfig, Sizing},
     },
     w_id,
     widgets::{button::Button, text_input::TextInput},
@@ -35,6 +35,7 @@ fn view(mut hook: HookManager) -> Element {
             Element {
                 id: Some(w_id!()),
                 background_color: Some(0x00FF00FF),
+                drop_shadow: Some(DropShadow::simple(3.0, 3.0)),
                 width: Sizing::Fit {
                     min: 10.0,
                     max: 100.0,
@@ -62,6 +63,7 @@ fn view(mut hook: HookManager) -> Element {
             },
             Element {
                 id: Some(w_id!()),
+                drop_shadow: Some(DropShadow::new(2.0, 2.0, 6.0, 0x00000060)),
                 content: Some(ElementContent::Widget(Box::new(
                     Button::new(format!("Button {}", state.borrow())).with_click_handler(
                         move || {

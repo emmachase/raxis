@@ -226,7 +226,7 @@ impl Widget for TextInput {
                 // Complete composition before altering selection
                 if state.ime_text.is_some() {
                     state.ime_end();
-                    shell.request_input_method(hwnd, InputMethod::Disabled);
+                    shell.request_input_method(InputMethod::Disabled);
                 }
 
                 if (PointDIP {
@@ -401,15 +401,12 @@ impl Widget for TextInput {
                     state.ime_begin();
 
                     if let Ok((c_x_dip, c_y_dip, h)) = state.caret_pos_dip(state.caret_active16()) {
-                        shell.request_input_method(
-                            hwnd,
-                            InputMethod::Enabled {
-                                position: PointDIP {
-                                    x_dip: x_dip + c_x_dip,
-                                    y_dip: y_dip + c_y_dip + h,
-                                },
+                        shell.request_input_method(InputMethod::Enabled {
+                            position: PointDIP {
+                                x_dip: x_dip + c_x_dip,
+                                y_dip: y_dip + c_y_dip + h,
                             },
-                        );
+                        });
                     }
                 }
             }
@@ -418,15 +415,12 @@ impl Widget for TextInput {
                     state.ime_update(text.clone(), *caret_units);
 
                     if let Ok((c_x_dip, c_y_dip, h)) = state.caret_pos_dip(state.caret_active16()) {
-                        shell.request_input_method(
-                            hwnd,
-                            InputMethod::Enabled {
-                                position: PointDIP {
-                                    x_dip: x_dip + c_x_dip,
-                                    y_dip: y_dip + c_y_dip + h,
-                                },
+                        shell.request_input_method(InputMethod::Enabled {
+                            position: PointDIP {
+                                x_dip: x_dip + c_x_dip,
+                                y_dip: y_dip + c_y_dip + h,
                             },
-                        );
+                        });
                     }
                 }
             }
@@ -775,6 +769,8 @@ impl WidgetState {
                 },
                 layout,
                 renderer.brush,
+                None,
+                0,
                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
             );
 

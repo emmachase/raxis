@@ -79,6 +79,9 @@ pub type ViewFn = dyn Fn(HookManager) -> Element;
 
 pub enum DeferredControl {
     StartDrag { data: DragData, src_id: u64 },
+
+    SetIMEPosition { position: gfx::PointDIP },
+    DisableIME,
 }
 
 pub struct Shell {
@@ -377,60 +380,31 @@ impl Shell {
         true
     }
 
-    pub fn request_input_method(&mut self, hwnd: HWND, ime: InputMethod) {
+    pub fn request_input_method(&mut self, ime: InputMethod) {
         match self.input_method {
             InputMethod::Disabled => match ime {
                 InputMethod::Disabled => { /* Nothing to do */ }
-                InputMethod::Enabled { position } => unsafe {
-                    let himc = ImmGetContext(hwnd);
-                    if !himc.is_invalid() {
-                        let to_dip = dips_scale(hwnd);
-                        let cf = CANDIDATEFORM {
-                            dwStyle: CFS_POINT,
-                            ptCurrentPos: POINT {
-                                x: (position.x_dip / to_dip).round() as i32,
-                                y: (position.y_dip / to_dip).round() as i32,
-                            },
-                            rcArea: RECT::default(),
-                            dwIndex: 0,
-                        };
-                        let _ = ImmSetCandidateWindow(himc, &cf);
-
-                        let _ = ImmReleaseContext(hwnd, himc);
-                    }
+                InputMethod::Enabled { position } => {
+                    self.deferred_controls
+                        .push(DeferredControl::SetIMEPosition { position });
 
                     self.input_method = ime;
-                },
+                }
             },
             InputMethod::Enabled { position } => match ime {
-                InputMethod::Disabled => unsafe {
-                    let himc = ImmGetContext(hwnd);
-                    if !himc.is_invalid() {
-                        let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
-                    }
-                },
+                InputMethod::Disabled => {
+                    self.deferred_controls.push(DeferredControl::DisableIME);
+                }
                 InputMethod::Enabled {
                     position: new_position,
-                } => unsafe {
+                } => {
                     if position != new_position {
-                        let himc = ImmGetContext(hwnd);
-                        if !himc.is_invalid() {
-                            let to_dip = dips_scale(hwnd);
-                            let cf = CANDIDATEFORM {
-                                dwStyle: CFS_POINT,
-                                ptCurrentPos: POINT {
-                                    x: (new_position.x_dip / to_dip).round() as i32,
-                                    y: (new_position.y_dip / to_dip).round() as i32,
-                                },
-                                rcArea: RECT::default(),
-                                dwIndex: 0,
-                            };
-                            let _ = ImmSetCandidateWindow(himc, &cf);
-
-                            let _ = ImmReleaseContext(hwnd, himc);
-                        }
+                        self.deferred_controls
+                            .push(DeferredControl::SetIMEPosition {
+                                position: new_position,
+                            });
                     }
-                },
+                }
             },
         }
     }

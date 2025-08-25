@@ -1,7 +1,8 @@
 use std::{any::Any, time::Instant};
 
 use windows::Win32::Graphics::Direct2D::{
-    Common::D2D1_COLOR_F, ID2D1Factory, ID2D1HwndRenderTarget, ID2D1SolidColorBrush,
+    Common::D2D1_COLOR_F, ID2D1DeviceContext7, ID2D1Factory, ID2D1HwndRenderTarget,
+    ID2D1SolidColorBrush,
 };
 use windows_numerics::Vector2;
 
@@ -175,7 +176,7 @@ impl WidgetState {
         &self,
         config: &Spinner,
         factory: &ID2D1Factory,
-        rt: &ID2D1HwndRenderTarget,
+        rt: &ID2D1DeviceContext7,
         brush: &ID2D1SolidColorBrush,
     ) -> windows::core::Result<()> {
         let half = config.grow_period_s * 0.5;

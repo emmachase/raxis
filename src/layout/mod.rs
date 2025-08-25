@@ -143,6 +143,17 @@ pub fn paint(
                 }
             }
 
+            // // Draw drop shadow first (behind the element)
+            // if let Some(shadow) = &element.drop_shadow {
+            //     let element_rect = RectDIP {
+            //         x_dip: x,
+            //         y_dip: y,
+            //         width_dip: width,
+            //         height_dip: height,
+            //     };
+            //     renderer.draw_drop_shadow(&element_rect, shadow);
+            // }
+
             if let Some(color) = element.background_color {
                 unsafe {
                     renderer.brush.SetColor(&D2D1_COLOR_F {
@@ -180,6 +191,8 @@ pub fn paint(
                                 Vector2 { X: x, Y: y },
                                 layout.as_ref().unwrap(),
                                 renderer.brush,
+                                None,
+                                0,
                                 D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
                             );
                         }

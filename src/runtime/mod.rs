@@ -22,12 +22,39 @@ use crate::{DeferredControl, HookManager, RedrawRequest, Shell, ViewFn, w_id};
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
 use slotmap::DefaultKey;
 use std::ffi::c_void;
+use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::sync::{Mutex, MutexGuard};
 use std::time::Instant;
+use windows::Win32::Foundation::HMODULE;
+use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_IGNORE;
+use windows::Win32::Graphics::Direct2D::{
+    D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
+    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1CreateDevice, ID2D1Bitmap1, ID2D1Device7,
+    ID2D1DeviceContext, ID2D1DeviceContext7, ID2D1Factory8,
+};
+use windows::Win32::Graphics::Direct3D::{
+    D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
+    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
+};
+use windows::Win32::Graphics::Direct3D11::{
+    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice,
+    D3D11CreateDeviceAndSwapChain, ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D,
+};
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
+};
+use windows::Win32::Graphics::Dxgi::{
+    DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
+    DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice,
+    IDXGIDevice4, IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
+};
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
+use windows::Win32::UI::Input::Ime::{
+    CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
+};
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
     GetWindowRect, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
@@ -85,6 +112,7 @@ use windows::{
     },
     core::{PCWSTR, Result, w},
 };
+use windows_core::{IUnknown, Interface};
 
 pub const LINE_HEIGHT: u32 = 16;
 
@@ -136,6 +164,8 @@ impl DerefMut for MaybeGuard {
     }
 }
 
+type WinUserData = Mutex<AppState>;
+
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
 fn state_mut_from_hwnd(hwnd: HWND) -> Option<MaybeGuard> {
     unsafe {
@@ -143,8 +173,13 @@ fn state_mut_from_hwnd(hwnd: HWND) -> Option<MaybeGuard> {
 
         #[cfg(debug_assertions)]
         if ptr != 0 {
+            let mutex = &*(ptr as *const WinUserData);
+            if mutex.try_lock().is_err() {
+                panic!("mutex is locked");
+            }
+
             Some(MaybeGuard {
-                guard: (&*(ptr as *const Mutex<AppState>)).lock().unwrap(),
+                guard: mutex.lock().unwrap(),
             })
         } else {
             None
@@ -153,7 +188,7 @@ fn state_mut_from_hwnd(hwnd: HWND) -> Option<MaybeGuard> {
         #[cfg(not(debug_assertions))]
         if ptr != 0 {
             Some(MaybeGuard {
-                guard: (&mut *(ptr as *mut Mutex<AppState>)).get_mut().unwrap(),
+                guard: (&mut *(ptr as *mut WinUserData)).get_mut().unwrap(),
             })
         } else {
             None
@@ -220,28 +255,84 @@ struct AppState {
 }
 
 pub struct DeviceResources {
-    pub dwrite_factory: IDWriteFactory,
-    pub d2d_factory: ID2D1Factory,
-    pub render_target: Option<ID2D1HwndRenderTarget>,
     pub solid_brush: Option<ID2D1SolidColorBrush>,
+    pub d2d_target_bitmap: Option<ID2D1Bitmap1>,
+    pub back_buffer: Option<ID3D11Texture2D>,
+    pub dxgi_swapchain: Option<IDXGISwapChain1>,
+
+    pub dwrite_factory: IDWriteFactory,
+    pub dxgi_factory: IDXGIFactory7,
+    pub dxgi_adapter: IDXGIAdapter,
+    pub dxgi_device: IDXGIDevice4,
+    pub d2d_device_context: ID2D1DeviceContext7,
+    pub d2d_device: ID2D1Device7,
+    pub d2d_factory: ID2D1Factory8,
+    pub d3d_context: ID3D11DeviceContext,
+    pub d3d_device: ID3D11Device,
 }
 
 impl AppState {
     fn new(view_fn: Box<ViewFn>) -> Result<Self> {
         unsafe {
+            let mut d3d_device = None;
+            let mut d3d_context = None;
+            D3D11CreateDevice(
+                None,
+                D3D_DRIVER_TYPE_HARDWARE,
+                HMODULE::default(),
+                D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                Some(&[
+                    D3D_FEATURE_LEVEL_11_1,
+                    D3D_FEATURE_LEVEL_11_0,
+                    D3D_FEATURE_LEVEL_10_1,
+                    D3D_FEATURE_LEVEL_10_0,
+                    D3D_FEATURE_LEVEL_9_3,
+                    D3D_FEATURE_LEVEL_9_2,
+                    D3D_FEATURE_LEVEL_9_1,
+                ]),
+                D3D11_SDK_VERSION,
+                Some(&mut d3d_device),
+                None,
+                Some(&mut d3d_context),
+            )?;
+            let d3d_device = d3d_device.unwrap();
+            let d3d_context = d3d_context.unwrap();
+
+            let dxgi_device: IDXGIDevice4 = Interface::cast(&d3d_device)?;
+
+            // Ensure that DXGI doesn't queue more than one frame at a time.
+            dxgi_device.SetMaximumFrameLatency(1)?;
+
             let options = D2D1_FACTORY_OPTIONS {
                 debugLevel: D2D1_DEBUG_LEVEL_NONE,
             };
-            let d2d_factory: ID2D1Factory =
+            let d2d_factory: ID2D1Factory8 =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, Some(&options))?;
 
             let dwrite_factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
 
+            let d2d_device = d2d_factory.CreateDevice(&dxgi_device)?;
+
+            let d2d_device_context =
+                d2d_device.CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
+
+            let dxgi_adapter = dxgi_device.GetAdapter()?;
+            let dxgi_factory = dxgi_adapter.GetParent::<IDXGIFactory7>()?;
+
             let device_resources = DeviceResources {
-                dwrite_factory,
+                d3d_device,
+                d3d_context,
                 d2d_factory,
-                render_target: None,
+                d2d_device,
+                d2d_device_context,
+                dxgi_device,
+                dxgi_adapter,
+                dxgi_factory,
+                dwrite_factory,
                 solid_brush: None,
+                back_buffer: None,
+                d2d_target_bitmap: None,
+                dxgi_swapchain: None,
             };
 
             let mut ui_tree = OwnedUITree::default();
@@ -271,49 +362,88 @@ impl AppState {
 
     fn create_device_resources(&mut self, hwnd: HWND) -> Result<()> {
         unsafe {
-            if self.device_resources.render_target.is_none() {
-                let rc = client_rect(hwnd)?;
-                let size = D2D_SIZE_U {
-                    width: (rc.right - rc.left) as u32,
-                    height: (rc.bottom - rc.top) as u32,
-                };
+            let dxgi_swapchain = match self.device_resources.dxgi_swapchain {
+                Some(ref dxgi_swapchain) => dxgi_swapchain,
+                None => {
+                    let swapchain_desc = DXGI_SWAP_CHAIN_DESC1 {
+                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1, // Don't use multi-sampling
+                            Quality: 0,
+                        },
+                        BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                        BufferCount: 2,
+                        Scaling: DXGI_SCALING_NONE,
+                        SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+                        AlphaMode: DXGI_ALPHA_MODE_IGNORE,
 
-                let rt_props = D2D1_RENDER_TARGET_PROPERTIES {
-                    r#type: D2D1_RENDER_TARGET_TYPE_DEFAULT,
-                    pixelFormat: D2D1_PIXEL_FORMAT {
-                        format: DXGI_FORMAT_UNKNOWN,
-                        alphaMode: D2D1_ALPHA_MODE_UNKNOWN,
-                    },
-                    dpiX: 0.0,
-                    dpiY: 0.0,
-                    usage: D2D1_RENDER_TARGET_USAGE_NONE,
-                    minLevel: D2D1_FEATURE_LEVEL_DEFAULT,
-                };
-                let hwnd_props = D2D1_HWND_RENDER_TARGET_PROPERTIES {
-                    hwnd,
-                    pixelSize: size,
-                    presentOptions: D2D1_PRESENT_OPTIONS_NONE,
-                };
-
-                let rt = self
-                    .device_resources
-                    .d2d_factory
-                    .CreateHwndRenderTarget(&rt_props, &hwnd_props)?;
-                // Ensure the render target renders at the window's DPI for crisp output
-                apply_dpi_to_rt(&rt, hwnd);
-                self.device_resources.render_target = Some(rt);
-            }
-            if self.device_resources.solid_brush.is_none() {
-                if let Some(rt) = &self.device_resources.render_target {
-                    let black = D2D1_COLOR_F {
-                        r: 0.0,
-                        g: 0.0,
-                        b: 0.0,
-                        a: 1.0,
+                        ..Default::default()
                     };
-                    let brush = rt.CreateSolidColorBrush(&black, None)?;
-                    self.device_resources.solid_brush = Some(brush);
+
+                    let dxgi_swapchain: IDXGISwapChain1 =
+                        self.device_resources.dxgi_factory.CreateSwapChainForHwnd(
+                            &self.device_resources.d3d_device.cast::<IUnknown>()?,
+                            hwnd,
+                            &swapchain_desc,
+                            None,
+                            None as Option<&IDXGIOutput>,
+                        )?;
+
+                    self.device_resources.dxgi_swapchain = Some(dxgi_swapchain);
+                    self.device_resources.dxgi_swapchain.as_ref().unwrap()
                 }
+            };
+
+            let back_buffer = match self.device_resources.back_buffer {
+                Some(ref back_buffer) => back_buffer,
+                None => {
+                    let back_buffer: ID3D11Texture2D = dxgi_swapchain.GetBuffer(0)?;
+                    self.device_resources.back_buffer = Some(back_buffer);
+                    self.device_resources.back_buffer.as_ref().unwrap()
+                }
+            };
+
+            if self.device_resources.d2d_target_bitmap.is_none() {
+                let dpi = current_dpi(hwnd); // TODO: Get X / Y
+
+                let bitmap_properties = D2D1_BITMAP_PROPERTIES1 {
+                    pixelFormat: D2D1_PIXEL_FORMAT {
+                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        alphaMode: D2D1_ALPHA_MODE_IGNORE,
+                    },
+                    dpiX: dpi,
+                    dpiY: dpi,
+                    bitmapOptions: D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                    colorContext: ManuallyDrop::new(None),
+                };
+
+                self.device_resources.d2d_device_context.SetDpi(dpi, dpi);
+
+                let d2d_target_bitmap = self
+                    .device_resources
+                    .d2d_device_context
+                    .CreateBitmapFromDxgiSurface(
+                        &back_buffer.cast::<IDXGISurface>()?,
+                        Some(&bitmap_properties),
+                    )?;
+
+                self.device_resources
+                    .d2d_device_context
+                    .SetTarget(&d2d_target_bitmap);
+                self.device_resources.d2d_target_bitmap = Some(d2d_target_bitmap);
+            }
+
+            if self.device_resources.solid_brush.is_none() {
+                let rt = &self.device_resources.d2d_device_context;
+
+                let black = D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                };
+                let brush = rt.CreateSolidColorBrush(&black, None)?;
+                self.device_resources.solid_brush = Some(brush);
             }
             Ok(())
         }
@@ -321,13 +451,32 @@ impl AppState {
 
     fn discard_device_resources(&mut self) {
         self.device_resources.solid_brush = None;
-        self.device_resources.render_target = None;
+        self.device_resources.back_buffer = None;
+        self.device_resources.d2d_target_bitmap = None;
+
+        unsafe {
+            self.device_resources.d2d_device_context.SetTarget(None);
+            self.device_resources.d3d_context.ClearState();
+
+            if let Some(ref mut swap_chain) = self.device_resources.dxgi_swapchain {
+                swap_chain
+                    .ResizeBuffers(
+                        0,
+                        0,
+                        0,
+                        DXGI_FORMAT_UNKNOWN,
+                        DXGI_SWAP_CHAIN_FLAG::default(),
+                    )
+                    .unwrap();
+            }
+        }
     }
 
     fn update_dpi(&mut self, hwnd: HWND) {
-        if let Some(rt) = &self.device_resources.render_target {
-            apply_dpi_to_rt(rt, hwnd);
-        }
+        // if let Some(rt) = &self.device_resources.render_target {
+        //     apply_dpi_to_rt(rt, hwnd);
+        // }
+        // self.device_resources.d2d_target_bitmap = None;
     }
 
     fn on_paint(&mut self, hwnd: HWND) -> Result<()> {
@@ -340,13 +489,13 @@ impl AppState {
         unsafe {
             self.create_device_resources(hwnd)?;
             // Refresh target DPI in case it changed (e.g. monitor move)
-            self.update_dpi(hwnd);
+            // self.update_dpi(hwnd);
             let mut ps = PAINTSTRUCT::default();
             // println!("BeginPaint");
             BeginPaint(hwnd, &mut ps);
 
-            if let (Some(rt), Some(brush)) = (
-                &self.device_resources.render_target,
+            if let (rt, Some(brush)) = (
+                &self.device_resources.d2d_device_context,
                 &self.device_resources.solid_brush,
             ) {
                 rt.BeginDraw();
@@ -395,12 +544,21 @@ impl AppState {
                 let end = rt.EndDraw(None, None);
                 if let Err(e) = end {
                     if e.code() == D2DERR_RECREATE_TARGET {
+                        println!("Recreating D2D target");
                         self.discard_device_resources();
                     }
                 }
             }
 
             let _ = EndPaint(hwnd, &ps);
+
+            // TODO: Pass present dirty rects / scroll info
+            self.device_resources
+                .dxgi_swapchain
+                .as_ref()
+                .unwrap()
+                .Present(1, DXGI_PRESENT::default())
+                .unwrap();
             // println!("EndPaint");
         }
 
@@ -415,11 +573,30 @@ impl AppState {
     }
 
     fn on_resize(&mut self, width: u32, height: u32) -> Result<()> {
-        if let Some(rt) = &self.device_resources.render_target {
-            unsafe {
-                rt.Resize(&D2D_SIZE_U { width, height })?;
+        // let rt = &self.device_resources.d2d_device_context;
+
+        // unsafe {
+        //     rt.Resize(&D2D_SIZE_U { width, height })?;
+        // }
+
+        self.device_resources.d2d_target_bitmap = None;
+        self.device_resources.back_buffer = None;
+
+        unsafe {
+            self.device_resources.d2d_device_context.SetTarget(None);
+            self.device_resources.d3d_context.ClearState();
+
+            if let Some(ref mut swap_chain) = self.device_resources.dxgi_swapchain {
+                swap_chain.ResizeBuffers(
+                    0,
+                    width,
+                    height,
+                    DXGI_FORMAT_UNKNOWN,
+                    DXGI_SWAP_CHAIN_FLAG::default(),
+                )?;
             }
         }
+
         Ok(())
     }
 
@@ -1106,19 +1283,22 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             WM_DPICHANGED => {
                 // println!("WM_DPICHANGED");
                 // Resize window to the suggested rect and update render target DPI
+                // TODO: It started crashing with this
                 if let Some(mut state) = state_mut_from_hwnd(hwnd) {
                     let state = state.deref_mut();
                     let suggested = &*(lparam.0 as *const RECT);
-                    let _ = SetWindowPos(
-                        hwnd,
-                        None,
-                        suggested.left,
-                        suggested.top,
-                        suggested.right - suggested.left,
-                        suggested.bottom - suggested.top,
-                        SWP_NOZORDER | SWP_NOACTIVATE,
-                    );
-                    state.update_dpi(hwnd);
+                    // state.discard_device_resources();
+                    // let _ = SetWindowPos(
+                    //     hwnd,
+                    //     None,
+                    //     suggested.left,
+                    //     suggested.top,
+                    //     suggested.right - suggested.left,
+                    //     suggested.bottom - suggested.top,
+                    //     SWP_NOZORDER | SWP_NOACTIVATE,
+                    // );
+                    // state.update_dpi(hwnd);
+
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
@@ -1201,16 +1381,11 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_DESTROY => {
                 // println!("WM_DESTROY");
-                // Revoke drop target first
                 let _ = RevokeDragDrop(hwnd);
-                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
-                    let state = state.deref_mut();
-                    // state.text_widget.set_ole_drop_preview(None);
-                    state.drop_target = None;
-                }
+
                 let ptr = WAM::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
                 if ptr != 0 {
-                    let _ = Box::from_raw(ptr as *mut AppState); // drop
+                    drop(Box::from_raw(ptr as *mut WinUserData));
                     SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
                 }
                 WAM::PostQuitMessage(0);
@@ -1247,6 +1422,32 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         }
                     }
                 }
+
+                DeferredControl::DisableIME => unsafe {
+                    let himc = ImmGetContext(hwnd);
+                    if !himc.is_invalid() {
+                        let _ = ImmNotifyIME(himc, NI_COMPOSITIONSTR, CPS_COMPLETE, 0);
+                    }
+                },
+
+                DeferredControl::SetIMEPosition { position } => unsafe {
+                    let himc = ImmGetContext(hwnd);
+                    if !himc.is_invalid() {
+                        let to_dip = dips_scale(hwnd);
+                        let cf = CANDIDATEFORM {
+                            dwStyle: CFS_POINT,
+                            ptCurrentPos: POINT {
+                                x: (position.x_dip / to_dip).round() as i32,
+                                y: (position.y_dip / to_dip).round() as i32,
+                            },
+                            rcArea: RECT::default(),
+                            dwIndex: 0,
+                        };
+                        let _ = ImmSetCandidateWindow(himc, &cf);
+
+                        let _ = ImmReleaseContext(hwnd, himc);
+                    }
+                },
             }
         }
     }

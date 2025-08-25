@@ -184,6 +184,36 @@ pub struct FloatingConfig {
     pub align: Option<Alignment2D<HorizontalAlignment, VerticalAlignment>>,
 }
 
+// ---------- Drop Shadow ----------
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct DropShadow {
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur_radius: f32,
+    pub color: u32, // RGBA packed
+}
+
+impl DropShadow {
+    pub fn new(offset_x: f32, offset_y: f32, blur_radius: f32, color: u32) -> Self {
+        Self {
+            offset_x,
+            offset_y,
+            blur_radius,
+            color,
+        }
+    }
+
+    pub fn simple(offset_x: f32, offset_y: f32) -> Self {
+        Self {
+            offset_x,
+            offset_y,
+            blur_radius: 4.0,
+            color: 0x00000040, // Semi-transparent black
+        }
+    }
+}
+
 // ---------- Scrolling ----------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -285,6 +315,7 @@ pub struct UIElement {
     pub color: Option<u32>,
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
+    pub drop_shadow: Option<DropShadow>,
 
     pub id: Option<u64>,
     pub id_map: HashMap<u64, UIKey>,
@@ -317,6 +348,7 @@ impl Default for UIElement {
             color: None,
             word_break: None,
             padding: BoxAmount::default(),
+            drop_shadow: None,
             id: None,
             id_map: HashMap::new(),
         }
@@ -385,6 +417,7 @@ pub struct Element {
     pub color: Option<u32>,
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
+    pub drop_shadow: Option<DropShadow>,
 
     pub id: Option<u64>,
 }
@@ -407,6 +440,7 @@ fn to_shell(element: Element) -> (UIElement, Vec<Element>) {
             color: element.color,
             word_break: element.word_break,
             padding: element.padding,
+            drop_shadow: element.drop_shadow,
             id: element.id,
             ..Default::default()
         },
