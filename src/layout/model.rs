@@ -184,6 +184,81 @@ pub struct FloatingConfig {
     pub align: Option<Alignment2D<HorizontalAlignment, VerticalAlignment>>,
 }
 
+// ---------- Border Radius ----------
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct BorderRadius {
+    pub top_left: f32,
+    pub top_right: f32,
+    pub bottom_right: f32,
+    pub bottom_left: f32,
+}
+
+impl BorderRadius {
+    pub fn all(radius: f32) -> Self {
+        Self {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: radius,
+        }
+    }
+
+    pub fn top(radius: f32) -> Self {
+        Self {
+            top_left: radius,
+            top_right: radius,
+            bottom_right: 0.0,
+            bottom_left: 0.0,
+        }
+    }
+
+    pub fn bottom(radius: f32) -> Self {
+        Self {
+            top_left: 0.0,
+            top_right: 0.0,
+            bottom_right: radius,
+            bottom_left: radius,
+        }
+    }
+
+    pub fn left(radius: f32) -> Self {
+        Self {
+            top_left: radius,
+            top_right: 0.0,
+            bottom_right: 0.0,
+            bottom_left: radius,
+        }
+    }
+
+    pub fn right(radius: f32) -> Self {
+        Self {
+            top_left: 0.0,
+            top_right: radius,
+            bottom_right: radius,
+            bottom_left: 0.0,
+        }
+    }
+
+    pub fn tl_br(radius: f32) -> Self {
+        Self {
+            top_left: radius,
+            top_right: 0.0,
+            bottom_right: radius,
+            bottom_left: 0.0,
+        }
+    }
+
+    pub fn tr_bl(radius: f32) -> Self {
+        Self {
+            top_left: 0.0,
+            top_right: radius,
+            bottom_right: 0.0,
+            bottom_left: radius,
+        }
+    }
+}
+
 // ---------- Drop Shadow ----------
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
@@ -192,7 +267,7 @@ pub struct DropShadow {
     pub offset_y: f32,
     pub spread_radius: f32,
     pub blur_radius: f32,
-    pub color: Color, // RGBA packed
+    pub color: Color,
 }
 
 impl DropShadow {
@@ -201,7 +276,7 @@ impl DropShadow {
         offset_y: f32,
         spread_radius: f32,
         blur_radius: f32,
-        color: u32,
+        color: u32, // RGBA packed
     ) -> Self {
         Self {
             offset_x,
@@ -324,6 +399,7 @@ pub struct UIElement {
     pub color: Option<u32>,
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
+    pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
 
     pub id: Option<u64>,
@@ -357,6 +433,7 @@ impl Default for UIElement {
             color: None,
             word_break: None,
             padding: BoxAmount::default(),
+            border_radius: None,
             drop_shadow: None,
             id: None,
             id_map: HashMap::new(),
@@ -426,6 +503,7 @@ pub struct Element {
     pub color: Option<u32>,
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
+    pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
 
     pub id: Option<u64>,
@@ -449,6 +527,7 @@ fn to_shell(element: Element) -> (UIElement, Vec<Element>) {
             color: element.color,
             word_break: element.word_break,
             padding: element.padding,
+            border_radius: element.border_radius,
             drop_shadow: element.drop_shadow,
             id: element.id,
             ..Default::default()

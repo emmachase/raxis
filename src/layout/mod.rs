@@ -151,26 +151,24 @@ pub fn paint(
                     width_dip: width,
                     height_dip: height,
                 };
-                // renderer.draw_drop_shadow(&element_rect, shadow);
-                renderer.draw_blurred_shadow(&element_rect, shadow);
+
+                renderer.draw_blurred_shadow(&element_rect, shadow, element.border_radius.as_ref());
             }
 
             if let Some(color) = element.background_color {
-                unsafe {
-                    renderer.brush.SetColor(&D2D1_COLOR_F {
-                        r: (0xFF & (color >> 24)) as f32 / 255.0,
-                        g: (0xFF & (color >> 16)) as f32 / 255.0,
-                        b: (0xFF & (color >> 8)) as f32 / 255.0,
-                        a: (0xFF & color) as f32 / 255.0,
-                    });
+                let element_rect = RectDIP {
+                    x_dip: x,
+                    y_dip: y,
+                    width_dip: width,
+                    height_dip: height,
+                };
 
-                    let rect = D2D_RECT_F {
-                        left: x,
-                        top: y,
-                        right: x + width,
-                        bottom: y + height,
-                    };
-                    renderer.render_target.FillRectangle(&rect, renderer.brush);
+                if let Some(border_radius) = &element.border_radius {
+                    // Use rounded rectangle rendering
+                    renderer.fill_rounded_rectangle(&element_rect, border_radius, color);
+                } else {
+                    // Use regular rectangle rendering
+                    renderer.fill_rectangle(&element_rect, color);
                 }
             }
 
