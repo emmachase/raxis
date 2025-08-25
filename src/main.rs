@@ -1,4 +1,4 @@
-#![windows_subsystem = "windows"]
+// #![windows_subsystem = "windows"]
 
 use std::{cell::RefCell, rc::Rc};
 
@@ -90,6 +90,7 @@ fn todo_app(mut hook: HookManager) -> Element {
                         },
                         scroll: Some(ScrollConfig {
                             vertical: Some(true),
+                            sticky_bottom: Some(true),
                             ..Default::default()
                         }),
                         background_color: Some(0xFFFFFFFF),
@@ -98,7 +99,7 @@ fn todo_app(mut hook: HookManager) -> Element {
 
                         children: vec![Element {
                             id: Some(w_id!()),
-                            width: Sizing::grow(),
+                            width: Sizing::fit(),
                             height: Sizing::grow(),
                             padding: BoxAmount::new(5.0, 12.0, 5.0, 12.0),
                             content: Some(ElementContent::Widget(Box::new(

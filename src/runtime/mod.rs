@@ -596,9 +596,8 @@ impl AppState {
         ) {
             let element = &state.ui_tree.slots[key];
             // Recurse into children first
-            let children: Vec<DefaultKey> = element.children.clone();
-            for child in children {
-                dfs(state, child, x, y, out);
+            for child in element.children.iter() {
+                dfs(state, *child, x, y, out);
             }
 
             // Then evaluate current element so it overrides children (matches z-order in paint)
@@ -803,11 +802,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_LBUTTONDOWN => {
                 // println!("WM_LBUTTONDOWN");
+                // Capture mouse & keyboard input
+                let _ = SetFocus(Some(hwnd));
+                let _ = SetCapture(hwnd);
+
                 if let Some(mut state) = state_mut_from_hwnd(hwnd) {
                     let state = state.deref_mut();
-                    // Capture mouse & keyboard input
-                    let _ = SetFocus(Some(hwnd));
-                    let _ = SetCapture(hwnd);
 
                     // Extract mouse position in client pixels
                     let xi = (lparam.0 & 0xFFFF) as i16 as i32;
@@ -821,9 +821,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     if state.scroll_drag.is_none() {
                         if let Some(drag) = state.hit_test_scrollbar_thumb(x, y) {
                             state.scroll_drag = Some(drag);
-                            // Ensure we receive keyboard input and mouse moves
-                            let _ = SetFocus(Some(hwnd));
-                            let _ = SetCapture(hwnd);
                             let _ = InvalidateRect(Some(hwnd), None, false);
                             return LRESULT(0);
                         }
@@ -1058,28 +1055,27 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                 // println!("WM_LBUTTONUP");
                 if let Some(mut state) = state_mut_from_hwnd(hwnd) {
                     let state = state.deref_mut();
-                    if state.scroll_drag.take().is_some() {
-                        let _ = ReleaseCapture();
-                        let _ = InvalidateRect(Some(hwnd), None, false);
-                        return LRESULT(0);
-                    }
-                    let x_px = (lparam.0 & 0xFFFF) as i16 as i32 as f32;
-                    let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32 as f32;
-                    let to_dip = dips_scale(hwnd);
-                    let x = x_px * to_dip;
-                    let y = y_px * to_dip;
 
-                    let modifiers = get_modifiers();
-                    state.shell.dispatch_event(
-                        hwnd,
-                        &mut state.ui_tree,
-                        Event::MouseButtonUp {
-                            x,
-                            y,
-                            click_count: state.click_count,
-                            modifiers,
-                        },
-                    );
+                    // If we take scroll_drag, ignore the event as we consume it
+                    if state.scroll_drag.take().is_none() {
+                        let x_px = (lparam.0 & 0xFFFF) as i16 as i32 as f32;
+                        let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32 as f32;
+                        let to_dip = dips_scale(hwnd);
+                        let x = x_px * to_dip;
+                        let y = y_px * to_dip;
+
+                        let modifiers = get_modifiers();
+                        state.shell.dispatch_event(
+                            hwnd,
+                            &mut state.ui_tree,
+                            Event::MouseButtonUp {
+                                x,
+                                y,
+                                click_count: state.click_count,
+                                modifiers,
+                            },
+                        );
+                    }
 
                     // println!("WM_LBUTTONUP dispatch finished");
                 }

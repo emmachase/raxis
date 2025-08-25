@@ -1,11 +1,12 @@
-use std::{collections::HashMap, time::Instant};
+use std::{collections::HashMap, mem::ManuallyDrop, time::Instant};
 
 use slotmap::SlotMap;
 use windows::Win32::Graphics::Direct2D::{
     Common::{D2D_RECT_F, D2D1_COLOR_F},
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+    D2D1_LAYER_PARAMETERS, D2D1_LAYER_PARAMETERS1, D2D1_ROUNDED_RECT,
 };
-use windows_numerics::Vector2;
+use windows_numerics::{Matrix3x2, Vector2};
 
 use crate::{
     HookState, Shell,
@@ -166,9 +167,46 @@ pub fn paint(
                 };
 
                 unsafe {
-                    renderer
-                        .render_target
-                        .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                    if let Some(border_radius) = &element.border_radius {
+                        // Use layer with rounded rectangle geometry for clipping
+                        if let Ok(path_geometry) = renderer.factory.CreatePathGeometry() {
+                            if let Ok(sink) = path_geometry.Open() {
+                                let rect_dip = RectDIP {
+                                    x_dip: x,
+                                    y_dip: y,
+                                    width_dip: width,
+                                    height_dip: height,
+                                };
+                                renderer.create_rounded_rectangle_path(
+                                    &sink,
+                                    &rect_dip,
+                                    border_radius,
+                                );
+                                let _ = sink.Close();
+
+                                let layer_params = D2D1_LAYER_PARAMETERS1 {
+                                    contentBounds: clip_rect,
+                                    geometricMask: ManuallyDrop::new(Some(
+                                        path_geometry.clone().into(),
+                                    )),
+                                    maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                    maskTransform: Matrix3x2::identity(),
+                                    opacity: 1.0,
+                                    opacityBrush: ManuallyDrop::new(None),
+                                    layerOptions: Default::default(),
+                                };
+
+                                if let Ok(layer) = renderer.render_target.CreateLayer(None) {
+                                    renderer.render_target.PushLayer(&layer_params, &layer);
+                                }
+                            }
+                        }
+                    } else {
+                        // Use regular axis-aligned clipping for non-rounded elements
+                        renderer
+                            .render_target
+                            .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                    }
                 }
             }
 
@@ -319,7 +357,13 @@ pub fn paint(
                     }
 
                     unsafe {
-                        renderer.render_target.PopAxisAlignedClip();
+                        if element.border_radius.is_some() {
+                            // Pop layer for rounded clipping
+                            renderer.render_target.PopLayer();
+                        } else {
+                            // Pop axis-aligned clip for regular clipping
+                            renderer.render_target.PopAxisAlignedClip();
+                        }
                     }
                 }
             },

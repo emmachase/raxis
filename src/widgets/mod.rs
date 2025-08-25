@@ -498,7 +498,7 @@ impl Renderer<'_> {
         }
     }
 
-    fn create_rounded_rectangle_path(
+    pub fn create_rounded_rectangle_path(
         &self,
         sink: &ID2D1GeometrySink,
         rect: &RectDIP,
