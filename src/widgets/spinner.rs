@@ -9,7 +9,7 @@ use crate::{
     Shell,
     gfx::circle_arc::CircleArc,
     math::easing::Easing,
-    widgets::{Instance, Renderer, Widget},
+    widgets::{Bounds, Instance, Renderer, Widget},
     with_state,
 };
 
@@ -83,13 +83,13 @@ impl Widget for Spinner {
         instance: &mut Instance,
         _shell: &Shell,
         renderer: &Renderer,
-        bounds: crate::gfx::RectDIP,
+        bounds: Bounds,
         now: Instant,
     ) {
         let state = with_state!(mut instance as WidgetState);
         let center = Vector2 {
-            X: bounds.x_dip + bounds.width_dip * 0.5,
-            Y: bounds.y_dip + bounds.height_dip * 0.5,
+            X: bounds.content_box.x_dip + bounds.content_box.width_dip * 0.5,
+            Y: bounds.content_box.y_dip + bounds.content_box.height_dip * 0.5,
         };
         // let radius = bounds.width_dip.min(bounds.height_dip) * 0.5;
         // self.set_layout(center, radius);
@@ -109,7 +109,7 @@ impl Widget for Spinner {
         hwnd: windows::Win32::Foundation::HWND,
         shell: &mut Shell,
         event: &super::Event,
-        _bounds: crate::gfx::RectDIP,
+        _bounds: Bounds,
     ) {
         if matches!(event, super::Event::Redraw { .. }) {
             shell.request_redraw(hwnd, crate::RedrawRequest::Immediate);

@@ -1,4 +1,5 @@
 use std::any::Any;
+use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::HWND;
@@ -22,9 +23,10 @@ use windows_numerics::Vector2;
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
+use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
-    BLACK, Color, DragData, DragInfo, DropResult, Instance, Renderer, Widget, WidgetDragDropTarget,
-    limit_response,
+    BLACK, Bounds, Color, DragData, DragInfo, DropResult, Instance, Renderer, Widget,
+    WidgetDragDropTarget, limit_response,
 };
 use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
@@ -58,11 +60,85 @@ enum UndoOperationType {
 ///
 /// It encapsulates selection state, hit-testing, and cached layout bounds
 /// for cursor hit-testing.
-#[derive(Debug, Clone, Default)]
-pub struct TextInput {}
+pub struct TextInput {
+    on_text_changed: Option<Box<dyn Fn(&str) + 'static>>,
+    pub text_alignment: TextAlignment,
+    pub paragraph_alignment: ParagraphAlignment,
+    pub font_size: f32,
+    pub font_family: String,
+}
+
+impl Default for TextInput {
+    fn default() -> Self {
+        Self {
+            on_text_changed: None,
+            text_alignment: TextAlignment::Leading,
+            paragraph_alignment: ParagraphAlignment::Top,
+            font_size: 14.0,
+            font_family: "Segoe UI".to_string(),
+        }
+    }
+}
+
+impl Debug for TextInput {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("TextInput")
+            .field("on_text_changed", &self.on_text_changed.is_some())
+            .finish()
+    }
+}
+
 impl TextInput {
     pub fn new() -> Self {
-        Self {}
+        Self {
+            on_text_changed: None,
+            text_alignment: TextAlignment::Leading,
+            paragraph_alignment: ParagraphAlignment::Top,
+            font_size: 14.0,
+            font_family: "Segoe UI".to_string(),
+        }
+    }
+
+    pub fn with_text_changed_handler<F>(mut self, handler: F) -> Self
+    where
+        F: Fn(&str) + 'static,
+    {
+        self.on_text_changed = Some(Box::new(handler));
+        self
+    }
+
+    pub fn with_text_alignment(mut self, alignment: TextAlignment) -> Self {
+        self.text_alignment = alignment;
+        self
+    }
+
+    pub fn with_paragraph_alignment(mut self, alignment: ParagraphAlignment) -> Self {
+        self.paragraph_alignment = alignment;
+        self
+    }
+
+    pub fn with_font_size(mut self, size: f32) -> Self {
+        self.font_size = size;
+        self
+    }
+
+    pub fn with_font_family(mut self, font_family: impl Into<String>) -> Self {
+        self.font_family = font_family.into();
+        self
+    }
+
+    pub fn get_text(&self, instance: &Instance) -> String {
+        with_state!(instance as WidgetState).text.clone()
+    }
+
+    pub fn set_text(&self, instance: &mut Instance, text: String) {
+        let state = with_state!(mut instance as WidgetState);
+        state.text = text;
+        state.selection_anchor = 0;
+        state.selection_active = 0;
+        state.recompute_text_boundaries();
+        let _ = state.build_text_layout();
+        let _ = state.recalc_metrics();
     }
 }
 
@@ -71,6 +147,13 @@ struct WidgetState {
     dwrite_factory: IDWriteFactory,
     text_format: IDWriteTextFormat,
     text: String,
+    last_emitted_text: String,
+
+    // Cached formatting properties
+    cached_font_size: f32,
+    cached_font_family: String,
+    cached_text_alignment: TextAlignment,
+    cached_paragraph_alignment: ParagraphAlignment,
 
     // layout
     bounds: RectDIP,
@@ -134,30 +217,16 @@ pub enum SelectionMode {
 
 impl Widget for TextInput {
     fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
-        let text_format = unsafe {
-            let text_format = device_resources
-                .dwrite_factory
-                .CreateTextFormat(
-                    PCWSTR(w!("Segoe UI").as_ptr()),
-                    None,
-                    DWRITE_FONT_WEIGHT_REGULAR,
-                    DWRITE_FONT_STYLE_NORMAL,
-                    DWRITE_FONT_STRETCH_NORMAL,
-                    // 72.0,
-                    14.0,
-                    PCWSTR(w!("en-us").as_ptr()),
-                )
-                .unwrap();
-            text_format
-                .SetTextAlignment(DWRITE_TEXT_ALIGNMENT_LEADING)
-                .unwrap();
-            text_format
-                .SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_NEAR)
-                .unwrap();
-            text_format
-        };
-
-        Some(WidgetState::new(device_resources.dwrite_factory.clone(), text_format).into_any())
+        match WidgetState::new(
+            device_resources.dwrite_factory.clone(),
+            &self.font_family,
+            self.font_size,
+            self.text_alignment,
+            self.paragraph_alignment,
+        ) {
+            Ok(state) => Some(state.into_any()),
+            Err(_) => None,
+        }
     }
 
     fn limits_x(&self, instance: &mut Instance) -> limit_response::SizingForX {
@@ -212,10 +281,11 @@ impl Widget for TextInput {
         hwnd: HWND,
         shell: &mut Shell,
         event: &super::Event,
-        bounds: RectDIP,
+        bounds: Bounds,
     ) {
         let state = with_state!(mut instance as WidgetState);
-        let RectDIP { x_dip, y_dip, .. } = bounds;
+
+        let RectDIP { x_dip, y_dip, .. } = bounds.content_box;
         match event {
             super::Event::MouseButtonDown {
                 x,
@@ -233,7 +303,7 @@ impl Widget for TextInput {
                     x_dip: *x,
                     y_dip: *y,
                 })
-                .within(bounds)
+                .within(bounds.border_box)
                 {
                     if let Ok(idx) = state.hit_test_index(x - x_dip, y - y_dip) {
                         shell.focus_manager.focus(instance.id);
@@ -460,6 +530,13 @@ impl Widget for TextInput {
                 // Unhandled event
             }
         }
+
+        if state.text != state.last_emitted_text {
+            state.last_emitted_text = state.text.clone();
+            if let Some(cb) = self.on_text_changed.as_ref() {
+                cb(&state.text);
+            }
+        }
     }
 
     fn paint(
@@ -467,14 +544,32 @@ impl Widget for TextInput {
         instance: &mut Instance,
         shell: &Shell,
         renderer: &Renderer,
-        bounds: RectDIP,
+        bounds: Bounds,
         now: Instant,
     ) {
         let state = with_state!(mut instance as WidgetState);
-        state.update_bounds(bounds).expect("update bounds failed");
+
+        // Rebuild text format if properties changed
+        if state.needs_text_format_rebuild(
+            &self.font_family,
+            self.font_size,
+            self.text_alignment,
+            self.paragraph_alignment,
+        ) {
+            let _ = state.rebuild_text_format(
+                &self.font_family,
+                self.font_size,
+                self.text_alignment,
+                self.paragraph_alignment,
+            );
+        }
 
         state
-            .draw(instance.id, shell, renderer, bounds, now)
+            .update_bounds(bounds.content_box)
+            .expect("update bounds failed");
+
+        state
+            .draw(instance.id, shell, renderer, bounds.content_box, now)
             .expect("draw failed");
     }
 
@@ -482,9 +577,9 @@ impl Widget for TextInput {
         &self,
         _instance: &Instance,
         point: PointDIP,
-        bounds: RectDIP,
+        bounds: Bounds,
     ) -> Option<super::Cursor> {
-        if point.within(bounds) {
+        if point.within(bounds.border_box) {
             Some(super::Cursor::IBeam)
         } else {
             None
@@ -501,13 +596,13 @@ impl WidgetDragDropTarget for TextInput {
         &mut self,
         instance: &mut Instance,
         drag_info: &DragInfo,
-        widget_bounds: RectDIP,
+        widget_bounds: Bounds,
     ) -> windows::Win32::System::Ole::DROPEFFECT {
         let state = with_state!(mut instance as WidgetState);
         match &drag_info.data {
             DragData::Text(_) => {
-                let widget_x = drag_info.position.x_dip - widget_bounds.x_dip;
-                let widget_y = drag_info.position.y_dip - widget_bounds.y_dip;
+                let widget_x = drag_info.position.x_dip - widget_bounds.content_box.x_dip;
+                let widget_y = drag_info.position.y_dip - widget_bounds.content_box.y_dip;
 
                 if let Ok(idx) = state.hit_test_index(widget_x, widget_y) {
                     state.set_ole_drop_preview(Some(idx));
@@ -523,13 +618,13 @@ impl WidgetDragDropTarget for TextInput {
         &mut self,
         instance: &mut Instance,
         drag_info: &DragInfo,
-        widget_bounds: RectDIP,
+        widget_bounds: Bounds,
     ) -> windows::Win32::System::Ole::DROPEFFECT {
         let state = with_state!(mut instance as WidgetState);
         match &drag_info.data {
             DragData::Text(_) => {
-                let widget_x = drag_info.position.x_dip - widget_bounds.x_dip;
-                let widget_y = drag_info.position.y_dip - widget_bounds.y_dip;
+                let widget_x = drag_info.position.x_dip - widget_bounds.content_box.x_dip;
+                let widget_y = drag_info.position.y_dip - widget_bounds.content_box.y_dip;
 
                 if let Ok(idx16) = state.hit_test_index(widget_x, widget_y) {
                     state.set_ole_drop_preview(Some(idx16));
@@ -540,7 +635,7 @@ impl WidgetDragDropTarget for TextInput {
         }
     }
 
-    fn drag_leave(&mut self, instance: &mut Instance, _widget_bounds: RectDIP) {
+    fn drag_leave(&mut self, instance: &mut Instance, _widget_bounds: Bounds) {
         let state = with_state!(mut instance as WidgetState);
         state.set_ole_drop_preview(None);
     }
@@ -550,15 +645,15 @@ impl WidgetDragDropTarget for TextInput {
         instance: &mut Instance,
         shell: &mut Shell,
         drag_info: &DragInfo,
-        widget_bounds: RectDIP,
+        widget_bounds: Bounds,
     ) -> DropResult {
         let state = with_state!(mut instance as WidgetState);
         match &drag_info.data {
             DragData::Text(text) => {
                 // Convert client coordinates to widget-relative coordinates
                 let widget_pos = PointDIP {
-                    x_dip: drag_info.position.x_dip - widget_bounds.x_dip,
-                    y_dip: drag_info.position.y_dip - widget_bounds.y_dip,
+                    x_dip: drag_info.position.x_dip - widget_bounds.content_box.x_dip,
+                    y_dip: drag_info.position.y_dip - widget_bounds.content_box.y_dip,
                 };
 
                 if let Ok(drop_idx) = state.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
@@ -580,11 +675,60 @@ impl WidgetDragDropTarget for TextInput {
 }
 
 impl WidgetState {
-    pub fn new(dwrite_factory: IDWriteFactory, text_format: IDWriteTextFormat) -> Self {
+    pub fn new(
+        dwrite_factory: IDWriteFactory,
+        font_family: &str,
+        font_size: f32,
+        text_alignment: TextAlignment,
+        paragraph_alignment: ParagraphAlignment,
+    ) -> Result<Self> {
+        let text_format = unsafe {
+            let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
+            let text_format = dwrite_factory.CreateTextFormat(
+                PCWSTR(font_family_wide.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                font_size,
+                PCWSTR(w!("en-us").as_ptr()),
+            )?;
+
+            // Set text alignment
+            let dwrite_text_alignment = match text_alignment {
+                TextAlignment::Leading => DWRITE_TEXT_ALIGNMENT_LEADING,
+                TextAlignment::Center => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_ALIGNMENT_CENTER
+                }
+                TextAlignment::Trailing => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_ALIGNMENT_TRAILING
+                }
+            };
+            text_format.SetTextAlignment(dwrite_text_alignment)?;
+
+            // Set paragraph alignment
+            let dwrite_paragraph_alignment = match paragraph_alignment {
+                ParagraphAlignment::Top => DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
+                ParagraphAlignment::Center => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_PARAGRAPH_ALIGNMENT_CENTER
+                }
+                ParagraphAlignment::Bottom => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_PARAGRAPH_ALIGNMENT_FAR
+                }
+            };
+            text_format.SetParagraphAlignment(dwrite_paragraph_alignment)?;
+
+            text_format
+        };
+
         let mut s = Self {
             dwrite_factory,
             text_format,
             text: String::new(),
+            cached_font_size: font_size,
+            cached_font_family: font_family.to_string(),
+            cached_text_alignment: text_alignment,
+            cached_paragraph_alignment: paragraph_alignment,
             bounds: RectDIP::default(),
             layout: None,
             selection_anchor: 0,
@@ -607,10 +751,79 @@ impl WidgetState {
             can_drag_drop: false,
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
+            last_emitted_text: String::new(),
         };
         s.recompute_text_boundaries();
-        s.build_text_layout().expect("build text layout failed");
-        s
+        s.build_text_layout()?;
+        Ok(s)
+    }
+
+    fn needs_text_format_rebuild(
+        &self,
+        font_family: &str,
+        font_size: f32,
+        text_alignment: TextAlignment,
+        paragraph_alignment: ParagraphAlignment,
+    ) -> bool {
+        self.cached_font_family != font_family
+            || self.cached_font_size != font_size
+            || self.cached_text_alignment != text_alignment
+            || self.cached_paragraph_alignment != paragraph_alignment
+    }
+
+    fn rebuild_text_format(
+        &mut self,
+        font_family: &str,
+        font_size: f32,
+        text_alignment: TextAlignment,
+        paragraph_alignment: ParagraphAlignment,
+    ) -> Result<()> {
+        let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
+
+        unsafe {
+            self.text_format = self.dwrite_factory.CreateTextFormat(
+                PCWSTR(font_family_wide.as_ptr()),
+                None,
+                DWRITE_FONT_WEIGHT_REGULAR,
+                DWRITE_FONT_STYLE_NORMAL,
+                DWRITE_FONT_STRETCH_NORMAL,
+                font_size,
+                PCWSTR(w!("en-us").as_ptr()),
+            )?;
+
+            // Set text alignment
+            let dwrite_text_alignment = match text_alignment {
+                TextAlignment::Leading => DWRITE_TEXT_ALIGNMENT_LEADING,
+                TextAlignment::Center => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_ALIGNMENT_CENTER
+                }
+                TextAlignment::Trailing => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_ALIGNMENT_TRAILING
+                }
+            };
+            self.text_format.SetTextAlignment(dwrite_text_alignment)?;
+
+            // Set paragraph alignment
+            let dwrite_paragraph_alignment = match paragraph_alignment {
+                ParagraphAlignment::Top => DWRITE_PARAGRAPH_ALIGNMENT_NEAR,
+                ParagraphAlignment::Center => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_PARAGRAPH_ALIGNMENT_CENTER
+                }
+                ParagraphAlignment::Bottom => {
+                    windows::Win32::Graphics::DirectWrite::DWRITE_PARAGRAPH_ALIGNMENT_FAR
+                }
+            };
+            self.text_format
+                .SetParagraphAlignment(dwrite_paragraph_alignment)?;
+        }
+
+        // Update cached values
+        self.cached_font_family = font_family.to_string();
+        self.cached_font_size = font_size;
+        self.cached_text_alignment = text_alignment;
+        self.cached_paragraph_alignment = paragraph_alignment;
+
+        Ok(())
     }
 
     /// Build a text layout for the given text and maximum size in DIPs.
@@ -1445,6 +1658,18 @@ impl WidgetState {
         self.force_blink();
         Ok(())
     }
+
+    // pub fn insert_str_with_callback(
+    //     &mut self,
+    //     s: &str,
+    //     callback: Option<&Box<dyn Fn(&str)>>,
+    // ) -> Result<()> {
+    //     self.insert_str(s)?;
+    //     if let Some(cb) = callback {
+    //         cb(&self.text);
+    //     }
+    //     Ok(())
+    // }
 
     pub fn backspace(&mut self) -> Result<()> {
         let (start16, end16) = self.selection_range();

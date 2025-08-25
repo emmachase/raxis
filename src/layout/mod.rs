@@ -128,21 +128,6 @@ pub fn paint(
             let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
             let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
 
-            if has_scroll_x || has_scroll_y {
-                let clip_rect = D2D_RECT_F {
-                    left: x,
-                    top: y,
-                    right: x + width,
-                    bottom: y + height,
-                };
-
-                unsafe {
-                    renderer
-                        .render_target
-                        .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                }
-            }
-
             // Draw drop shadow first (behind the element)
             if let Some(shadow) = &element.drop_shadow {
                 let element_rect = RectDIP {
@@ -169,6 +154,21 @@ pub fn paint(
                 } else {
                     // Use regular rectangle rendering
                     renderer.fill_rectangle(&element_rect, color);
+                }
+            }
+
+            if has_scroll_x || has_scroll_y {
+                let clip_rect = D2D_RECT_F {
+                    left: x,
+                    top: y,
+                    right: x + width,
+                    bottom: y + height,
+                };
+
+                unsafe {
+                    renderer
+                        .render_target
+                        .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 }
             }
 

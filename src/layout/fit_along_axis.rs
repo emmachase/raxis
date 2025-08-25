@@ -203,8 +203,10 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                     } = widget.limits_x(instance);
 
                     // Apply widget limits as constraints to the computed container size
-                    element!().computed_width = element!().computed_width.max(preferred_width);
-                    element!().min_width = element!().min_width.max(min_width);
+                    element!().computed_width = element!()
+                        .computed_width
+                        .max(preferred_width + axis_padding);
+                    element!().min_width = element!().min_width.max(min_width + axis_padding);
                 } else {
                     let limit_response::SizingForY {
                         min_height,
@@ -212,8 +214,10 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                     } = widget.limits_y(instance, element!().computed_width);
 
                     // Apply widget limits as constraints to the computed container size
-                    element!().computed_height = element!().computed_height.max(preferred_height);
-                    element!().min_height = element!().min_height.max(min_height);
+                    element!().computed_height = element!()
+                        .computed_height
+                        .max(preferred_height + axis_padding);
+                    element!().min_height = element!().min_height.max(min_height + axis_padding);
                 }
             }
         }

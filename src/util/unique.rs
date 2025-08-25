@@ -1,3 +1,5 @@
+use std::hash::{DefaultHasher, Hasher};
+
 pub const fn hash(module_path: &'static str, file: &'static str, line: u32, column: u32) -> u64 {
     let mut hash = 0xcbf29ce484222325;
     let prime = 0x00000100000001B3;
@@ -33,4 +35,11 @@ macro_rules! w_id {
         // const UNIQ: u64 =
         // const_format::concatcp!("uniq_", UNIQ)
     }};
+}
+
+pub fn combine_id(id: u64, child_id: u64) -> u64 {
+    let mut s = DefaultHasher::new();
+    s.write_u64(id);
+    s.write_u64(child_id);
+    s.finish()
 }

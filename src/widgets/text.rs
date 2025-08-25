@@ -14,7 +14,7 @@ use windows_core::{PCWSTR, w};
 use windows_numerics::Vector2;
 
 use crate::gfx::RectDIP;
-use crate::widgets::{Color, Instance, Renderer, Widget};
+use crate::widgets::{Bounds, Color, Instance, Renderer, Widget};
 use crate::{Shell, with_state};
 
 /// Text alignment options
@@ -393,7 +393,7 @@ impl Widget for Text {
         _hwnd: HWND,
         _shell: &mut Shell,
         _event: &super::Event,
-        _bounds: RectDIP,
+        _bounds: Bounds,
     ) {
         // Text widget doesn't handle any events - it's read-only
     }
@@ -403,7 +403,7 @@ impl Widget for Text {
         instance: &mut Instance,
         _shell: &Shell,
         renderer: &Renderer,
-        bounds: RectDIP,
+        bounds: Bounds,
         _now: Instant,
     ) {
         let state = with_state!(mut instance as TextWidgetState);
@@ -426,7 +426,7 @@ impl Widget for Text {
         }
 
         // Build text layout if needed
-        let _ = state.build_text_layout(&self.text, bounds);
+        let _ = state.build_text_layout(&self.text, bounds.content_box);
 
         // Draw the text
         if let Some(layout) = &state.text_layout {
@@ -440,8 +440,8 @@ impl Widget for Text {
 
                 renderer.render_target.DrawTextLayout(
                     Vector2 {
-                        X: bounds.x_dip,
-                        Y: bounds.y_dip,
+                        X: bounds.content_box.x_dip,
+                        Y: bounds.content_box.y_dip,
                     },
                     layout,
                     renderer.brush,
@@ -457,7 +457,7 @@ impl Widget for Text {
         &self,
         _instance: &Instance,
         _point: crate::gfx::PointDIP,
-        _bounds: RectDIP,
+        _bounds: Bounds,
     ) -> Option<super::Cursor> {
         None // Text widget doesn't change cursor
     }

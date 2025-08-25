@@ -14,7 +14,7 @@ use windows_core::{PCWSTR, w};
 use windows_numerics::Vector2;
 
 use crate::gfx::{PointDIP, RectDIP};
-use crate::widgets::{Color, Instance, Renderer, Widget};
+use crate::widgets::{Bounds, Color, Instance, Renderer, Widget};
 use crate::{RedrawRequest, Shell, with_state};
 
 /// Button states for visual feedback
@@ -314,7 +314,7 @@ impl Widget for Button {
         hwnd: HWND,
         shell: &mut Shell,
         event: &super::Event,
-        bounds: RectDIP,
+        bounds: Bounds,
     ) {
         let state = with_state!(mut instance as ButtonWidgetState);
 
@@ -324,7 +324,7 @@ impl Widget for Button {
                     x_dip: *x,
                     y_dip: *y,
                 };
-                if point.within(bounds) && self.enabled {
+                if point.within(bounds.border_box) && self.enabled {
                     state.is_mouse_down = true;
                     state.is_mouse_over = true;
                     state.update_state(self.enabled);
@@ -339,11 +339,11 @@ impl Widget for Button {
                 let was_pressed = state.is_mouse_down && state.is_mouse_over;
 
                 state.is_mouse_down = false;
-                state.is_mouse_over = point.within(bounds);
+                state.is_mouse_over = point.within(bounds.border_box);
                 state.update_state(self.enabled);
 
                 // Trigger click if mouse was released over the button
-                if was_pressed && point.within(bounds) && self.enabled {
+                if was_pressed && point.within(bounds.border_box) && self.enabled {
                     if let Some(handler) = self.on_click.as_ref() {
                         handler();
                     }
@@ -357,7 +357,7 @@ impl Widget for Button {
                     y_dip: *y,
                 };
                 let was_over = state.is_mouse_over;
-                state.is_mouse_over = point.within(bounds);
+                state.is_mouse_over = point.within(bounds.border_box);
 
                 if was_over != state.is_mouse_over {
                     state.update_state(self.enabled);
@@ -374,31 +374,31 @@ impl Widget for Button {
         instance: &mut Instance,
         _shell: &Shell,
         renderer: &Renderer,
-        bounds: RectDIP,
+        bounds: Bounds,
         _now: Instant,
     ) {
         let state = with_state!(mut instance as ButtonWidgetState);
 
         // Build text layout if needed
-        let _ = state.build_text_layout(&self.text, bounds);
+        let _ = state.build_text_layout(&self.text, bounds.border_box);
 
         // Update visual state
         state.update_state(self.enabled);
 
         // Draw button background and border
-        state.draw_button_background(renderer, bounds);
+        state.draw_button_background(renderer, bounds.border_box);
 
         // Draw button text
-        let _ = state.draw_button_text(renderer, bounds);
+        let _ = state.draw_button_text(renderer, bounds.border_box);
     }
 
     fn cursor(
         &self,
         _instance: &Instance,
         point: PointDIP,
-        bounds: RectDIP,
+        bounds: Bounds,
     ) -> Option<super::Cursor> {
-        if point.within(bounds) && self.enabled {
+        if point.within(bounds.border_box) && self.enabled {
             Some(super::Cursor::Arrow)
         } else {
             None

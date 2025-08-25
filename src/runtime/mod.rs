@@ -988,7 +988,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         visitors::visit_reverse_bfs(&mut state.ui_tree, root, |ui_tree, key, _| {
                             let element = &mut ui_tree.slots[key];
                             let bounds = element.bounds();
-                            if point.within(bounds)
+                            if point.within(bounds.border_box)
                                 && element.scroll.is_some()
                                 && let Some(element_id) = element.id
                             {
@@ -1315,7 +1315,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                                 {
                                     if let Some(id) = ui_tree.slots[element].id {
                                         if let Some(instance) = ui_tree.widget_state.get(&id) {
-                                            if point.within(bounds) {
+                                            if point.within(bounds.border_box) {
                                                 cursor = widget.cursor(instance, point, bounds);
                                             }
                                         }

@@ -6,7 +6,11 @@ use windows::Win32::{
     },
 };
 
-use crate::{Shell, gfx::PointDIP, widgets::Instance};
+use crate::{
+    Shell,
+    gfx::PointDIP,
+    widgets::{Bounds, Instance},
+};
 
 /// Represents the data being dragged
 #[derive(Debug, Clone)]
@@ -48,7 +52,7 @@ pub trait WidgetDragDropTarget {
         &mut self,
         instance: &mut Instance,
         drag_info: &DragInfo,
-        widget_bounds: crate::gfx::RectDIP,
+        widget_bounds: Bounds,
     ) -> DROPEFFECT {
         let _ = (drag_info, widget_bounds);
         DROPEFFECT_NONE
@@ -60,14 +64,14 @@ pub trait WidgetDragDropTarget {
         &mut self,
         instance: &mut Instance,
         drag_info: &DragInfo,
-        widget_bounds: crate::gfx::RectDIP,
+        widget_bounds: Bounds,
     ) -> DROPEFFECT {
         let _ = (drag_info, widget_bounds);
         DROPEFFECT_NONE
     }
 
     /// Called when a drag operation leaves the widget's bounds
-    fn drag_leave(&mut self, instance: &mut Instance, widget_bounds: crate::gfx::RectDIP) {}
+    fn drag_leave(&mut self, instance: &mut Instance, widget_bounds: Bounds) {}
 
     /// Called when data is dropped on the widget
     /// Returns the actual effect that was applied and whether it was handled
@@ -76,7 +80,7 @@ pub trait WidgetDragDropTarget {
         instance: &mut Instance,
         shell: &mut Shell,
         drag_info: &DragInfo,
-        widget_bounds: crate::gfx::RectDIP,
+        widget_bounds: Bounds,
     ) -> DropResult {
         let _ = drag_info;
         DropResult::default()

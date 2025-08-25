@@ -696,7 +696,7 @@ pub trait Widget: std::fmt::Debug {
         instance: &mut Instance,
         shell: &Shell,
         renderer: &Renderer,
-        bounds: RectDIP,
+        bounds: Bounds,
         now: Instant,
     );
 
@@ -706,10 +706,10 @@ pub trait Widget: std::fmt::Debug {
         hwnd: HWND,
         shell: &mut Shell,
         event: &Event,
-        bounds: RectDIP,
+        bounds: Bounds,
     );
 
-    fn cursor(&self, instance: &Instance, point: PointDIP, bounds: RectDIP) -> Option<Cursor> {
+    fn cursor(&self, instance: &Instance, point: PointDIP, bounds: Bounds) -> Option<Cursor> {
         None
     }
 
@@ -748,13 +748,26 @@ pub fn dispatch_operation(ui_tree: BorrowedUITree, operation: &dyn Operation) {
     });
 }
 
+pub struct Bounds {
+    pub content_box: RectDIP,
+    pub border_box: RectDIP,
+}
+
 impl UIElement {
-    pub fn bounds(&self) -> RectDIP {
-        RectDIP {
-            x_dip: self.x,
-            y_dip: self.y,
-            width_dip: self.computed_width,
-            height_dip: self.computed_height,
+    pub fn bounds(&self) -> Bounds {
+        Bounds {
+            content_box: RectDIP {
+                x_dip: self.x + self.padding.left,
+                y_dip: self.y + self.padding.top,
+                width_dip: self.computed_width - self.padding.left - self.padding.right,
+                height_dip: self.computed_height - self.padding.top - self.padding.bottom,
+            },
+            border_box: RectDIP {
+                x_dip: self.x,
+                y_dip: self.y,
+                width_dip: self.computed_width,
+                height_dip: self.computed_height,
+            },
         }
     }
 }

@@ -262,7 +262,7 @@ impl Shell {
                 let element = &ui_tree.slots[key];
                 let bounds = element.bounds();
 
-                if position.within(bounds) {
+                if position.within(bounds.border_box) {
                     if let Some(layout::model::ElementContent::Widget(_)) = element.content {
                         if key != prev_drag_widget.unwrap() {
                             should_call_drag_leave = true;
@@ -300,7 +300,7 @@ impl Shell {
             let bounds = element.bounds();
 
             // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
-            if position.within(bounds) || matches!(event, DragEvent::DragLeave) {
+            if position.within(bounds.border_box) || matches!(event, DragEvent::DragLeave) {
                 if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content
                 {
                     if let Some(text_input) = widget.as_drop_target()
