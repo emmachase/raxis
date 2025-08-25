@@ -99,7 +99,7 @@ fn todo_app(mut hook: HookManager) -> Element {
 
                         children: vec![Element {
                             id: Some(w_id!()),
-                            width: Sizing::fit(),
+                            width: Sizing::grow(),
                             height: Sizing::grow(),
                             padding: BoxAmount::new(5.0, 12.0, 5.0, 12.0),
                             content: Some(ElementContent::Widget(Box::new(
