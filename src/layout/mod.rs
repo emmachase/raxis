@@ -143,16 +143,17 @@ pub fn paint(
                 }
             }
 
-            // // Draw drop shadow first (behind the element)
-            // if let Some(shadow) = &element.drop_shadow {
-            //     let element_rect = RectDIP {
-            //         x_dip: x,
-            //         y_dip: y,
-            //         width_dip: width,
-            //         height_dip: height,
-            //     };
-            //     renderer.draw_drop_shadow(&element_rect, shadow);
-            // }
+            // Draw drop shadow first (behind the element)
+            if let Some(shadow) = &element.drop_shadow {
+                let element_rect = RectDIP {
+                    x_dip: x,
+                    y_dip: y,
+                    width_dip: width,
+                    height_dip: height,
+                };
+                // renderer.draw_drop_shadow(&element_rect, shadow);
+                renderer.draw_blurred_shadow(&element_rect, shadow);
+            }
 
             if let Some(color) = element.background_color {
                 unsafe {

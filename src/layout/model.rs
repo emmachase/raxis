@@ -8,7 +8,7 @@ use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 use crate::{
     layout::OwnedUITree,
     runtime::DeviceResources,
-    widgets::{Instance, Widget},
+    widgets::{Color, Instance, Widget},
 };
 
 // ---------- Geometry & basic types ----------
@@ -190,17 +190,25 @@ pub struct FloatingConfig {
 pub struct DropShadow {
     pub offset_x: f32,
     pub offset_y: f32,
+    pub spread_radius: f32,
     pub blur_radius: f32,
-    pub color: u32, // RGBA packed
+    pub color: Color, // RGBA packed
 }
 
 impl DropShadow {
-    pub fn new(offset_x: f32, offset_y: f32, blur_radius: f32, color: u32) -> Self {
+    pub fn new(
+        offset_x: f32,
+        offset_y: f32,
+        spread_radius: f32,
+        blur_radius: f32,
+        color: u32,
+    ) -> Self {
         Self {
             offset_x,
             offset_y,
+            spread_radius,
             blur_radius,
-            color,
+            color: Color::from(color),
         }
     }
 
@@ -208,8 +216,9 @@ impl DropShadow {
         Self {
             offset_x,
             offset_y,
-            blur_radius: 4.0,
-            color: 0x00000040, // Semi-transparent black
+            spread_radius: 0.0,
+            blur_radius: 0.0,
+            color: Color::default(),
         }
     }
 }
@@ -477,7 +486,7 @@ pub fn create_tree(device_resources: &DeviceResources, tree: &mut OwnedUITree, r
             root_key = Some(key);
         }
 
-        for child in children {
+        for child in children.into_iter().rev() {
             queue.push((child, Some(key)));
         }
     }

@@ -19,7 +19,7 @@ fn view(mut hook: HookManager) -> Element {
     Element {
         id: Some(w_id!()),
         background_color: Some(0xFF0000FF),
-        direction: Direction::TopToBottom,
+        direction: Direction::LeftToRight,
         width: Sizing::grow(),
         height: Sizing::Fit {
             min: 200.0,
@@ -28,14 +28,14 @@ fn view(mut hook: HookManager) -> Element {
         child_gap: 10.0,
         padding: BoxAmount::all(10.0),
         scroll: Some(ScrollConfig {
-            horizontal: Some(true),
+            // horizontal: Some(true),
             ..Default::default()
         }),
         children: vec![
             Element {
                 id: Some(w_id!()),
                 background_color: Some(0x00FF00FF),
-                drop_shadow: Some(DropShadow::simple(3.0, 3.0)),
+                drop_shadow: Some(DropShadow::simple(5.0, 5.0)),
                 width: Sizing::Fit {
                     min: 10.0,
                     max: 100.0,
@@ -63,7 +63,7 @@ fn view(mut hook: HookManager) -> Element {
             },
             Element {
                 id: Some(w_id!()),
-                drop_shadow: Some(DropShadow::new(2.0, 2.0, 6.0, 0x00000060)),
+                drop_shadow: Some(DropShadow::new(2.0, 2.0, 0.0, 6.0, 0x00000060)),
                 content: Some(ElementContent::Widget(Box::new(
                     Button::new(format!("Button {}", state.borrow())).with_click_handler(
                         move || {
@@ -72,6 +72,20 @@ fn view(mut hook: HookManager) -> Element {
                         },
                     ),
                 ))),
+                ..Default::default()
+            },
+            Element {
+                id: Some(w_id!()),
+                background_color: Some(0x00FFFFFF),
+                drop_shadow: Some(DropShadow::simple(5.0, 5.0)),
+                width: Sizing::fixed(50.0),
+                height: Sizing::fixed(50.0),
+                // scroll: Some(ScrollConfig {
+                //     // horizontal: Some(true),
+                //     ..Default::default()
+                // }),
+
+                // content: Some(ElementContent::Widget(Box::new(TextInput::new()))),
                 ..Default::default()
             },
         ],

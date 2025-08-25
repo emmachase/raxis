@@ -66,7 +66,7 @@ where
         if visitor(ui_tree, current, parent).into().is_exit() {
             break;
         }
-        for &child in ui_tree.slots[current].children.iter() {
+        for &child in ui_tree.slots[current].children.iter().rev() {
             queue.push_back((child, Some(current)));
         }
     }
@@ -96,7 +96,7 @@ pub fn visit_deferring_bfs<S, F, R>(
             }
 
             // Always enqueue children
-            for &child in ui_tree.slots[current].children.iter() {
+            for &child in ui_tree.slots[current].children.iter().rev() {
                 queue.push_back((child, Some(current)));
             }
         }
