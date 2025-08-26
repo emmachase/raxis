@@ -683,6 +683,7 @@ impl WidgetState {
         paragraph_alignment: ParagraphAlignment,
     ) -> Result<Self> {
         let text_format = unsafe {
+            println!("Creating text format for font family: {}", font_family);
             let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
             let text_format = dwrite_factory.CreateTextFormat(
                 PCWSTR(font_family_wide.as_ptr()),
@@ -781,6 +782,7 @@ impl WidgetState {
         let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
 
         unsafe {
+            println!("Rebuilding text format for font family: {}", font_family);
             self.text_format = self.dwrite_factory.CreateTextFormat(
                 PCWSTR(font_family_wide.as_ptr()),
                 None,

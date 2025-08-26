@@ -4,7 +4,7 @@ use slotmap::SlotMap;
 use windows::Win32::Graphics::Direct2D::{
     Common::{D2D_RECT_F, D2D1_COLOR_F},
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-    D2D1_LAYER_PARAMETERS, D2D1_LAYER_PARAMETERS1, D2D1_ROUNDED_RECT,
+    D2D1_LAYER_PARAMETERS1, ID2D1Geometry,
 };
 use windows_numerics::{Matrix3x2, Vector2};
 
@@ -186,9 +186,7 @@ pub fn paint(
 
                                 let layer_params = D2D1_LAYER_PARAMETERS1 {
                                     contentBounds: clip_rect,
-                                    geometricMask: ManuallyDrop::new(Some(
-                                        path_geometry.clone().into(),
-                                    )),
+                                    geometricMask: ManuallyDrop::new(Some(path_geometry.into())),
                                     maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
                                     maskTransform: Matrix3x2::identity(),
                                     opacity: 1.0,
@@ -199,6 +197,11 @@ pub fn paint(
                                 if let Ok(layer) = renderer.render_target.CreateLayer(None) {
                                     renderer.render_target.PushLayer(&layer_params, &layer);
                                 }
+
+                                // Why did they make it ManuallyDrop in the first place??? idk
+                                drop(ManuallyDrop::<Option<ID2D1Geometry>>::into_inner(
+                                    layer_params.geometricMask,
+                                ));
                             }
                         }
                     } else {

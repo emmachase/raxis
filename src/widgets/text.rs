@@ -277,26 +277,40 @@ impl TextWidgetState {
 
     fn build_text_layout(&mut self, text: &str, bounds: RectDIP) -> Result<()> {
         if bounds != self.bounds || text != self.cached_text {
-            self.bounds = bounds;
-            self.cached_text = text.to_string();
+            let layout = if text == self.cached_text
+                && let Some(layout) = self.text_layout.as_ref()
+            {
+                layout
+            } else {
+                unsafe {
+                    let wtext: Vec<u16> = text.encode_utf16().collect();
+                    println!("Building text layout for text: {}", text);
+                    self.text_layout = Some(self.dwrite_factory.CreateTextLayout(
+                        &wtext,
+                        &self.text_format,
+                        bounds.width_dip.max(1.0),  // Ensure minimum width
+                        bounds.height_dip.max(1.0), // Ensure minimum height
+                    )?);
+                    self.text_layout.as_ref().unwrap()
+                }
+            };
 
-            let wtext: Vec<u16> = text.encode_utf16().collect();
+            if bounds != self.bounds {
+                unsafe {
+                    layout.SetMaxWidth(bounds.width_dip).unwrap();
+                    layout.SetMaxHeight(bounds.height_dip).unwrap();
+                }
+            }
 
             unsafe {
-                let layout = self.dwrite_factory.CreateTextLayout(
-                    &wtext,
-                    &self.text_format,
-                    bounds.width_dip.max(1.0),  // Ensure minimum width
-                    bounds.height_dip.max(1.0), // Ensure minimum height
-                )?;
-
                 // Get text metrics for sizing calculations
                 let mut metrics = DWRITE_TEXT_METRICS::default();
                 layout.GetMetrics(&mut metrics)?;
                 self.text_metrics = Some(metrics);
-
-                self.text_layout = Some(layout);
             }
+
+            self.bounds = bounds;
+            self.cached_text = text.to_string();
         }
         Ok(())
     }
