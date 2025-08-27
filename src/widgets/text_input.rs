@@ -52,13 +52,15 @@ enum UndoOperationType {
     Other,
 }
 
+pub type TextInputEventHandler = Box<dyn Fn(&str) + 'static>;
+
 /// A widget that renders selectable text using DirectWrite and draws
 /// the selection highlight using Direct2D.
 ///
 /// It encapsulates selection state, hit-testing, and cached layout bounds
 /// for cursor hit-testing.
 pub struct TextInput {
-    on_text_changed: Option<Box<dyn Fn(&str) + 'static>>,
+    on_text_changed: Option<TextInputEventHandler>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_size: f32,
