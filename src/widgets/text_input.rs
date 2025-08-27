@@ -17,7 +17,6 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
 use windows_core::{PCWSTR, w};
-use windows_numerics::Vector2;
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
@@ -971,10 +970,7 @@ impl WidgetState {
 
             // Draw text using command recorder
             recorder.draw_text(
-                Vector2 {
-                    X: bounds.x_dip,
-                    Y: bounds.y_dip,
-                },
+                &bounds,
                 layout,
                 crate::widgets::Color {
                     r: 0.0,

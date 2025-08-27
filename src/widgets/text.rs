@@ -10,7 +10,6 @@ use windows::Win32::Graphics::DirectWrite::{
 };
 use windows::core::Result;
 use windows_core::{PCWSTR, w};
-use windows_numerics::Vector2;
 
 use crate::gfx::RectDIP;
 use crate::widgets::{Bounds, Color, Instance, Widget};
@@ -111,9 +110,14 @@ struct TextWidgetState {
     cached_paragraph_alignment: ParagraphAlignment,
     cached_word_wrap: bool,
 
-    // Layout
-    bounds: RectDIP,
+    // Layout caching
+    cached_bounds: RectDIP,
     text_metrics: Option<DWRITE_TEXT_METRICS>,
+    layout_invalidated: bool,
+
+    // Sizing cache for limits_x/limits_y
+    cached_preferred_width: Option<f32>,
+    cached_preferred_height_for_width: Option<(f32, f32)>, // (width, height)
 }
 
 impl TextWidgetState {
@@ -182,8 +186,11 @@ impl TextWidgetState {
             cached_text_alignment: text_alignment,
             cached_paragraph_alignment: paragraph_alignment,
             cached_word_wrap: word_wrap,
-            bounds: RectDIP::default(),
+            cached_bounds: RectDIP::default(),
             text_metrics: None,
+            layout_invalidated: true,
+            cached_preferred_width: None,
+            cached_preferred_height_for_width: None,
         };
 
         state.build_text_layout("", RectDIP::default())?;
@@ -271,46 +278,50 @@ impl TextWidgetState {
         self.cached_paragraph_alignment = paragraph_alignment;
         self.cached_word_wrap = word_wrap;
 
+        // Invalidate layout and sizing cache since format changed
+        self.layout_invalidated = true;
+        self.invalidate_sizing_cache();
+
         Ok(())
     }
 
     fn build_text_layout(&mut self, text: &str, bounds: RectDIP) -> Result<()> {
-        if bounds != self.bounds || text != self.cached_text {
-            let layout = if text == self.cached_text
-                && let Some(layout) = self.text_layout.as_ref()
-            {
-                layout
-            } else {
-                unsafe {
-                    let wtext: Vec<u16> = text.encode_utf16().collect();
-                    println!("Building text layout for text: {text}");
-                    self.text_layout = Some(self.dwrite_factory.CreateTextLayout(
-                        &wtext,
-                        &self.text_format,
-                        bounds.width_dip.max(1.0),  // Ensure minimum width
-                        bounds.height_dip.max(1.0), // Ensure minimum height
-                    )?);
-                    self.text_layout.as_ref().unwrap()
-                }
-            };
+        // Check if we need to rebuild the text layout (text or format changed)
+        let text_changed = text != self.cached_text;
+        let needs_layout_rebuild = text_changed || self.layout_invalidated;
 
-            if bounds != self.bounds {
-                unsafe {
-                    layout.SetMaxWidth(bounds.width_dip).unwrap();
-                    layout.SetMaxHeight(bounds.height_dip).unwrap();
-                }
-            }
-
+        if needs_layout_rebuild {
             unsafe {
-                // Get text metrics for sizing calculations
-                let mut metrics = DWRITE_TEXT_METRICS::default();
-                layout.GetMetrics(&mut metrics)?;
-                self.text_metrics = Some(metrics);
+                let wtext: Vec<u16> = text.encode_utf16().collect();
+                self.text_layout = Some(self.dwrite_factory.CreateTextLayout(
+                    &wtext,
+                    &self.text_format,
+                    bounds.width_dip.max(1.0),  // Ensure minimum width
+                    bounds.height_dip.max(1.0), // Ensure minimum height
+                )?);
             }
-
-            self.bounds = bounds;
             self.cached_text = text.to_string();
+            self.layout_invalidated = false;
+            self.invalidate_sizing_cache();
         }
+
+        // Check if we need to update bounds (cheaper operation)
+        let bounds_changed = bounds != self.cached_bounds;
+        if bounds_changed || needs_layout_rebuild {
+            if let Some(layout) = &self.text_layout {
+                unsafe {
+                    layout.SetMaxWidth(bounds.width_dip.max(1.0))?;
+                    layout.SetMaxHeight(bounds.height_dip.max(1.0))?;
+
+                    // Get text metrics for sizing calculations
+                    let mut metrics = DWRITE_TEXT_METRICS::default();
+                    layout.GetMetrics(&mut metrics)?;
+                    self.text_metrics = Some(metrics);
+                }
+            }
+            self.cached_bounds = bounds;
+        }
+
         Ok(())
     }
 
@@ -320,6 +331,49 @@ impl TextWidgetState {
         } else {
             (0.0, self.cached_font_size * 1.2) // Fallback height based on font size
         }
+    }
+
+    fn invalidate_sizing_cache(&mut self) {
+        self.cached_preferred_width = None;
+        self.cached_preferred_height_for_width = None;
+    }
+
+    fn get_preferred_width(&mut self, text: &str) -> Result<f32> {
+        if let Some(width) = self.cached_preferred_width {
+            return Ok(width);
+        }
+
+        let temp_bounds = RectDIP {
+            x_dip: 0.0,
+            y_dip: 0.0,
+            width_dip: f32::INFINITY,
+            height_dip: f32::INFINITY,
+        };
+
+        self.build_text_layout(text, temp_bounds)?;
+        let (preferred_width, _) = self.get_preferred_size();
+        self.cached_preferred_width = Some(preferred_width);
+        Ok(preferred_width)
+    }
+
+    fn get_preferred_height_for_width(&mut self, text: &str, width: f32) -> Result<f32> {
+        if let Some((cached_width, cached_height)) = self.cached_preferred_height_for_width {
+            if (cached_width - width).abs() < 0.1 {
+                return Ok(cached_height);
+            }
+        }
+
+        let temp_bounds = RectDIP {
+            x_dip: 0.0,
+            y_dip: 0.0,
+            width_dip: width,
+            height_dip: f32::INFINITY,
+        };
+
+        self.build_text_layout(text, temp_bounds)?;
+        let (_, preferred_height) = self.get_preferred_size();
+        self.cached_preferred_height_for_width = Some((width, preferred_height));
+        Ok(preferred_height)
     }
 }
 
@@ -339,30 +393,9 @@ impl Widget for Text {
     }
 
     fn limits_x(&self, instance: &mut Instance) -> super::limit_response::SizingForX {
-        // let state = with_state!(instance as TextWidgetState);
-        // let (preferred_width, _) = state.get_preferred_size();
-
-        // super::limit_response::SizingForX {
-        //     min_width: if self.word_wrap {
-        //         20.0
-        //     } else {
-        //         preferred_width
-        //     },
-        //     preferred_width: preferred_width.max(20.0),
-        // }
-
         let state = with_state!(mut instance as TextWidgetState);
 
-        // Build text layout with the given width to get accurate height
-        let temp_bounds = RectDIP {
-            x_dip: 0.0,
-            y_dip: 0.0,
-            width_dip: f32::INFINITY,
-            height_dip: f32::INFINITY,
-        };
-
-        if state.build_text_layout(&self.text, temp_bounds).is_ok() {
-            let (preferred_width, _) = state.get_preferred_size();
+        if let Ok(preferred_width) = state.get_preferred_width(&self.text) {
             super::limit_response::SizingForX {
                 min_width: preferred_width,
                 preferred_width,
@@ -378,16 +411,7 @@ impl Widget for Text {
     fn limits_y(&self, instance: &mut Instance, width: f32) -> super::limit_response::SizingForY {
         let state = with_state!(mut instance as TextWidgetState);
 
-        // Build text layout with the given width to get accurate height
-        let temp_bounds = RectDIP {
-            x_dip: 0.0,
-            y_dip: 0.0,
-            width_dip: width,
-            height_dip: f32::INFINITY,
-        };
-
-        if state.build_text_layout(&self.text, temp_bounds).is_ok() {
-            let (_, preferred_height) = state.get_preferred_size();
+        if let Ok(preferred_height) = state.get_preferred_height_for_width(&self.text, width) {
             super::limit_response::SizingForY {
                 min_height: preferred_height,
                 preferred_height,
@@ -444,10 +468,7 @@ impl Widget for Text {
         // Draw the text
         if let Some(layout) = &state.text_layout {
             recorder.draw_text(
-                Vector2 {
-                    X: bounds.content_box.x_dip,
-                    Y: bounds.content_box.y_dip,
-                },
+                &bounds.content_box,
                 layout,
                 self.color,
             );

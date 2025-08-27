@@ -3,7 +3,6 @@ use crate::layout::model::{BorderRadius, DropShadow};
 use crate::widgets::Color;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
-use windows_numerics::Vector2;
 
 /// A single drawing command that can be executed later
 #[derive(Debug)]
@@ -26,7 +25,7 @@ pub enum DrawCommand {
     },
     /// Draw text using DirectWrite text layout
     DrawText {
-        position: Vector2,
+        rect: RectDIP,
         layout: IDWriteTextLayout,
         color: Color,
     },
@@ -65,8 +64,10 @@ pub enum DrawCommand {
         rect: RectDIP,
         border_radius: BorderRadius,
     },
-    /// Pop the current clip/layer
-    PopClip,
+    /// Pop the current clip
+    PopAxisAlignedClip,
+    /// Pop the current rounded clip
+    PopRoundedClip,
     /// Set brush color for subsequent operations
     SetBrushColor { color: D2D1_COLOR_F },
 }

@@ -6,7 +6,6 @@ use crate::layout::model::{BorderRadius, DropShadow};
 use crate::widgets::Color;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
-use windows_numerics::Vector2;
 
 /// Records drawing operations as commands instead of executing them immediately
 pub struct CommandRecorder {
@@ -88,12 +87,12 @@ impl CommandRecorder {
     /// Record a text drawing operation
     pub fn draw_text(
         &mut self,
-        position: Vector2,
+        rect: &RectDIP,
         layout: &IDWriteTextLayout,
         color: impl Into<Color>,
     ) {
         self.commands.push(DrawCommand::DrawText {
-            position,
+            rect: *rect,
             layout: layout.clone(),
             color: color.into(),
         });
@@ -113,9 +112,14 @@ impl CommandRecorder {
         });
     }
 
-    /// Record popping the current clip
-    pub fn pop_clip(&mut self) {
-        self.commands.push(DrawCommand::PopClip);
+    /// Record popping the current axis-aligned clip
+    pub fn pop_axis_aligned_clip(&mut self) {
+        self.commands.push(DrawCommand::PopAxisAlignedClip);
+    }
+
+    /// Record popping the current rounded clip
+    pub fn pop_rounded_clip(&mut self) {
+        self.commands.push(DrawCommand::PopRoundedClip);
     }
 
     /// Record a rectangle outline drawing command

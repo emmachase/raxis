@@ -493,8 +493,6 @@ impl AppState {
             &mut self.ui_tree,
             root,
             &mut self.scroll_state_manager,
-            0.0,
-            0.0,
         );
 
         self.clock += dt;
@@ -1300,8 +1298,6 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         .shell
                         .dispatch_event(hwnd, &mut state.ui_tree, Event::Redraw { now });
 
-                    
-
                     match state.on_paint(hwnd) {
                         Ok(commands) => Some((
                             state.device_resources.clone(),
@@ -1339,13 +1335,16 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         };
                         rt.Clear(Some(&white));
 
-                        CommandExecutor::execute_commands(
+                        let rc = client_rect(hwnd).unwrap();
+                        let bounds = RectDIP::from(hwnd, rc);
+                        CommandExecutor::execute_commands_with_bounds(
                             &Renderer {
                                 render_target: rt,
                                 brush,
                                 factory: &device_resources.d2d_factory,
                             },
                             &commands,
+                            Some(bounds),
                         )
                         .ok();
 

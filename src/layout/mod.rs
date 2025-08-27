@@ -1,7 +1,6 @@
 use std::{collections::HashMap, time::Instant};
 
 use slotmap::SlotMap;
-use windows_numerics::Vector2;
 
 use crate::{
     HookState, Shell,
@@ -103,18 +102,9 @@ pub fn paint(
     ui_tree: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
-    offset_x: f32,
-    offset_y: f32,
 ) -> DrawCommandList {
     // Generate commands first
-    generate_paint_commands(
-        shell,
-        ui_tree,
-        root,
-        scroll_state_manager,
-        offset_x,
-        offset_y,
-    )
+    generate_paint_commands(shell, ui_tree, root, scroll_state_manager)
 }
 
 pub fn generate_paint_commands(
@@ -122,8 +112,6 @@ pub fn generate_paint_commands(
     ui_tree: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
-    offset_x: f32,
-    offset_y: f32,
 ) -> DrawCommandList {
     let recorder = CommandRecorder::new();
     let now = Instant::now();
@@ -141,8 +129,8 @@ pub fn generate_paint_commands(
             |ui_tree, key, _parent| {
                 let mut recorder = recorder.borrow_mut();
                 let element = &mut ui_tree.slots[key];
-                let x = element.x + offset_x;
-                let y = element.y + offset_y;
+                let x = element.x;
+                let y = element.y;
                 let width = element.computed_width;
                 let height = element.computed_height;
 
@@ -209,7 +197,7 @@ pub fn generate_paint_commands(
                             let color = element.color.unwrap_or(0x000000FF);
 
                             recorder.draw_text(
-                                Vector2 { X: x, Y: y },
+                                &bounds.content_box,
                                 layout.as_ref().unwrap(),
                                 color,
                             );
@@ -267,14 +255,20 @@ pub fn generate_paint_commands(
                             recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
                         }
 
-                        recorder.pop_clip();
+                        if element.border_radius.is_some() {
+                            // Use layer with rounded rectangle geometry for clipping
+                            recorder.pop_rounded_clip();
+                        } else {
+                            // Use regular axis-aligned clipping for non-rounded elements
+                            recorder.pop_axis_aligned_clip();
+                        }
                     }
 
                     // Draw element border after content and scrollbars, and after popping clip
                     // so that Outset borders render outside the element bounds.
                     if let Some(border) = &element.border {
-                        let x = element.x + offset_x;
-                        let y = element.y + offset_y;
+                        let x = element.x;
+                        let y = element.y;
                         let width = element.computed_width;
                         let height = element.computed_height;
                         let element_rect = RectDIP {
@@ -291,7 +285,6 @@ pub fn generate_paint_commands(
     }
 
     // Extract commands from the recorder
-    
 
     std::rc::Rc::try_unwrap(recorder)
         .map_err(|_| "Failed to unwrap recorder")

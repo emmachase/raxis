@@ -1,3 +1,4 @@
+use crate::gfx::RectDIP;
 use crate::gfx::draw_commands::{DrawCommand, DrawCommandList};
 use crate::widgets::Renderer;
 use std::mem::ManuallyDrop;
@@ -8,21 +9,166 @@ use windows::Win32::Graphics::Direct2D::{
 use windows::Win32::Graphics::Direct2D::{
     D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, ID2D1Geometry,
 };
-use windows_numerics::Matrix3x2;
+use windows_numerics::{Matrix3x2, Vector2};
 
 /// Executes drawing commands using a Direct2D renderer
 pub struct CommandExecutor;
 
 impl CommandExecutor {
-    /// Execute a list of drawing commands
+    /// Execute a list of drawing commands with optional screen bounds culling
     pub fn execute_commands(
         renderer: &Renderer,
         commands: &DrawCommandList,
     ) -> windows::core::Result<()> {
+        Self::execute_commands_with_bounds(renderer, commands, None)
+    }
+
+    /// Execute a list of drawing commands with screen bounds culling
+    pub fn execute_commands_with_bounds(
+        renderer: &Renderer,
+        commands: &DrawCommandList,
+        screen_bounds: Option<RectDIP>,
+    ) -> windows::core::Result<()> {
+        let Some(bounds) = screen_bounds else {
+            // No culling if no bounds provided - execute all commands
+            for command in commands.iter() {
+                Self::execute_command(renderer, command)?;
+            }
+            return Ok(());
+        };
+
+        let mut skip_depth = 0u32; // Track depth of skipped clip regions
+
         for command in commands.iter() {
-            Self::execute_command(renderer, command)?;
+            let should_execute = if skip_depth > 0 {
+                // We're inside a skipped clip region - only process clip commands to track nesting
+                match command {
+                    DrawCommand::PushAxisAlignedClip { .. }
+                    | DrawCommand::PushRoundedClip { .. } => {
+                        skip_depth += 1;
+                        false // Skip the push
+                    }
+                    DrawCommand::PopAxisAlignedClip | DrawCommand::PopRoundedClip => {
+                        skip_depth -= 1;
+                        false // Skip the pop
+                    }
+                    _ => false, // Skip all other commands
+                }
+            } else {
+                // Not in a skipped region - check if we should execute normally
+                match command {
+                    DrawCommand::PushAxisAlignedClip { rect } => {
+                        if Self::rect_intersects_bounds(rect, &bounds) {
+                            true // Execute the push
+                        } else {
+                            skip_depth += 1; // Start skipping
+                            false // Skip this push
+                        }
+                    }
+                    DrawCommand::PushRoundedClip { rect, .. } => {
+                        if Self::rect_intersects_bounds(rect, &bounds) {
+                            true // Execute the push
+                        } else {
+                            skip_depth += 1; // Start skipping
+                            false // Skip this push
+                        }
+                    }
+                    _ => Self::should_execute_command_simple(command, &bounds),
+                }
+            };
+
+            if should_execute {
+                Self::execute_command(renderer, command)?;
+            }
         }
         Ok(())
+    }
+
+    /// Check if a non-clip command should be executed based on screen bounds
+    /// This excludes clip push/pop commands which are handled separately
+    fn should_execute_command_simple(command: &DrawCommand, bounds: &RectDIP) -> bool {
+        match command {
+            // Commands that always execute regardless of bounds
+            DrawCommand::Clear { .. } => true,
+            DrawCommand::PopAxisAlignedClip => true,
+            DrawCommand::PopRoundedClip => true,
+            DrawCommand::SetBrushColor { .. } => true,
+
+            // Commands with rectangles that can be culled
+            DrawCommand::FillRectangle { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
+            DrawCommand::FillRoundedRectangle { rect, .. } => {
+                Self::rect_intersects_bounds(rect, bounds)
+            }
+            DrawCommand::DrawBlurredShadow { rect, shadow, .. } => {
+                // Expand rect by shadow blur radius for proper culling
+                let expanded_rect = Self::expand_rect_for_shadow(rect, shadow.blur_radius);
+                Self::rect_intersects_bounds(&expanded_rect, bounds)
+            }
+            DrawCommand::DrawRectangleOutline {
+                rect, stroke_width, ..
+            } => {
+                // Expand rect by half stroke width on each side
+                let expanded_rect = Self::expand_rect_for_stroke(rect, *stroke_width);
+                Self::rect_intersects_bounds(&expanded_rect, bounds)
+            }
+            DrawCommand::DrawRoundedRectangleOutline {
+                rect, stroke_width, ..
+            } => {
+                let expanded_rect = Self::expand_rect_for_stroke(rect, *stroke_width);
+                Self::rect_intersects_bounds(&expanded_rect, bounds)
+            }
+            DrawCommand::DrawBorder { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
+
+            // Clip commands should not be processed here
+            DrawCommand::PushAxisAlignedClip { .. } => {
+                panic!("Clip push commands should be handled in execute_commands_with_bounds")
+            }
+            DrawCommand::PushRoundedClip { .. } => {
+                panic!("Clip push commands should be handled in execute_commands_with_bounds")
+            }
+
+            // Rectangle-based commands
+            DrawCommand::DrawText { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
+            DrawCommand::DrawCircleArc { center, radius, .. } => {
+                // Check if circle intersects with bounds
+                let circle_rect = RectDIP {
+                    x_dip: center.X - radius,
+                    y_dip: center.Y - radius,
+                    width_dip: radius * 2.0,
+                    height_dip: radius * 2.0,
+                };
+                Self::rect_intersects_bounds(&circle_rect, bounds)
+            }
+        }
+    }
+
+    /// Check if a rectangle intersects with screen bounds
+    fn rect_intersects_bounds(rect: &RectDIP, bounds: &RectDIP) -> bool {
+        !(rect.x_dip >= bounds.x_dip + bounds.width_dip
+            || rect.x_dip + rect.width_dip <= bounds.x_dip
+            || rect.y_dip >= bounds.y_dip + bounds.height_dip
+            || rect.y_dip + rect.height_dip <= bounds.y_dip)
+    }
+
+    /// Expand rectangle for shadow blur radius
+    fn expand_rect_for_shadow(rect: &RectDIP, blur_radius: f32) -> RectDIP {
+        RectDIP {
+            x_dip: rect.x_dip - blur_radius,
+            y_dip: rect.y_dip - blur_radius,
+            width_dip: rect.width_dip + blur_radius * 2.0,
+            height_dip: rect.height_dip + blur_radius * 2.0,
+        }
+    }
+
+    /// Expand rectangle for stroke width
+    fn expand_rect_for_stroke(rect: &RectDIP, stroke_width: f32) -> RectDIP {
+        let half_stroke = stroke_width * 0.5;
+        RectDIP {
+            x_dip: rect.x_dip - half_stroke,
+            y_dip: rect.y_dip - half_stroke,
+            width_dip: rect.width_dip + stroke_width,
+            height_dip: rect.height_dip + stroke_width,
+        }
     }
 
     /// Execute a single drawing command
@@ -60,7 +206,7 @@ impl CommandExecutor {
                 }
 
                 DrawCommand::DrawText {
-                    position,
+                    rect,
                     layout,
                     color,
                 } => {
@@ -70,8 +216,12 @@ impl CommandExecutor {
                         b: color.b,
                         a: color.a,
                     });
+                    let position = Vector2 {
+                        X: rect.x_dip,
+                        Y: rect.y_dip,
+                    };
                     renderer.render_target.DrawTextLayout(
-                        *position,
+                        position,
                         layout,
                         renderer.brush,
                         None,
@@ -130,10 +280,11 @@ impl CommandExecutor {
                     }
                 }
 
-                DrawCommand::PopClip => {
-                    // Try to pop layer first, then axis-aligned clip
-                    // Note: In a real implementation, we'd need to track what type of clip was pushed
-                    // For now, we'll assume the caller manages this correctly
+                DrawCommand::PopAxisAlignedClip => {
+                    renderer.render_target.PopAxisAlignedClip();
+                }
+
+                DrawCommand::PopRoundedClip => {
                     renderer.render_target.PopLayer();
                 }
 

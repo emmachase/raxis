@@ -10,9 +10,9 @@ use windows::Win32::Graphics::DirectWrite::{
 };
 use windows::core::Result;
 use windows_core::{PCWSTR, w};
-use windows_numerics::Vector2;
 
 use crate::gfx::{PointDIP, RectDIP};
+use crate::layout::model::{Border, BorderRadius};
 use crate::widgets::{Bounds, Color};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
@@ -26,12 +26,143 @@ pub enum ButtonState {
     Disabled,
 }
 
+/// Style configuration for a button in a specific state
+#[derive(Debug, Clone)]
+pub struct ButtonStyle {
+    pub bg_color: Color,
+    pub text_color: Color,
+    pub border: Option<Border>,
+    pub border_radius: Option<BorderRadius>,
+}
+
+impl Default for ButtonStyle {
+    fn default() -> Self {
+        Self {
+            bg_color: Color {
+                r: 0.9,
+                g: 0.9,
+                b: 0.9,
+                a: 1.0,
+            },
+            text_color: Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
+            border: Some(Border {
+                width: 1.0,
+                color: Color {
+                    r: 0.7,
+                    g: 0.7,
+                    b: 0.7,
+                    a: 1.0,
+                },
+                ..Default::default()
+            }),
+            border_radius: None,
+        }
+    }
+}
+
+/// Complete style set for all button states
+#[derive(Debug, Clone)]
+pub struct ButtonStyleSet {
+    pub normal: ButtonStyle,
+    pub hover: ButtonStyle,
+    pub pressed: ButtonStyle,
+    pub disabled: ButtonStyle,
+}
+
+impl Default for ButtonStyleSet {
+    fn default() -> Self {
+        Self {
+            normal: ButtonStyle::default(),
+            hover: ButtonStyle {
+                bg_color: Color {
+                    r: 0.85,
+                    g: 0.85,
+                    b: 0.85,
+                    a: 1.0,
+                },
+                text_color: Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                },
+                border: Some(Border {
+                    width: 1.0,
+                    color: Color {
+                        r: 0.6,
+                        g: 0.6,
+                        b: 0.6,
+                        a: 1.0,
+                    },
+                    ..Default::default()
+                }),
+                border_radius: None,
+            },
+            pressed: ButtonStyle {
+                bg_color: Color {
+                    r: 0.75,
+                    g: 0.75,
+                    b: 0.75,
+                    a: 1.0,
+                },
+                text_color: Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                },
+                border: Some(Border {
+                    width: 1.0,
+                    color: Color {
+                        r: 0.5,
+                        g: 0.5,
+                        b: 0.5,
+                        a: 1.0,
+                    },
+                    ..Default::default()
+                }),
+                border_radius: None,
+            },
+            disabled: ButtonStyle {
+                bg_color: Color {
+                    r: 0.95,
+                    g: 0.95,
+                    b: 0.95,
+                    a: 1.0,
+                },
+                text_color: Color {
+                    r: 0.6,
+                    g: 0.6,
+                    b: 0.6,
+                    a: 1.0,
+                },
+                border: Some(Border {
+                    width: 1.0,
+                    color: Color {
+                        r: 0.8,
+                        g: 0.8,
+                        b: 0.8,
+                        a: 1.0,
+                    },
+                    ..Default::default()
+                }),
+                border_radius: None,
+            },
+        }
+    }
+}
+
 /// Button widget with text label and click handling
-// #[derive()]
 pub struct Button {
     pub text: String,
     pub enabled: bool,
     pub on_click: Option<Box<dyn Fn()>>,
+    pub styles: ButtonStyleSet,
 }
 
 impl Debug for Button {
@@ -49,6 +180,7 @@ impl Button {
             text: text.into(),
             enabled: true,
             on_click: None,
+            styles: ButtonStyleSet::default(),
         }
     }
 
@@ -59,6 +191,58 @@ impl Button {
 
     pub fn disabled(mut self) -> Self {
         self.enabled = false;
+        self
+    }
+
+    pub fn with_styles(mut self, styles: ButtonStyleSet) -> Self {
+        self.styles = styles;
+        self
+    }
+
+    pub fn with_bg_color(mut self, color: Color) -> Self {
+        self.styles.normal.bg_color = color;
+        self.styles.hover.bg_color = Color {
+            r: color.r * 0.9,
+            g: color.g * 0.9,
+            b: color.b * 0.9,
+            a: color.a,
+        };
+        self.styles.pressed.bg_color = Color {
+            r: color.r * 0.8,
+            g: color.g * 0.8,
+            b: color.b * 0.8,
+            a: color.a,
+        };
+        self
+    }
+
+    pub fn with_border_radius(mut self, radius: f32) -> Self {
+        let border_radius = BorderRadius::all(radius);
+        self.styles.normal.border_radius = Some(border_radius);
+        self.styles.hover.border_radius = Some(border_radius);
+        self.styles.pressed.border_radius = Some(border_radius);
+        self.styles.disabled.border_radius = Some(border_radius);
+        self
+    }
+
+    pub fn with_border(mut self, width: f32, color: Color) -> Self {
+        let border = Border {
+            width,
+            color,
+            ..Default::default()
+        };
+        self.styles.normal.border = Some(border.clone());
+        self.styles.hover.border = Some(border.clone());
+        self.styles.pressed.border = Some(border.clone());
+        self.styles.disabled.border = Some(border);
+        self
+    }
+
+    pub fn with_no_border(mut self) -> Self {
+        self.styles.normal.border = None;
+        self.styles.hover.border = None;
+        self.styles.pressed.border = None;
+        self.styles.disabled.border = None;
         self
     }
 }
@@ -139,88 +323,12 @@ impl ButtonWidgetState {
         Ok(())
     }
 
-    fn get_button_colors(&self) -> (Color, Color, Color) {
+    fn get_current_style<'a>(&self, styles: &'a ButtonStyleSet) -> &'a ButtonStyle {
         match self.state {
-            ButtonState::Normal => (
-                Color {
-                    r: 0.9,
-                    g: 0.9,
-                    b: 0.9,
-                    a: 1.0,
-                }, // Background
-                Color {
-                    r: 0.7,
-                    g: 0.7,
-                    b: 0.7,
-                    a: 1.0,
-                }, // Border
-                Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                }, // Text
-            ),
-            ButtonState::Hover => (
-                Color {
-                    r: 0.85,
-                    g: 0.85,
-                    b: 0.85,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.6,
-                    g: 0.6,
-                    b: 0.6,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                },
-            ),
-            ButtonState::Pressed => (
-                Color {
-                    r: 0.75,
-                    g: 0.75,
-                    b: 0.75,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.5,
-                    g: 0.5,
-                    b: 0.5,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                },
-            ),
-            ButtonState::Disabled => (
-                Color {
-                    r: 0.95,
-                    g: 0.95,
-                    b: 0.95,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.8,
-                    g: 0.8,
-                    b: 0.8,
-                    a: 1.0,
-                },
-                Color {
-                    r: 0.6,
-                    g: 0.6,
-                    b: 0.6,
-                    a: 1.0,
-                },
-            ),
+            ButtonState::Normal => &styles.normal,
+            ButtonState::Hover => &styles.hover,
+            ButtonState::Pressed => &styles.pressed,
+            ButtonState::Disabled => &styles.disabled,
         }
     }
 
@@ -228,32 +336,41 @@ impl ButtonWidgetState {
         &self,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: RectDIP,
+        style: &ButtonStyle,
     ) {
-        let (bg_color, border_color, _) = self.get_button_colors();
-
-        // Draw button background
-        recorder.fill_rectangle(&bounds, bg_color);
+        // Draw button background with border radius support
+        if let Some(border_radius) = &style.border_radius {
+            recorder.fill_rounded_rectangle(&bounds, border_radius, style.bg_color);
+        } else {
+            recorder.fill_rectangle(&bounds, style.bg_color);
+        }
 
         // Draw button border
-        let border_width = 1.0;
-        recorder.draw_rectangle(&bounds, border_color, border_width);
+        if let Some(border) = &style.border {
+            if let Some(border_radius) = &style.border_radius {
+                recorder.draw_rounded_rectangle_stroked(
+                    &bounds,
+                    border_radius,
+                    border.color,
+                    border.width,
+                );
+            } else {
+                recorder.draw_rectangle(&bounds, border.color, border.width);
+            }
+        }
     }
 
     fn draw_button_text(
         &self,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: RectDIP,
+        style: &ButtonStyle,
     ) -> Result<()> {
         if let Some(layout) = &self.text_layout {
-            let (_, _, text_color) = self.get_button_colors();
-
             recorder.draw_text(
-                Vector2 {
-                    X: bounds.x_dip,
-                    Y: bounds.y_dip,
-                },
+                &bounds,
                 layout,
-                text_color,
+                style.text_color,
             );
         }
         Ok(())
@@ -381,11 +498,14 @@ impl Widget for Button {
         // Update visual state
         state.update_state(self.enabled);
 
+        // Get current style based on button state
+        let current_style = state.get_current_style(&self.styles);
+
         // Draw button background and border
-        state.draw_button_background(recorder, bounds.border_box);
+        state.draw_button_background(recorder, bounds.border_box, current_style);
 
         // Draw button text
-        let _ = state.draw_button_text(recorder, bounds.border_box);
+        let _ = state.draw_button_text(recorder, bounds.border_box, current_style);
     }
 
     fn cursor(

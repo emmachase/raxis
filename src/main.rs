@@ -6,7 +6,7 @@ use raxis::{
     HookManager,
     layout::model::{
         Border, BorderDashCap, BorderDashStyle, BorderPlacement, BorderRadius, BoxAmount,
-        Direction, DropShadow, Element, ElementContent, ScrollConfig, Sizing, VerticalAlignment,
+        Direction, Element, ElementContent, ScrollConfig, Sizing, VerticalAlignment,
     },
     util::unique::combine_id,
     w_id,
@@ -107,7 +107,7 @@ fn border_demos() -> Element {
         padding: BoxAmount::all(12.0),
         background_color: Some(0xFFFFFFFF),
         border_radius: Some(BorderRadius::all(6.0)),
-        drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
+        // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
         children: vec![
             // Title
             Element {
@@ -239,8 +239,7 @@ fn todo_app(mut hook: HookManager) -> Element {
                         }),
                         background_color: Some(0xFFFFFFFF),
                         border_radius: Some(BorderRadius::all(5.0)),
-                        drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
-
+                        // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
                         children: vec![Element {
                             id: Some(w_id!()),
                             width: Sizing::grow(),
@@ -265,25 +264,43 @@ fn todo_app(mut hook: HookManager) -> Element {
                         id: Some(w_id!()),
                         width: Sizing::fit(),
                         height: Sizing::fixed(40.0),
-                        drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
+                        border_radius: Some(BorderRadius::all(8.0)),
+                        // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
                         content: Some(ElementContent::Widget(Box::new(
-                            Button::new("Add".to_string()).with_click_handler({
-                                let todo_state = todo_state.clone();
-                                move || {
-                                    let mut state = todo_state.borrow_mut();
-                                    if !state.input_text.trim().is_empty() {
-                                        let id = state.next_id;
-                                        let text = state.input_text.clone();
-                                        state.items.push(TodoItem {
-                                            id,
-                                            text: text.trim().to_string(),
-                                            completed: false,
-                                        });
-                                        state.next_id += 1;
-                                        state.input_text.clear();
+                            Button::new("Add")
+                                .with_bg_color(Color {
+                                    r: 0.2,
+                                    g: 0.6,
+                                    b: 1.0,
+                                    a: 1.0,
+                                })
+                                .with_border_radius(8.0)
+                                .with_border(
+                                    1.0,
+                                    Color {
+                                        r: 0.1,
+                                        g: 0.4,
+                                        b: 0.8,
+                                        a: 1.0,
+                                    },
+                                )
+                                .with_click_handler({
+                                    let todo_state = todo_state.clone();
+                                    move || {
+                                        let mut state = todo_state.borrow_mut();
+                                        if !state.input_text.trim().is_empty() {
+                                            let id = state.next_id;
+                                            let text = state.input_text.clone();
+                                            state.items.push(TodoItem {
+                                                id,
+                                                text: text.trim().to_string(),
+                                                completed: false,
+                                            });
+                                            state.next_id += 1;
+                                            // state.input_text.clear();
+                                        }
                                     }
-                                }
-                            }),
+                                }),
                         ))),
                         ..Default::default()
                     },
@@ -325,7 +342,7 @@ fn todo_item(
         height: Sizing::fit(),
         background_color: Some(0xFFFFFFFF),
         border_radius: Some(BorderRadius::all(8.0)),
-        drop_shadow: Some(DropShadow::simple(1.0, 2.0).blur_radius(4.0)),
+        // drop_shadow: Some(DropShadow::simple(1.0, 2.0).blur_radius(4.0)),
         padding: BoxAmount::all(12.0),
         child_gap: 12.0,
         children: vec![
@@ -340,10 +357,44 @@ fn todo_item(
                     0xFFFFFFFF
                 }),
                 vertical_alignment: VerticalAlignment::Center,
-                border_radius: Some(BorderRadius::all(3.0)),
-                drop_shadow: Some(DropShadow::simple(0.5, 0.5).blur_radius(2.0)),
+                border_radius: Some(BorderRadius::all(4.0)),
+                // drop_shadow: Some(DropShadow::simple(0.5, 0.5).blur_radius(2.0)),
                 content: Some(ElementContent::Widget(Box::new(
-                    Button::new(if item.completed { "✓" } else { "" }.to_string())
+                    Button::new(if item.completed { "✓" } else { "" })
+                        .with_bg_color(if item.completed {
+                            Color {
+                                r: 0.3,
+                                g: 0.7,
+                                b: 0.3,
+                                a: 1.0,
+                            } // Green when completed
+                        } else {
+                            Color {
+                                r: 0.95,
+                                g: 0.95,
+                                b: 0.95,
+                                a: 1.0,
+                            } // Light gray when not completed
+                        })
+                        .with_border_radius(4.0)
+                        .with_border(
+                            1.0,
+                            if item.completed {
+                                Color {
+                                    r: 0.2,
+                                    g: 0.5,
+                                    b: 0.2,
+                                    a: 1.0,
+                                }
+                            } else {
+                                Color {
+                                    r: 0.8,
+                                    g: 0.8,
+                                    b: 0.8,
+                                    a: 1.0,
+                                }
+                            },
+                        )
                         .with_click_handler({
                             let todo_state = todo_state.clone();
                             let item_id = item.id;
@@ -376,14 +427,31 @@ fn todo_item(
                 height: Sizing::fit(),
                 vertical_alignment: VerticalAlignment::Center,
                 content: Some(ElementContent::Widget(Box::new(
-                    Button::new("✕".to_string()).with_click_handler({
-                        let todo_state = todo_state.clone();
-                        let item_id = item.id;
-                        move || {
-                            let mut state = todo_state.borrow_mut();
-                            state.items.retain(|t| t.id != item_id);
-                        }
-                    }),
+                    Button::new("✕")
+                        .with_bg_color(Color {
+                            r: 0.9,
+                            g: 0.3,
+                            b: 0.3,
+                            a: 1.0,
+                        })
+                        .with_border_radius(12.0)
+                        .with_border(
+                            1.0,
+                            Color {
+                                r: 0.7,
+                                g: 0.2,
+                                b: 0.2,
+                                a: 1.0,
+                            },
+                        )
+                        .with_click_handler({
+                            let todo_state = todo_state.clone();
+                            let item_id = item.id;
+                            move || {
+                                let mut state = todo_state.borrow_mut();
+                                state.items.retain(|t| t.id != item_id);
+                            }
+                        }),
                 ))),
                 ..Default::default()
             },
