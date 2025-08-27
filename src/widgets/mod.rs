@@ -136,16 +136,25 @@ pub struct Color {
 
 impl Default for Color {
     fn default() -> Self {
-        BLACK
+        Color::BLACK
     }
 }
 
-pub const BLACK: Color = Color {
-    r: 0.0,
-    g: 0.0,
-    b: 0.0,
-    a: 1.0,
-};
+impl Color {
+    pub const BLACK: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+
+    pub const WHITE: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+}
 
 impl From<u32> for Color {
     fn from(color: u32) -> Self {

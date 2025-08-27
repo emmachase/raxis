@@ -3,13 +3,6 @@ use std::fmt::Debug;
 use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
-    DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, IDWriteFactory,
-    IDWriteTextFormat, IDWriteTextLayout,
-};
-use windows::core::Result;
-use windows_core::{PCWSTR, w};
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::model::{Border, BorderRadius};
@@ -159,7 +152,6 @@ impl Default for ButtonStyleSet {
 
 /// Button widget with text label and click handling
 pub struct Button {
-    pub text: String,
     pub enabled: bool,
     pub on_click: Option<Box<dyn Fn()>>,
     pub styles: ButtonStyleSet,
@@ -168,16 +160,14 @@ pub struct Button {
 impl Debug for Button {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Button")
-            .field("text", &self.text)
             .field("enabled", &self.enabled)
             .finish()
     }
 }
 
 impl Button {
-    pub fn new(text: impl Into<String>) -> Self {
+    pub fn new() -> Self {
         Self {
-            text: text.into(),
             enabled: true,
             on_click: None,
             styles: ButtonStyleSet::default(),
@@ -249,41 +239,24 @@ impl Button {
 
 impl Default for Button {
     fn default() -> Self {
-        Self::new("Button")
+        Self::new()
     }
 }
 
 struct ButtonWidgetState {
-    // DirectWrite objects for text rendering
-    dwrite_factory: IDWriteFactory,
-    text_format: IDWriteTextFormat,
-    text_layout: Option<IDWriteTextLayout>,
-    cached_text: String,
-
     // Button state
     state: ButtonState,
     is_mouse_down: bool,
     is_mouse_over: bool,
-
-    // Layout
-    bounds: RectDIP,
 }
 
 impl ButtonWidgetState {
-    pub fn new(dwrite_factory: IDWriteFactory, text_format: IDWriteTextFormat) -> Self {
-        let mut s = Self {
-            dwrite_factory,
-            text_format,
-            text_layout: None,
-            cached_text: String::new(),
+    pub fn new() -> Self {
+        Self {
             state: ButtonState::Normal,
             is_mouse_down: false,
             is_mouse_over: false,
-            bounds: RectDIP::default(),
-        };
-        s.build_text_layout("", s.bounds)
-            .expect("build text layout failed");
-        s
+        }
     }
 
     pub fn into_any(self) -> Box<dyn Any> {
@@ -300,27 +273,6 @@ impl ButtonWidgetState {
         } else {
             ButtonState::Normal
         };
-    }
-
-    fn build_text_layout(&mut self, text: &str, bounds: RectDIP) -> Result<()> {
-        if bounds != self.bounds || text != self.cached_text {
-            self.bounds = bounds;
-            self.cached_text = text.to_string();
-
-            let wtext: Vec<u16> = text.encode_utf16().collect();
-
-            unsafe {
-                let layout = self.dwrite_factory.CreateTextLayout(
-                    &wtext,
-                    &self.text_format,
-                    bounds.width_dip,
-                    bounds.height_dip,
-                )?;
-
-                self.text_layout = Some(layout);
-            }
-        }
-        Ok(())
     }
 
     fn get_current_style<'a>(&self, styles: &'a ButtonStyleSet) -> &'a ButtonStyle {
@@ -359,65 +311,24 @@ impl ButtonWidgetState {
             }
         }
     }
-
-    fn draw_button_text(
-        &self,
-        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
-        bounds: RectDIP,
-        style: &ButtonStyle,
-    ) -> Result<()> {
-        if let Some(layout) = &self.text_layout {
-            recorder.draw_text(
-                &bounds,
-                layout,
-                style.text_color,
-            );
-        }
-        Ok(())
-    }
 }
 
 impl Widget for Button {
-    fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
-        let text_format = unsafe {
-            let text_format = device_resources
-                .dwrite_factory
-                .CreateTextFormat(
-                    PCWSTR(w!("Segoe UI").as_ptr()),
-                    None,
-                    DWRITE_FONT_WEIGHT_REGULAR,
-                    DWRITE_FONT_STYLE_NORMAL,
-                    DWRITE_FONT_STRETCH_NORMAL,
-                    14.0,
-                    PCWSTR(w!("en-us").as_ptr()),
-                )
-                .unwrap();
-
-            text_format
-                .SetTextAlignment(DWRITE_TEXT_ALIGNMENT_CENTER)
-                .unwrap();
-            text_format
-                .SetParagraphAlignment(DWRITE_PARAGRAPH_ALIGNMENT_CENTER)
-                .unwrap();
-            text_format
-        };
-
-        Some(
-            ButtonWidgetState::new(device_resources.dwrite_factory.clone(), text_format).into_any(),
-        )
+    fn state(&self, _device_resources: &crate::runtime::DeviceResources) -> super::State {
+        Some(ButtonWidgetState::new().into_any())
     }
 
     fn limits_x(&self, _instance: &mut Instance) -> super::limit_response::SizingForX {
         super::limit_response::SizingForX {
-            min_width: 80.0,
-            preferred_width: 80.0,
+            min_width: 0.0,
+            preferred_width: 0.0,
         }
     }
 
     fn limits_y(&self, _instance: &mut Instance, _width: f32) -> super::limit_response::SizingForY {
         super::limit_response::SizingForY {
-            min_height: 32.0,
-            preferred_height: 32.0,
+            min_height: 0.0,
+            preferred_height: 0.0,
         }
     }
 
@@ -492,9 +403,6 @@ impl Widget for Button {
     ) {
         let state = with_state!(mut instance as ButtonWidgetState);
 
-        // Build text layout if needed
-        let _ = state.build_text_layout(&self.text, bounds.border_box);
-
         // Update visual state
         state.update_state(self.enabled);
 
@@ -503,9 +411,6 @@ impl Widget for Button {
 
         // Draw button background and border
         state.draw_button_background(recorder, bounds.border_box, current_style);
-
-        // Draw button text
-        let _ = state.draw_button_text(recorder, bounds.border_box, current_style);
     }
 
     fn cursor(

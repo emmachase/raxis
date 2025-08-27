@@ -22,7 +22,8 @@ use crate::gfx::{PointDIP, RectDIP};
 use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
-    Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
+    Bounds, Color, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget,
+    limit_response,
 };
 use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
@@ -995,7 +996,7 @@ impl WidgetState {
                         width_dip: CARET_WIDTH,
                         height_dip: m.height,
                     };
-                    recorder.fill_rectangle(&caret_rect, crate::widgets::BLACK);
+                    recorder.fill_rectangle(&caret_rect, Color::BLACK);
                 }
             } else {
                 // Draw caret if there's no selection (1 DIP wide bar)
@@ -1014,7 +1015,7 @@ impl WidgetState {
                             width_dip: CARET_WIDTH,
                             height_dip: m.height,
                         };
-                        recorder.fill_rectangle(&caret_rect, crate::widgets::BLACK);
+                        recorder.fill_rectangle(&caret_rect, Color::BLACK);
                     } else if sel_start == sel_end {
                         let mut x = 0.0f32;
                         let mut y = 0.0f32;
@@ -1033,7 +1034,7 @@ impl WidgetState {
                             width_dip: CARET_WIDTH,
                             height_dip: m.height,
                         };
-                        recorder.fill_rectangle(&caret_rect, crate::widgets::BLACK);
+                        recorder.fill_rectangle(&caret_rect, Color::BLACK);
                     }
                 }
             }

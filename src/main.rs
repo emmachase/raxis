@@ -14,7 +14,7 @@ use raxis::{
         Color,
         button::Button,
         spinner::Spinner,
-        text::{ParagraphAlignment, Text},
+        text::{ParagraphAlignment, Text, TextAlignment},
         text_input::TextInput,
     },
 };
@@ -106,6 +106,16 @@ fn border_demos() -> Element {
         child_gap: 10.0,
         padding: BoxAmount::all(12.0),
         background_color: Some(0xFFFFFFFF),
+        border: Some(Border {
+            width: 1.0,
+            color: Color {
+                r: 0.85,
+                g: 0.85,
+                b: 0.85,
+                a: 1.0,
+            },
+            ..Default::default()
+        }),
         border_radius: Some(BorderRadius::all(6.0)),
         // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
         children: vec![
@@ -149,6 +159,15 @@ fn border_demos() -> Element {
                     demo_box("Dashed", dashed, Some(BorderRadius::tl_br(8.0))),
                     demo_box("Dotted", dotted, Some(BorderRadius::tr_bl(8.0))),
                     demo_box("DashDot", dash_dot, Some(BorderRadius::top(8.0))),
+                ],
+                ..Default::default()
+            },
+            Element {
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 10.0,
+                children: vec![
                     demo_box("DashDotDot", dash_dot_dot, Some(BorderRadius::bottom(8.0))),
                     demo_box("Custom", custom, None),
                 ],
@@ -239,6 +258,16 @@ fn todo_app(mut hook: HookManager) -> Element {
                         }),
                         background_color: Some(0xFFFFFFFF),
                         border_radius: Some(BorderRadius::all(5.0)),
+                        border: Some(Border {
+                            width: 1.0,
+                            color: Color {
+                                r: 0.85,
+                                g: 0.85,
+                                b: 0.85,
+                                a: 1.0,
+                            },
+                            ..Default::default()
+                        }),
                         // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
                         children: vec![Element {
                             id: Some(w_id!()),
@@ -267,7 +296,7 @@ fn todo_app(mut hook: HookManager) -> Element {
                         border_radius: Some(BorderRadius::all(8.0)),
                         // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
                         content: Some(ElementContent::Widget(Box::new(
-                            Button::new("Add")
+                            Button::new()
                                 .with_bg_color(Color {
                                     r: 0.2,
                                     g: 0.6,
@@ -302,6 +331,23 @@ fn todo_app(mut hook: HookManager) -> Element {
                                     }
                                 }),
                         ))),
+
+                        children: vec![Element {
+                            id: Some(w_id!()),
+                            width: Sizing::Grow {
+                                min: 80.0,
+                                max: f32::INFINITY,
+                            },
+                            height: Sizing::grow(),
+                            content: Some(ElementContent::Widget(Box::new(
+                                Text::new("Add")
+                                    .with_paragraph_alignment(ParagraphAlignment::Center)
+                                    .with_text_alignment(TextAlignment::Center)
+                                    .with_color(Color::WHITE),
+                            ))),
+                            ..Default::default()
+                        }],
+
                         ..Default::default()
                     },
                 ],
@@ -341,6 +387,16 @@ fn todo_item(
         width: Sizing::grow(),
         height: Sizing::fit(),
         background_color: Some(0xFFFFFFFF),
+        border: Some(Border {
+            width: 1.0,
+            color: Color {
+                r: 0.85,
+                g: 0.85,
+                b: 0.85,
+                a: 1.0,
+            },
+            ..Default::default()
+        }),
         border_radius: Some(BorderRadius::all(8.0)),
         // drop_shadow: Some(DropShadow::simple(1.0, 2.0).blur_radius(4.0)),
         padding: BoxAmount::all(12.0),
@@ -360,7 +416,7 @@ fn todo_item(
                 border_radius: Some(BorderRadius::all(4.0)),
                 // drop_shadow: Some(DropShadow::simple(0.5, 0.5).blur_radius(2.0)),
                 content: Some(ElementContent::Widget(Box::new(
-                    Button::new(if item.completed { "✓" } else { "" })
+                    Button::new()
                         .with_bg_color(if item.completed {
                             Color {
                                 r: 0.3,
@@ -407,6 +463,19 @@ fn todo_item(
                             }
                         }),
                 ))),
+
+                children: vec![Element {
+                    id: Some(combine_id(w_id!(), item.id)),
+                    width: Sizing::grow(),
+                    height: Sizing::fit(),
+                    content: Some(ElementContent::Widget(Box::new(
+                        Text::new(if item.completed { "✓" } else { "" })
+                            .with_paragraph_alignment(ParagraphAlignment::Center)
+                            .with_text_alignment(TextAlignment::Center),
+                    ))),
+                    ..Default::default()
+                }],
+
                 ..Default::default()
             },
             // Todo text
@@ -427,14 +496,14 @@ fn todo_item(
                 height: Sizing::fit(),
                 vertical_alignment: VerticalAlignment::Center,
                 content: Some(ElementContent::Widget(Box::new(
-                    Button::new("✕")
+                    Button::new()
                         .with_bg_color(Color {
                             r: 0.9,
                             g: 0.3,
                             b: 0.3,
                             a: 1.0,
                         })
-                        .with_border_radius(12.0)
+                        .with_border_radius(4.0)
                         .with_border(
                             1.0,
                             Color {
@@ -453,6 +522,26 @@ fn todo_item(
                             }
                         }),
                 ))),
+
+                children: vec![Element {
+                    id: Some(combine_id(w_id!(), item.id)),
+                    width: Sizing::Grow {
+                        min: 32.0,
+                        max: f32::INFINITY,
+                    },
+                    height: Sizing::Grow {
+                        min: 32.0,
+                        max: f32::INFINITY,
+                    },
+                    content: Some(ElementContent::Widget(Box::new(
+                        Text::new("✕")
+                            .with_paragraph_alignment(ParagraphAlignment::Center)
+                            .with_text_alignment(TextAlignment::Center)
+                            .with_color(Color::WHITE),
+                    ))),
+                    ..Default::default()
+                }],
+
                 ..Default::default()
             },
         ],
