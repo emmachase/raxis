@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_PARAGRAPH_ALIGNMENT_CENTER, DWRITE_TEXT_ALIGNMENT_CENTER, IDWriteFactory,
@@ -14,7 +13,8 @@ use windows_core::{PCWSTR, w};
 use windows_numerics::Vector2;
 
 use crate::gfx::{PointDIP, RectDIP};
-use crate::widgets::{Bounds, Color, Instance, Renderer, Widget};
+use crate::widgets::{Bounds, Color};
+use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
 
 /// Button states for visual feedback
@@ -224,41 +224,37 @@ impl ButtonWidgetState {
         }
     }
 
-    fn draw_button_background(&self, renderer: &Renderer, bounds: RectDIP) {
+    fn draw_button_background(
+        &self,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        bounds: RectDIP,
+    ) {
         let (bg_color, border_color, _) = self.get_button_colors();
 
         // Draw button background
-        renderer.fill_rectangle(&bounds, bg_color);
+        recorder.fill_rectangle(&bounds, bg_color);
 
-        // Draw border (simple 1px border by drawing slightly smaller rect)
+        // Draw button border
         let border_width = 1.0;
-        renderer.draw_rectangle(&bounds, border_color, border_width);
+        recorder.draw_rectangle(&bounds, border_color, border_width);
     }
 
-    fn draw_button_text(&self, renderer: &Renderer, bounds: RectDIP) -> Result<()> {
+    fn draw_button_text(
+        &self,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        bounds: RectDIP,
+    ) -> Result<()> {
         if let Some(layout) = &self.text_layout {
             let (_, _, text_color) = self.get_button_colors();
 
-            unsafe {
-                renderer.brush.SetColor(&D2D1_COLOR_F {
-                    r: text_color.r,
-                    g: text_color.g,
-                    b: text_color.b,
-                    a: text_color.a,
-                });
-
-                renderer.render_target.DrawTextLayout(
-                    Vector2 {
-                        X: bounds.x_dip,
-                        Y: bounds.y_dip,
-                    },
-                    layout,
-                    renderer.brush,
-                    None,
-                    0,
-                    windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                );
-            }
+            recorder.draw_text(
+                Vector2 {
+                    X: bounds.x_dip,
+                    Y: bounds.y_dip,
+                },
+                layout,
+                text_color,
+            );
         }
         Ok(())
     }
@@ -373,7 +369,7 @@ impl Widget for Button {
         &mut self,
         instance: &mut Instance,
         _shell: &Shell,
-        renderer: &Renderer,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         _now: Instant,
     ) {
@@ -386,10 +382,10 @@ impl Widget for Button {
         state.update_state(self.enabled);
 
         // Draw button background and border
-        state.draw_button_background(renderer, bounds.border_box);
+        state.draw_button_background(recorder, bounds.border_box);
 
         // Draw button text
-        let _ = state.draw_button_text(renderer, bounds.border_box);
+        let _ = state.draw_button_text(recorder, bounds.border_box);
     }
 
     fn cursor(

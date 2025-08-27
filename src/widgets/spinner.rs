@@ -1,15 +1,11 @@
 use std::{any::Any, time::Instant};
 
-use windows::Win32::Graphics::Direct2D::{
-    Common::D2D1_COLOR_F, ID2D1DeviceContext7, ID2D1Factory, ID2D1SolidColorBrush,
-};
 use windows_numerics::Vector2;
 
 use crate::{
     Shell,
-    gfx::circle_arc::CircleArc,
     math::easing::Easing,
-    widgets::{Bounds, Instance, Renderer, Widget},
+    widgets::{Bounds, Instance, Widget},
     with_state,
 };
 
@@ -28,6 +24,21 @@ pub struct Spinner {
     grow_period_s: f32, // full grow+shrink cycle duration
     extent: f32,        // min fill fraction (0..0.5); max is 1 - extent
     easing: Easing,     // easing for the phase interpolation
+}
+
+impl Default for Spinner {
+    fn default() -> Self {
+        Self {
+            center: Vector2 { X: 0.0, Y: 0.0 },
+            radius: 50.0,
+            stroke: 2.0,
+
+            base_speed_dps: 300.0,
+            grow_period_s: 1.6,
+            extent: 0.05,
+            easing: Easing::EaseInOut,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -79,10 +90,10 @@ impl Widget for Spinner {
     }
 
     fn paint(
-        &mut self, // TODO: this shouldnt need to be mut right
+        &mut self,
         instance: &mut Instance,
         _shell: &Shell,
-        renderer: &Renderer,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         now: Instant,
     ) {
@@ -95,11 +106,41 @@ impl Widget for Spinner {
         // self.set_layout(center, radius);
         self.center = center;
         state.update(self, now);
-        let _ = state.draw(
-            self,
-            renderer.factory,
-            renderer.render_target,
-            renderer.brush,
+
+        // Draw spinner using command recorder
+        let half = self.grow_period_s * 0.5;
+        let p = (state.phase_elapsed / half).clamp(0.0, 1.0);
+        let p = self.easing.apply(p);
+        let min = self.extent;
+        let max = 1.0 - self.extent;
+        let span = (max - min).max(0.0);
+        let fill_frac = if state.is_growing {
+            min + span * p
+        } else {
+            max - span * p
+        };
+
+        let (begin_deg, end_deg) = if state.is_growing {
+            let begin = state.anchor_deg;
+            (begin, begin + 360.0 * fill_frac)
+        } else {
+            let end = state.anchor_deg;
+            (end - 360.0 * fill_frac, end)
+        };
+
+        // Record circle arc drawing command
+        recorder.draw_circle_arc(
+            center,
+            self.radius - self.stroke * 0.5,
+            begin_deg,
+            end_deg,
+            self.stroke,
+            crate::widgets::Color {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 1.0,
+            },
         );
     }
 
@@ -169,52 +210,5 @@ impl WidgetState {
         while self.anchor_deg < 0.0 {
             self.anchor_deg += 360.0;
         }
-    }
-
-    pub fn draw(
-        &self,
-        config: &Spinner,
-        factory: &ID2D1Factory,
-        rt: &ID2D1DeviceContext7,
-        brush: &ID2D1SolidColorBrush,
-    ) -> windows::core::Result<()> {
-        let half = config.grow_period_s * 0.5;
-        let p = (self.phase_elapsed / half).clamp(0.0, 1.0);
-        let p = config.easing.apply(p);
-        let min = config.extent;
-        let max = 1.0 - config.extent;
-        let span = (max - min).max(0.0);
-        let fill_frac = if self.is_growing {
-            min + span * p
-        } else {
-            max - span * p
-        };
-
-        let (begin_deg, end_deg) = if self.is_growing {
-            let begin = self.anchor_deg;
-            (begin, begin + 360.0 * fill_frac)
-        } else {
-            let end = self.anchor_deg;
-            (end - 360.0 * fill_frac, end)
-        };
-
-        let arc = CircleArc::new(
-            config.center,
-            config.radius - config.stroke * 0.5,
-            begin_deg,
-            end_deg,
-        );
-        let geom = arc.paint(factory)?;
-        unsafe {
-            brush.SetColor(&D2D1_COLOR_F {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            });
-
-            rt.DrawGeometry(&geom, brush, config.stroke, None);
-        }
-        Ok(())
     }
 }

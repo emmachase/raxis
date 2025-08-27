@@ -3,7 +3,6 @@ use std::fmt::Debug;
 use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_METRICS,
@@ -14,7 +13,7 @@ use windows_core::{PCWSTR, w};
 use windows_numerics::Vector2;
 
 use crate::gfx::RectDIP;
-use crate::widgets::{Bounds, Color, Instance, Renderer, Widget};
+use crate::widgets::{Bounds, Color, Instance, Widget};
 use crate::{Shell, with_state};
 
 /// Text alignment options
@@ -416,7 +415,7 @@ impl Widget for Text {
         &mut self,
         instance: &mut Instance,
         _shell: &Shell,
-        renderer: &Renderer,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         _now: Instant,
     ) {
@@ -444,26 +443,14 @@ impl Widget for Text {
 
         // Draw the text
         if let Some(layout) = &state.text_layout {
-            unsafe {
-                renderer.brush.SetColor(&D2D1_COLOR_F {
-                    r: self.color.r,
-                    g: self.color.g,
-                    b: self.color.b,
-                    a: self.color.a,
-                });
-
-                renderer.render_target.DrawTextLayout(
-                    Vector2 {
-                        X: bounds.content_box.x_dip,
-                        Y: bounds.content_box.y_dip,
-                    },
-                    layout,
-                    renderer.brush,
-                    None,
-                    0,
-                    windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                );
-            }
+            recorder.draw_text(
+                Vector2 {
+                    X: bounds.content_box.x_dip,
+                    Y: bounds.content_box.y_dip,
+                },
+                layout,
+                self.color,
+            );
         }
     }
 

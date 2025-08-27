@@ -1,22 +1,17 @@
-use std::{collections::HashMap, mem::ManuallyDrop, time::Instant};
+use std::{collections::HashMap, time::Instant};
 
 use slotmap::SlotMap;
-use windows::Win32::Graphics::Direct2D::{
-    Common::{D2D_RECT_F, D2D1_COLOR_F},
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-    D2D1_LAYER_PARAMETERS1, ID2D1Geometry,
-};
-use windows_numerics::{Matrix3x2, Vector2};
+use windows_numerics::Vector2;
 
 use crate::{
     HookState, Shell,
-    gfx::RectDIP,
+    gfx::{RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList},
     layout::{
         model::{Axis, ElementContent, UIElement, UIKey},
         positioning::position_elements,
     },
     runtime::scroll::ScrollStateManager,
-    widgets::{Instance, Renderer},
+    widgets::Instance,
 };
 
 pub mod model;
@@ -104,154 +99,48 @@ pub const DEFAULT_SCROLLBAR_SIZE: f32 = 16.0;
 pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 
 pub fn paint(
-    // rt: &ID2D1HwndRenderTarget,
-    // brush: &ID2D1SolidColorBrush,
     shell: &Shell,
-    renderer: &Renderer,
     ui_tree: BorrowedUITree<'_>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
     offset_x: f32,
     offset_y: f32,
-) {
-    let now = Instant::now();
-
-    visitors::visit_dfs(
+) -> DrawCommandList {
+    // Generate commands first
+    generate_paint_commands(
+        shell,
         ui_tree,
         root,
-        |ui_tree, key, _parent| {
-            let element = &mut ui_tree.slots[key];
-            let x = element.x + offset_x;
-            let y = element.y + offset_y;
-            let width = element.computed_width;
-            let height = element.computed_height;
+        scroll_state_manager,
+        offset_x,
+        offset_y,
+    )
+}
 
-            let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
-            let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
+pub fn generate_paint_commands(
+    shell: &Shell,
+    ui_tree: BorrowedUITree<'_>,
+    root: UIKey,
+    scroll_state_manager: &mut ScrollStateManager,
+    offset_x: f32,
+    offset_y: f32,
+) -> DrawCommandList {
+    let recorder = CommandRecorder::new();
+    let now = Instant::now();
 
-            // Draw drop shadow first (behind the element)
-            if let Some(shadow) = &element.drop_shadow {
-                let element_rect = RectDIP {
-                    x_dip: x,
-                    y_dip: y,
-                    width_dip: width,
-                    height_dip: height,
-                };
+    // TODO: Modify visitor to allow handing this around
+    // rather than unnecessarily creating a Rc<Refcell<>>
+    let recorder = std::rc::Rc::new(std::cell::RefCell::new(recorder));
 
-                renderer.draw_blurred_shadow(&element_rect, shadow, element.border_radius.as_ref());
-            }
+    {
+        let recorder_clone = recorder.clone();
 
-            if let Some(color) = element.background_color {
-                let element_rect = RectDIP {
-                    x_dip: x,
-                    y_dip: y,
-                    width_dip: width,
-                    height_dip: height,
-                };
-
-                if let Some(border_radius) = &element.border_radius {
-                    // Use rounded rectangle rendering
-                    renderer.fill_rounded_rectangle(&element_rect, border_radius, color);
-                } else {
-                    // Use regular rectangle rendering
-                    renderer.fill_rectangle(&element_rect, color);
-                }
-            }
-
-            if has_scroll_x || has_scroll_y {
-                let clip_rect = D2D_RECT_F {
-                    left: x,
-                    top: y,
-                    right: x + width,
-                    bottom: y + height,
-                };
-
-                unsafe {
-                    if let Some(border_radius) = &element.border_radius {
-                        // Use layer with rounded rectangle geometry for clipping
-                        if let Ok(path_geometry) = renderer.factory.CreatePathGeometry() {
-                            if let Ok(sink) = path_geometry.Open() {
-                                let rect_dip = RectDIP {
-                                    x_dip: x,
-                                    y_dip: y,
-                                    width_dip: width,
-                                    height_dip: height,
-                                };
-                                renderer.create_rounded_rectangle_path(
-                                    &sink,
-                                    &rect_dip,
-                                    border_radius,
-                                );
-                                let _ = sink.Close();
-
-                                let layer_params = D2D1_LAYER_PARAMETERS1 {
-                                    contentBounds: clip_rect,
-                                    geometricMask: ManuallyDrop::new(Some(path_geometry.into())),
-                                    maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                    maskTransform: Matrix3x2::identity(),
-                                    opacity: 1.0,
-                                    opacityBrush: ManuallyDrop::new(None),
-                                    layerOptions: Default::default(),
-                                };
-
-                                if let Ok(layer) = renderer.render_target.CreateLayer(None) {
-                                    renderer.render_target.PushLayer(&layer_params, &layer);
-                                }
-
-                                // Why did they make it ManuallyDrop in the first place??? idk
-                                drop(ManuallyDrop::<Option<ID2D1Geometry>>::into_inner(
-                                    layer_params.geometricMask,
-                                ));
-                            }
-                        }
-                    } else {
-                        // Use regular axis-aligned clipping for non-rounded elements
-                        renderer
-                            .render_target
-                            .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
-                    }
-                }
-            }
-
-            // if let Some(layout) = element.content.as_ref().and_then(|c| c.layout.as_ref()) {
-            let bounds = element.bounds();
-            if let Some(content) = element.content.as_mut() {
-                match content {
-                    ElementContent::Text { layout, .. } => {
-                        let color = element.color.unwrap_or(0x000000FF);
-
-                        unsafe {
-                            renderer.brush.SetColor(&D2D1_COLOR_F {
-                                r: (0xFF & (color >> 24)) as f32 / 255.0,
-                                g: (0xFF & (color >> 16)) as f32 / 255.0,
-                                b: (0xFF & (color >> 8)) as f32 / 255.0,
-                                a: (0xFF & color) as f32 / 255.0,
-                            });
-                            renderer.render_target.DrawTextLayout(
-                                Vector2 { X: x, Y: y },
-                                layout.as_ref().unwrap(),
-                                renderer.brush,
-                                None,
-                                0,
-                                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
-                            );
-                        }
-                    }
-                    ElementContent::Widget(widget) => {
-                        let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
-
-                        widget.paint(
-                            state, shell, renderer, bounds, now,
-                            // 1.0 / 240.0, /* TODO: dt */
-                        );
-                    }
-                }
-            }
-        },
-        Some(
-            &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_>, key, _parent| {
-                let element = &slots[key];
-
+        visitors::visit_dfs(
+            ui_tree,
+            root,
+            |ui_tree, key, _parent| {
+                let mut recorder = recorder.borrow_mut();
+                let element = &mut ui_tree.slots[key];
                 let x = element.x + offset_x;
                 let y = element.y + offset_y;
                 let width = element.computed_width;
@@ -262,133 +151,153 @@ pub fn paint(
                 let has_scroll_y =
                     matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
 
-                if has_scroll_x || has_scroll_y {
-                    // Draw Scrollbars
-
-                    // Get scrollbar appearance from element
-                    let scroll_config = element.scroll.as_ref().unwrap();
-                    let scrollbar_track_color = scroll_config
-                        .scrollbar_track_color
-                        .unwrap_or(DEFAULT_SCROLLBAR_TRACK_COLOR);
-                    let scrollbar_thumb_color = scroll_config
-                        .scrollbar_thumb_color
-                        .unwrap_or(DEFAULT_SCROLLBAR_THUMB_COLOR);
-
-                    if let Some(ScrollbarGeom {
-                        track_rect,
-                        thumb_rect,
-                        ..
-                    }) = compute_scrollbar_geom(element, Axis::X, scroll_state_manager)
-                    {
-                        unsafe {
-                            // Draw track
-                            renderer.brush.SetColor(&D2D1_COLOR_F {
-                                r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
-                                g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
-                                b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
-                                a: (0xFF & scrollbar_track_color) as f32 / 255.0,
-                            });
-
-                            renderer.render_target.FillRectangle(
-                                &D2D_RECT_F {
-                                    left: track_rect.x_dip,
-                                    top: track_rect.y_dip,
-                                    right: track_rect.x_dip + track_rect.width_dip,
-                                    bottom: track_rect.y_dip + track_rect.height_dip,
-                                },
-                                renderer.brush,
-                            );
-
-                            // Draw thumb
-                            renderer.brush.SetColor(&D2D1_COLOR_F {
-                                r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
-                                g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
-                                b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
-                                a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
-                            });
-
-                            renderer.render_target.FillRectangle(
-                                &D2D_RECT_F {
-                                    left: thumb_rect.x_dip,
-                                    top: thumb_rect.y_dip,
-                                    right: thumb_rect.x_dip + thumb_rect.width_dip,
-                                    bottom: thumb_rect.y_dip + thumb_rect.height_dip,
-                                },
-                                renderer.brush,
-                            );
-                        }
-                    }
-
-                    if let Some(ScrollbarGeom {
-                        track_rect,
-                        thumb_rect,
-                        ..
-                    }) = compute_scrollbar_geom(element, Axis::Y, scroll_state_manager)
-                    {
-                        unsafe {
-                            // Draw track
-                            renderer.brush.SetColor(&D2D1_COLOR_F {
-                                r: (0xFF & (scrollbar_track_color >> 24)) as f32 / 255.0,
-                                g: (0xFF & (scrollbar_track_color >> 16)) as f32 / 255.0,
-                                b: (0xFF & (scrollbar_track_color >> 8)) as f32 / 255.0,
-                                a: (0xFF & scrollbar_track_color) as f32 / 255.0,
-                            });
-
-                            renderer.render_target.FillRectangle(
-                                &D2D_RECT_F {
-                                    left: track_rect.x_dip,
-                                    top: track_rect.y_dip,
-                                    right: track_rect.x_dip + track_rect.width_dip,
-                                    bottom: track_rect.y_dip + track_rect.height_dip,
-                                },
-                                renderer.brush,
-                            );
-
-                            // Draw thumb
-                            renderer.brush.SetColor(&D2D1_COLOR_F {
-                                r: (0xFF & (scrollbar_thumb_color >> 24)) as f32 / 255.0,
-                                g: (0xFF & (scrollbar_thumb_color >> 16)) as f32 / 255.0,
-                                b: (0xFF & (scrollbar_thumb_color >> 8)) as f32 / 255.0,
-                                a: (0xFF & scrollbar_thumb_color) as f32 / 255.0,
-                            });
-
-                            renderer.render_target.FillRectangle(
-                                &D2D_RECT_F {
-                                    left: thumb_rect.x_dip,
-                                    top: thumb_rect.y_dip,
-                                    right: thumb_rect.x_dip + thumb_rect.width_dip,
-                                    bottom: thumb_rect.y_dip + thumb_rect.height_dip,
-                                },
-                                renderer.brush,
-                            );
-                        }
-                    }
-
-                    unsafe {
-                        if element.border_radius.is_some() {
-                            // Pop layer for rounded clipping
-                            renderer.render_target.PopLayer();
-                        } else {
-                            // Pop axis-aligned clip for regular clipping
-                            renderer.render_target.PopAxisAlignedClip();
-                        }
-                    }
-                }
-
-                // Draw element border after content and scrollbars, and after popping clip
-                // so that Outset borders render outside the element bounds.
-                if let Some(border) = &element.border {
+                // Draw drop shadow first (behind the element)
+                if let Some(shadow) = &element.drop_shadow {
                     let element_rect = RectDIP {
                         x_dip: x,
                         y_dip: y,
                         width_dip: width,
                         height_dip: height,
                     };
-                    renderer.draw_border(&element_rect, element.border_radius.as_ref(), border);
+
+                    recorder.draw_blurred_shadow(
+                        &element_rect,
+                        shadow,
+                        element.border_radius.as_ref(),
+                    );
+                }
+
+                if let Some(color) = element.background_color {
+                    let element_rect = RectDIP {
+                        x_dip: x,
+                        y_dip: y,
+                        width_dip: width,
+                        height_dip: height,
+                    };
+
+                    if let Some(border_radius) = &element.border_radius {
+                        // Use rounded rectangle rendering
+                        recorder.fill_rounded_rectangle(&element_rect, border_radius, color);
+                    } else {
+                        // Use regular rectangle rendering
+                        recorder.fill_rectangle(&element_rect, color);
+                    }
+                }
+
+                if has_scroll_x || has_scroll_y {
+                    let clip_rect = RectDIP {
+                        x_dip: x,
+                        y_dip: y,
+                        width_dip: width,
+                        height_dip: height,
+                    };
+
+                    if let Some(border_radius) = &element.border_radius {
+                        // Use layer with rounded rectangle geometry for clipping
+                        recorder.push_rounded_clip(&clip_rect, border_radius);
+                    } else {
+                        // Use regular axis-aligned clipping for non-rounded elements
+                        recorder.push_axis_aligned_clip(&clip_rect);
+                    }
+                }
+
+                // if let Some(layout) = element.content.as_ref().and_then(|c| c.layout.as_ref()) {
+                let bounds = element.bounds();
+                if let Some(content) = element.content.as_mut() {
+                    match content {
+                        ElementContent::Text { layout, .. } => {
+                            let color = element.color.unwrap_or(0x000000FF);
+
+                            recorder.draw_text(
+                                Vector2 { X: x, Y: y },
+                                layout.as_ref().unwrap(),
+                                color,
+                            );
+                        }
+                        ElementContent::Widget(widget) => {
+                            let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
+                            widget.paint(
+                                state,
+                                shell,
+                                &mut recorder,
+                                bounds,
+                                now,
+                                // 1.0 / 240.0, /* TODO: dt */
+                            );
+                        }
+                    }
                 }
             },
-        ),
-    );
+            Some(
+                &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_>, key, _parent| {
+                    let mut recorder = recorder_clone.borrow_mut();
+                    let element = &slots[key];
+
+                    let has_scroll_x =
+                        matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
+                    let has_scroll_y =
+                        matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
+
+                    if has_scroll_x || has_scroll_y {
+                        let scroll_config = element.scroll.as_ref().unwrap();
+                        let scrollbar_track_color = scroll_config
+                            .scrollbar_track_color
+                            .unwrap_or(DEFAULT_SCROLLBAR_TRACK_COLOR);
+                        let scrollbar_thumb_color = scroll_config
+                            .scrollbar_thumb_color
+                            .unwrap_or(DEFAULT_SCROLLBAR_THUMB_COLOR);
+
+                        if let Some(ScrollbarGeom {
+                            track_rect,
+                            thumb_rect,
+                            ..
+                        }) = compute_scrollbar_geom(element, Axis::X, scroll_state_manager)
+                        {
+                            recorder.fill_rectangle(&track_rect, scrollbar_track_color);
+                            recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
+                        }
+
+                        if let Some(ScrollbarGeom {
+                            track_rect,
+                            thumb_rect,
+                            ..
+                        }) = compute_scrollbar_geom(element, Axis::Y, scroll_state_manager)
+                        {
+                            recorder.fill_rectangle(&track_rect, scrollbar_track_color);
+                            recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
+                        }
+
+                        recorder.pop_clip();
+                    }
+
+                    // Draw element border after content and scrollbars, and after popping clip
+                    // so that Outset borders render outside the element bounds.
+                    if let Some(border) = &element.border {
+                        let x = element.x + offset_x;
+                        let y = element.y + offset_y;
+                        let width = element.computed_width;
+                        let height = element.computed_height;
+                        let element_rect = RectDIP {
+                            x_dip: x,
+                            y_dip: y,
+                            width_dip: width,
+                            height_dip: height,
+                        };
+                        recorder.draw_border(&element_rect, element.border_radius.as_ref(), border);
+                    }
+                },
+            ),
+        );
+    }
+
+    // Extract commands from the recorder
+    let commands = std::rc::Rc::try_unwrap(recorder)
+        .map_err(|_| "Failed to unwrap recorder")
+        .unwrap()
+        .into_inner()
+        .take_commands();
+
+    commands
 }
 
 // ===== Reusable scrollbar geometry helpers =====

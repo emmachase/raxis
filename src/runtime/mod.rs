@@ -5,6 +5,8 @@ pub mod scroll;
 pub mod smooth_scroll;
 
 use crate::gfx::PointDIP;
+use crate::gfx::command_executor::CommandExecutor;
+use crate::gfx::draw_commands::DrawCommandList;
 use crate::layout::model::{
     Axis, Direction, Element, ElementContent, ScrollConfig, Sizing, create_tree,
 };
@@ -20,10 +22,12 @@ use crate::widgets::{Cursor, DragData, DragEvent, Event, Modifiers, Renderer};
 use crate::{DeferredControl, HookManager, RedrawRequest, Shell, ViewFn, w_id};
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
 use slotmap::DefaultKey;
+use std::cell::RefCell;
 use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ops::DerefMut;
+use std::rc::Rc;
 use std::sync::Mutex;
 use std::time::Instant;
 use windows::Win32::Foundation::HMODULE;
@@ -46,9 +50,8 @@ use windows::Win32::Graphics::Dxgi::Common::{
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4, IDXGIFactory7, IDXGIOutput,
-    IDXGISurface, IDXGISwapChain1,
+    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
+    IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
 };
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
@@ -213,7 +216,7 @@ struct AppState {
     // d2d_factory: ID2D1Factory,
     // _dwrite_factory: IDWriteFactory,
     // _text_format: IDWriteTextFormat,
-    device_resources: DeviceResources,
+    device_resources: Rc<RefCell<DeviceResources>>, // TODO: This shouldn't really be necessary
     // render_target: Option<ID2D1HwndRenderTarget>,
     // solid_brush: Option<ID2D1SolidColorBrush>,
     clock: f64,
@@ -261,6 +264,119 @@ pub struct DeviceResources {
     pub d2d_factory: ID2D1Factory8,
     pub d3d_context: ID3D11DeviceContext,
     pub d3d_device: ID3D11Device,
+}
+
+impl DeviceResources {
+    fn create_device_resources(&mut self, hwnd: HWND) -> Result<()> {
+        unsafe {
+            let dxgi_swapchain = match self.dxgi_swapchain {
+                Some(ref dxgi_swapchain) => dxgi_swapchain,
+                None => {
+                    // println!("Creating DXGI swapchain");
+                    let swapchain_desc = DXGI_SWAP_CHAIN_DESC1 {
+                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        SampleDesc: DXGI_SAMPLE_DESC {
+                            Count: 1, // Don't use multi-sampling
+                            Quality: 0,
+                        },
+                        BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
+                        BufferCount: 2,
+                        Scaling: DXGI_SCALING_NONE,
+                        SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
+                        AlphaMode: DXGI_ALPHA_MODE_IGNORE,
+
+                        ..Default::default()
+                    };
+
+                    let dxgi_swapchain: IDXGISwapChain1 =
+                        self.dxgi_factory.CreateSwapChainForHwnd(
+                            &self.d3d_device.cast::<IUnknown>()?,
+                            hwnd,
+                            &swapchain_desc,
+                            None,
+                            None as Option<&IDXGIOutput>,
+                        )?;
+
+                    self.dxgi_swapchain = Some(dxgi_swapchain);
+                    self.dxgi_swapchain.as_ref().unwrap()
+                }
+            };
+
+            let back_buffer = match self.back_buffer {
+                Some(ref back_buffer) => back_buffer,
+                None => {
+                    // println!("Fetching back buffer");
+                    let back_buffer: ID3D11Texture2D = dxgi_swapchain.GetBuffer(0)?;
+                    self.back_buffer = Some(back_buffer);
+                    self.back_buffer.as_ref().unwrap()
+                }
+            };
+
+            if self.d2d_target_bitmap.is_none() {
+                // println!("Creating D2D target bitmap");
+                let dpi = current_dpi(hwnd); // TODO: Get X / Y
+
+                let bitmap_properties = D2D1_BITMAP_PROPERTIES1 {
+                    pixelFormat: D2D1_PIXEL_FORMAT {
+                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
+                        alphaMode: D2D1_ALPHA_MODE_IGNORE,
+                    },
+                    dpiX: dpi,
+                    dpiY: dpi,
+                    bitmapOptions: D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
+                    colorContext: ManuallyDrop::new(None),
+                };
+
+                self.d2d_device_context.SetDpi(dpi, dpi);
+
+                let d2d_target_bitmap = self.d2d_device_context.CreateBitmapFromDxgiSurface(
+                    &back_buffer.cast::<IDXGISurface>()?,
+                    Some(&bitmap_properties),
+                )?;
+
+                self.d2d_device_context.SetTarget(&d2d_target_bitmap);
+                self.d2d_target_bitmap = Some(d2d_target_bitmap);
+            }
+
+            if self.solid_brush.is_none() {
+                // println!("Creating solid brush");
+                let rt = &self.d2d_device_context;
+
+                let black = D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                };
+                let brush = rt.CreateSolidColorBrush(&black, None)?;
+                self.solid_brush = Some(brush);
+            }
+            Ok(())
+        }
+    }
+
+    fn discard_device_resources(&mut self) {
+        self.solid_brush = None;
+        self.back_buffer = None;
+        self.d2d_target_bitmap = None;
+
+        unsafe {
+            self.d2d_device_context.SetTarget(None);
+            self.d3d_context.ClearState();
+
+            if let Some(ref mut swap_chain) = self.dxgi_swapchain {
+                swap_chain
+                    .ResizeBuffers(
+                        0,
+                        0,
+                        0,
+                        DXGI_FORMAT_UNKNOWN,
+                        DXGI_SWAP_CHAIN_FLAG::default(),
+                    )
+                    .unwrap();
+            }
+        }
+    }
 }
 
 impl AppState {
@@ -334,7 +450,7 @@ impl AppState {
             let shell = Shell::new();
 
             Ok(Self {
-                device_resources,
+                device_resources: Rc::new(RefCell::new(device_resources)),
                 clock: 0.0,
                 timing_info: DWM_TIMING_INFO::default(),
                 ui_tree,
@@ -352,213 +468,38 @@ impl AppState {
         }
     }
 
-    fn create_device_resources(&mut self, hwnd: HWND) -> Result<()> {
-        unsafe {
-            let dxgi_swapchain = match self.device_resources.dxgi_swapchain {
-                Some(ref dxgi_swapchain) => dxgi_swapchain,
-                None => {
-                    // println!("Creating DXGI swapchain");
-                    let swapchain_desc = DXGI_SWAP_CHAIN_DESC1 {
-                        Format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                        SampleDesc: DXGI_SAMPLE_DESC {
-                            Count: 1, // Don't use multi-sampling
-                            Quality: 0,
-                        },
-                        BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
-                        BufferCount: 2,
-                        Scaling: DXGI_SCALING_NONE,
-                        SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-                        AlphaMode: DXGI_ALPHA_MODE_IGNORE,
-
-                        ..Default::default()
-                    };
-
-                    let dxgi_swapchain: IDXGISwapChain1 =
-                        self.device_resources.dxgi_factory.CreateSwapChainForHwnd(
-                            &self.device_resources.d3d_device.cast::<IUnknown>()?,
-                            hwnd,
-                            &swapchain_desc,
-                            None,
-                            None as Option<&IDXGIOutput>,
-                        )?;
-
-                    self.device_resources.dxgi_swapchain = Some(dxgi_swapchain);
-                    self.device_resources.dxgi_swapchain.as_ref().unwrap()
-                }
-            };
-
-            let back_buffer = match self.device_resources.back_buffer {
-                Some(ref back_buffer) => back_buffer,
-                None => {
-                    // println!("Fetching back buffer");
-                    let back_buffer: ID3D11Texture2D = dxgi_swapchain.GetBuffer(0)?;
-                    self.device_resources.back_buffer = Some(back_buffer);
-                    self.device_resources.back_buffer.as_ref().unwrap()
-                }
-            };
-
-            if self.device_resources.d2d_target_bitmap.is_none() {
-                // println!("Creating D2D target bitmap");
-                let dpi = current_dpi(hwnd); // TODO: Get X / Y
-
-                let bitmap_properties = D2D1_BITMAP_PROPERTIES1 {
-                    pixelFormat: D2D1_PIXEL_FORMAT {
-                        format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                        alphaMode: D2D1_ALPHA_MODE_IGNORE,
-                    },
-                    dpiX: dpi,
-                    dpiY: dpi,
-                    bitmapOptions: D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW,
-                    colorContext: ManuallyDrop::new(None),
-                };
-
-                self.device_resources.d2d_device_context.SetDpi(dpi, dpi);
-
-                let d2d_target_bitmap = self
-                    .device_resources
-                    .d2d_device_context
-                    .CreateBitmapFromDxgiSurface(
-                        &back_buffer.cast::<IDXGISurface>()?,
-                        Some(&bitmap_properties),
-                    )?;
-
-                self.device_resources
-                    .d2d_device_context
-                    .SetTarget(&d2d_target_bitmap);
-                self.device_resources.d2d_target_bitmap = Some(d2d_target_bitmap);
-            }
-
-            if self.device_resources.solid_brush.is_none() {
-                // println!("Creating solid brush");
-                let rt = &self.device_resources.d2d_device_context;
-
-                let black = D2D1_COLOR_F {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                };
-                let brush = rt.CreateSolidColorBrush(&black, None)?;
-                self.device_resources.solid_brush = Some(brush);
-            }
-            Ok(())
-        }
-    }
-
-    fn discard_device_resources(&mut self) {
-        self.device_resources.solid_brush = None;
-        self.device_resources.back_buffer = None;
-        self.device_resources.d2d_target_bitmap = None;
-
-        unsafe {
-            self.device_resources.d2d_device_context.SetTarget(None);
-            self.device_resources.d3d_context.ClearState();
-
-            if let Some(ref mut swap_chain) = self.device_resources.dxgi_swapchain {
-                swap_chain
-                    .ResizeBuffers(
-                        0,
-                        0,
-                        0,
-                        DXGI_FORMAT_UNKNOWN,
-                        DXGI_SWAP_CHAIN_FLAG::default(),
-                    )
-                    .unwrap();
-            }
-        }
-    }
-
-    fn on_paint(&mut self, hwnd: HWND) -> Result<()> {
+    fn on_paint(&mut self, hwnd: HWND) -> Result<DrawCommandList> {
         let dt = self.timing_info.rateCompose.uiDenominator as f64
             / self.timing_info.rateCompose.uiNumerator as f64;
 
         // Update smooth scroll animations and apply positions to scroll state manager
         self.update_smooth_scroll_animations();
 
-        unsafe {
-            self.create_device_resources(hwnd)?;
-            // Refresh target DPI in case it changed (e.g. monitor move)
-            // self.update_dpi(hwnd);
-            let mut ps = PAINTSTRUCT::default();
-            // println!("BeginPaint");
-            BeginPaint(hwnd, &mut ps);
+        create_tree_root(
+            &self.view_fn,
+            &self.device_resources.borrow(),
+            &mut self.ui_tree,
+        );
+        let root = self.ui_tree.root;
 
-            if let (rt, Some(brush)) = (
-                &self.device_resources.d2d_device_context,
-                &self.device_resources.solid_brush,
-            ) {
-                rt.BeginDraw();
-                let white = D2D1_COLOR_F {
-                    r: 1.0,
-                    g: 1.0,
-                    b: 1.0,
-                    a: 1.0,
-                };
-                rt.Clear(Some(&white));
+        let rc = client_rect(hwnd)?;
+        let rc_dip = RectDIP::from(hwnd, rc);
+        self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width_dip);
+        self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height_dip);
 
-                let rc = client_rect(hwnd)?;
-                let rc_dip = RectDIP::from(hwnd, rc);
-
-                brush.SetColor(&D2D1_COLOR_F {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                });
-
-                // let root = self.root_key;
-                create_tree_root(&self.view_fn, &self.device_resources, &mut self.ui_tree);
-                let root = self.ui_tree.root;
-
-                self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width_dip);
-                self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height_dip);
-
-                layout::layout(&mut self.ui_tree, root, &mut self.scroll_state_manager);
-                layout::paint(
-                    &self.shell,
-                    &Renderer {
-                        factory: &self.device_resources.d2d_factory,
-                        render_target: rt,
-                        brush,
-                    },
-                    &mut self.ui_tree,
-                    root,
-                    &mut self.scroll_state_manager,
-                    0.0,
-                    0.0,
-                );
-
-                // Spinner drawn above uses the current brush color.
-
-                let end = rt.EndDraw(None, None);
-                if let Err(e) = end {
-                    if e.code() == D2DERR_RECREATE_TARGET {
-                        println!("Recreating D2D target");
-                        self.discard_device_resources();
-                    }
-                }
-            }
-
-            let _ = EndPaint(hwnd, &ps);
-
-            // TODO: Pass present dirty rects / scroll info
-            self.device_resources
-                .dxgi_swapchain
-                .as_ref()
-                .unwrap()
-                .Present(1, DXGI_PRESENT::default())
-                .unwrap();
-            // println!("EndPaint");
-        }
+        layout::layout(&mut self.ui_tree, root, &mut self.scroll_state_manager);
+        let commands = layout::paint(
+            &self.shell,
+            &mut self.ui_tree,
+            root,
+            &mut self.scroll_state_manager,
+            0.0,
+            0.0,
+        );
 
         self.clock += dt;
 
-        // Schedule next frame if we have active animations
-        if self.smooth_scroll_manager.has_any_active_animations() {
-            self.shell.request_redraw(hwnd, RedrawRequest::Immediate);
-        }
-
-        Ok(())
+        Ok(commands)
     }
 
     fn on_resize(&mut self, width: u32, height: u32) -> Result<()> {
@@ -569,13 +510,14 @@ impl AppState {
         // }
 
         unsafe {
-            self.device_resources.d2d_device_context.SetTarget(None);
-            self.device_resources.d3d_context.ClearState();
+            let mut device_resources = self.device_resources.borrow_mut();
+            device_resources.d2d_device_context.SetTarget(None);
+            device_resources.d3d_context.ClearState();
 
-            self.device_resources.d2d_target_bitmap = None;
-            self.device_resources.back_buffer = None;
+            device_resources.d2d_target_bitmap = None;
+            device_resources.back_buffer = None;
 
-            if let Some(ref mut swap_chain) = self.device_resources.dxgi_swapchain {
+            if let Some(ref mut swap_chain) = device_resources.dxgi_swapchain {
                 swap_chain.ResizeBuffers(
                     0,
                     width,
@@ -1264,6 +1206,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     }
                     // let _ = InvalidateRect(Some(hwnd), None, true);
                 }
+                let _ = UpdateWindow(hwnd);
                 LRESULT(0)
             }
             WM_DPICHANGED => {
@@ -1283,7 +1226,10 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 
                 if let Some(mut state) = state_mut_from_hwnd(hwnd) {
                     let state = state.deref_mut();
-                    state.discard_device_resources();
+                    state
+                        .device_resources
+                        .borrow_mut()
+                        .discard_device_resources();
 
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
@@ -1345,19 +1291,91 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
             }
             WM_PAINT => {
                 // println!("WM_PAINT");
-                if let Some(mut state) = state_mut_from_hwnd(hwnd) {
+                let commands = if let Some(mut state) = state_mut_from_hwnd(hwnd) {
                     let state = state.deref_mut();
                     state.shell.replace_redraw_request(RedrawRequest::Wait);
-
-                    if let Err(e) = state.on_paint(hwnd) {
-                        eprintln!("Failed to paint: {e}");
-                    }
 
                     let now = Instant::now();
                     state
                         .shell
                         .dispatch_event(hwnd, &mut state.ui_tree, Event::Redraw { now });
+
+                    let commands = match state.on_paint(hwnd) {
+                        Ok(commands) => Some((
+                            state.device_resources.clone(),
+                            commands,
+                            state.shell.redraw_request,
+                        )),
+                        Err(e) => {
+                            eprintln!("Failed to paint: {e}");
+                            None
+                        }
+                    };
+
+                    commands
+                } else {
+                    None
+                };
+
+                if let Some((device_resources, commands, redraw_request)) = commands {
+                    let mut device_resources = device_resources.borrow_mut();
+                    device_resources.create_device_resources(hwnd).ok();
+                    // Refresh target DPI in case it changed (e.g. monitor move)
+                    // self.update_dpi(hwnd);
+                    let mut ps = PAINTSTRUCT::default();
+                    // println!("BeginPaint");
+                    BeginPaint(hwnd, &mut ps);
+
+                    if let (rt, Some(brush)) = (
+                        &device_resources.d2d_device_context,
+                        &device_resources.solid_brush,
+                    ) {
+                        rt.BeginDraw();
+                        let white = D2D1_COLOR_F {
+                            r: 1.0,
+                            g: 1.0,
+                            b: 1.0,
+                            a: 1.0,
+                        };
+                        rt.Clear(Some(&white));
+
+                        CommandExecutor::execute_commands(
+                            &Renderer {
+                                render_target: rt,
+                                brush: brush,
+                                factory: &device_resources.d2d_factory,
+                            },
+                            &commands,
+                        )
+                        .ok();
+
+                        // let root = self.root_key;
+
+                        // Spinner drawn above uses the current brush color.
+
+                        let end = rt.EndDraw(None, None);
+                        if let Err(e) = end {
+                            if e.code() == D2DERR_RECREATE_TARGET {
+                                println!("Recreating D2D target");
+                                device_resources.discard_device_resources();
+                                device_resources.create_device_resources(hwnd).ok();
+                            }
+                        }
+                    }
+
+                    let _ = EndPaint(hwnd, &ps);
+
+                    // TODO: Pass present dirty rects / scroll info
+                    if let Some(ref swap_chain) = device_resources.dxgi_swapchain {
+                        let _ = swap_chain.Present(1, DXGI_PRESENT::default());
+                    }
+
+                    if matches!(redraw_request, RedrawRequest::Immediate) {
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                    }
+                    // println!("EndPaint");
                 }
+
                 LRESULT(0)
             }
             WM_DISPLAYCHANGE => {
@@ -1384,6 +1402,12 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
     let deferred_controls = if let Some(mut state) = state_mut_from_hwnd(hwnd) {
         let state = state.deref_mut();
         state.shell.dispatch_operations(&mut state.ui_tree);
+
+        // TODO: Maybe move this into a deferred control
+        // Schedule next frame if we have active animations
+        if state.smooth_scroll_manager.has_any_active_animations() {
+            state.shell.request_redraw(hwnd, RedrawRequest::Immediate);
+        }
 
         state.shell.drain_deferred_controls()
     } else {
@@ -1479,6 +1503,7 @@ pub fn run_event_loop(view_fn: impl Fn(HookManager) -> Element + 'static) -> Res
         let mut dpi_x = 0.0f32;
         let mut dpi_y = 0.0f32;
         app.device_resources
+            .borrow()
             .d2d_factory
             .GetDesktopDpi(&mut dpi_x, &mut dpi_y);
 

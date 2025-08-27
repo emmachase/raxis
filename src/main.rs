@@ -13,6 +13,7 @@ use raxis::{
     widgets::{
         Color,
         button::Button,
+        spinner::Spinner,
         text::{ParagraphAlignment, Text},
         text_input::TextInput,
     },
@@ -128,6 +129,13 @@ fn border_demos() -> Element {
                     demo_box("Inset 4px", inset, None),
                     demo_box("Center 6px", center, Some(BorderRadius::all(10.0))),
                     demo_box("Outset 8px", outset, Some(BorderRadius::all(12.0))),
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::fit(),
+                        height: Sizing::fit(),
+                        content: Some(ElementContent::Widget(Box::new(Spinner::default()))),
+                        ..Default::default()
+                    },
                 ],
                 ..Default::default()
             },
@@ -306,7 +314,7 @@ fn todo_app(mut hook: HookManager) -> Element {
 }
 
 fn todo_item(
-    hook: &mut HookManager,
+    _hook: &mut HookManager,
     item: TodoItem,
     todo_state: Rc<RefCell<TodoState>>,
 ) -> Element {

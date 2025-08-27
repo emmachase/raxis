@@ -11,7 +11,7 @@ use windows::Win32::{
         },
         D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_ROUND,
         D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-        D2D1_DASH_STYLE, D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_DASH_DOT,
+        D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_DASH_DOT,
         D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT, D2D1_DASH_STYLE_SOLID,
         D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_MITER, D2D1_PROPERTY_TYPE_FLOAT,
         D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
@@ -215,7 +215,7 @@ impl Renderer<'_> {
         }
     }
 
-    fn draw_rounded_rectangle_stroked(
+    pub fn draw_rounded_rectangle_stroked(
         &self,
         rect: &RectDIP,
         border_radius: &crate::layout::model::BorderRadius,
@@ -875,12 +875,10 @@ pub trait Widget: std::fmt::Debug {
     }
 
     fn paint(
-        &mut self, // TODO: this shouldnt need to be mut right
-        // id: Option<u64>,
-        // ui_key: UIKey,
+        &mut self,
         instance: &mut Instance,
         shell: &Shell,
-        renderer: &Renderer,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         now: Instant,
     );

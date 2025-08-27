@@ -3,8 +3,6 @@ use std::fmt::Debug;
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
-use windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT;
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_HIT_TEST_METRICS, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -25,8 +23,7 @@ use crate::gfx::{PointDIP, RectDIP};
 use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
-    BLACK, Bounds, Color, DragData, DragInfo, DropResult, Instance, Renderer, Widget,
-    WidgetDragDropTarget, limit_response,
+    Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
 };
 use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
@@ -543,13 +540,13 @@ impl Widget for TextInput {
         &mut self,
         instance: &mut Instance,
         shell: &Shell,
-        renderer: &Renderer,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
-        now: Instant,
+        _now: Instant,
     ) {
         let state = with_state!(mut instance as WidgetState);
 
-        // Rebuild text format if properties changed
+        // Rebuild text format if needed
         if state.needs_text_format_rebuild(
             &self.font_family,
             self.font_size,
@@ -569,7 +566,7 @@ impl Widget for TextInput {
             .expect("update bounds failed");
 
         state
-            .draw(instance.id, shell, renderer, bounds.content_box, now)
+            .draw(instance.id, shell, recorder, bounds.content_box, _now)
             .expect("draw failed");
     }
 
@@ -894,11 +891,10 @@ impl WidgetState {
     }
 
     /// Draw selection highlight behind the text for the currently selected range.
-    /// Restores the brush color to black afterwards to match typical text color.
-    fn draw_selection(
+    fn draw_selection_with_recorder(
         &self,
         layout: &IDWriteTextLayout,
-        renderer: &Renderer,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: RectDIP,
     ) -> Result<()> {
         unsafe {
@@ -930,14 +926,14 @@ impl WidgetState {
                         Ok(()) => {
                             // Selection color (light blue)
                             for m in runs.iter().take(actual as usize) {
-                                renderer.fill_rectangle(
+                                recorder.fill_rectangle(
                                     &RectDIP {
                                         x_dip: bounds.x_dip + m.left,
                                         y_dip: bounds.y_dip + m.top,
                                         width_dip: m.width,
                                         height_dip: m.height,
                                     },
-                                    Color {
+                                    crate::widgets::Color {
                                         r: 0.2,
                                         g: 0.4,
                                         b: 1.0,
@@ -959,7 +955,7 @@ impl WidgetState {
         &mut self,
         id: u64,
         shell: &Shell,
-        renderer: &Renderer,
+        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: RectDIP,
         now: Instant,
     ) -> Result<()> {
@@ -969,24 +965,21 @@ impl WidgetState {
             let caret_visible = (((now - self.focused_at).as_secs_f64()) / BLINK_TIME) % 2.0 < 1.0;
 
             // Normal rendering: selection, base text, caret
-            self.draw_selection(layout, renderer, bounds)?;
+            self.draw_selection_with_recorder(layout, recorder, bounds)?;
 
-            renderer.brush.SetColor(&D2D1_COLOR_F {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            });
-            renderer.render_target.DrawTextLayout(
+            // Draw text using command recorder
+            recorder.draw_text(
                 Vector2 {
                     X: bounds.x_dip,
                     Y: bounds.y_dip,
                 },
-                layout,
-                renderer.brush,
-                None,
-                0,
-                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+                &layout,
+                crate::widgets::Color {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 1.0,
+                },
             );
 
             // OLE drag-over preview caret
@@ -1004,7 +997,7 @@ impl WidgetState {
                         width_dip: CARET_WIDTH,
                         height_dip: m.height,
                     };
-                    renderer.fill_rectangle(&caret_rect, BLACK);
+                    recorder.fill_rectangle(&caret_rect, crate::widgets::BLACK);
                 }
             } else {
                 // Draw caret if there's no selection (1 DIP wide bar)
@@ -1023,7 +1016,7 @@ impl WidgetState {
                             width_dip: CARET_WIDTH,
                             height_dip: m.height,
                         };
-                        renderer.fill_rectangle(&caret_rect, BLACK);
+                        recorder.fill_rectangle(&caret_rect, crate::widgets::BLACK);
                     } else if sel_start == sel_end {
                         let mut x = 0.0f32;
                         let mut y = 0.0f32;
@@ -1042,7 +1035,7 @@ impl WidgetState {
                             width_dip: CARET_WIDTH,
                             height_dip: m.height,
                         };
-                        renderer.fill_rectangle(&caret_rect, BLACK);
+                        recorder.fill_rectangle(&caret_rect, crate::widgets::BLACK);
                     }
                 }
             }

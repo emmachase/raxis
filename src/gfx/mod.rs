@@ -3,6 +3,9 @@ use windows::Win32::Foundation::{HWND, RECT};
 use crate::dips_scale;
 
 pub mod circle_arc;
+pub mod draw_commands;
+pub mod command_recorder;
+pub mod command_executor;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct PointDIP {
