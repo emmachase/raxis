@@ -13,6 +13,12 @@ pub struct CommandRecorder {
     commands: DrawCommandList,
 }
 
+impl Default for CommandRecorder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl CommandRecorder {
     /// Create a new command recorder
     pub fn new() -> Self {
@@ -60,7 +66,7 @@ impl CommandRecorder {
     ) {
         self.commands.push(DrawCommand::FillRoundedRectangle {
             rect: *rect,
-            border_radius: border_radius.clone(),
+            border_radius: *border_radius,
             color: color.into(),
         });
     }
@@ -74,7 +80,7 @@ impl CommandRecorder {
     ) {
         self.commands.push(DrawCommand::DrawBlurredShadow {
             rect: *rect,
-            shadow: shadow.clone(),
+            shadow: *shadow,
             border_radius: border_radius.cloned(),
         });
     }
@@ -103,7 +109,7 @@ impl CommandRecorder {
     pub fn push_rounded_clip(&mut self, rect: &RectDIP, border_radius: &BorderRadius) {
         self.commands.push(DrawCommand::PushRoundedClip {
             rect: *rect,
-            border_radius: border_radius.clone(),
+            border_radius: *border_radius,
         });
     }
 
@@ -152,7 +158,7 @@ impl CommandRecorder {
         self.commands
             .push(DrawCommand::DrawRoundedRectangleOutline {
                 rect: *rect,
-                border_radius: border_radius.clone(),
+                border_radius: *border_radius,
                 color: color.into(),
                 stroke_width,
             });

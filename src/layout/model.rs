@@ -346,17 +346,14 @@ pub enum BorderPlacement {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Default)]
 pub enum BorderDashCap {
     Round,
+    #[default]
     Square,
     Triangle,
 }
 
-impl Default for BorderDashCap {
-    fn default() -> Self {
-        BorderDashCap::Square
-    }
-}
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BorderDashStyle {

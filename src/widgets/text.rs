@@ -283,7 +283,7 @@ impl TextWidgetState {
             } else {
                 unsafe {
                     let wtext: Vec<u16> = text.encode_utf16().collect();
-                    println!("Building text layout for text: {}", text);
+                    println!("Building text layout for text: {text}");
                     self.text_layout = Some(self.dwrite_factory.CreateTextLayout(
                         &wtext,
                         &self.text_format,
@@ -365,7 +365,7 @@ impl Widget for Text {
             let (preferred_width, _) = state.get_preferred_size();
             super::limit_response::SizingForX {
                 min_width: preferred_width,
-                preferred_width: preferred_width,
+                preferred_width,
             }
         } else {
             super::limit_response::SizingForX {
@@ -390,7 +390,7 @@ impl Widget for Text {
             let (_, preferred_height) = state.get_preferred_size();
             super::limit_response::SizingForY {
                 min_height: preferred_height,
-                preferred_height: preferred_height,
+                preferred_height,
             }
         } else {
             super::limit_response::SizingForY {

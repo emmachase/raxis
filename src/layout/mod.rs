@@ -291,13 +291,13 @@ pub fn generate_paint_commands(
     }
 
     // Extract commands from the recorder
-    let commands = std::rc::Rc::try_unwrap(recorder)
+    
+
+    std::rc::Rc::try_unwrap(recorder)
         .map_err(|_| "Failed to unwrap recorder")
         .unwrap()
         .into_inner()
-        .take_commands();
-
-    commands
+        .take_commands()
 }
 
 // ===== Reusable scrollbar geometry helpers =====

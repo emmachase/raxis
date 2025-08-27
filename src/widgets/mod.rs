@@ -208,10 +208,7 @@ impl Renderer<'_> {
             } else {
                 Some(&dashes[..])
             };
-            match self.factory.CreateStrokeStyle(&props, dashes_slice) {
-                Ok(style) => Some(style),
-                Err(_) => None,
-            }
+            self.factory.CreateStrokeStyle(&props, dashes_slice).ok()
         }
     }
 
@@ -243,18 +240,16 @@ impl Renderer<'_> {
                     stroke_width,
                     stroke,
                 );
-            } else {
-                if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
-                    if let Ok(sink) = path_geometry.Open() {
-                        self.create_rounded_rectangle_path(&sink, rect, border_radius);
-                        let _ = sink.Close();
-                        self.render_target.DrawGeometry(
-                            &path_geometry,
-                            self.brush,
-                            stroke_width,
-                            stroke,
-                        );
-                    }
+            } else if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
+                if let Ok(sink) = path_geometry.Open() {
+                    self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                    let _ = sink.Close();
+                    self.render_target.DrawGeometry(
+                        &path_geometry,
+                        self.brush,
+                        stroke_width,
+                        stroke,
+                    );
                 }
             }
         }

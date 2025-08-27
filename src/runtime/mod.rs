@@ -1300,7 +1300,9 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         .shell
                         .dispatch_event(hwnd, &mut state.ui_tree, Event::Redraw { now });
 
-                    let commands = match state.on_paint(hwnd) {
+                    
+
+                    match state.on_paint(hwnd) {
                         Ok(commands) => Some((
                             state.device_resources.clone(),
                             commands,
@@ -1310,9 +1312,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                             eprintln!("Failed to paint: {e}");
                             None
                         }
-                    };
-
-                    commands
+                    }
                 } else {
                     None
                 };
@@ -1342,7 +1342,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                         CommandExecutor::execute_commands(
                             &Renderer {
                                 render_target: rt,
-                                brush: brush,
+                                brush,
                                 factory: &device_resources.d2d_factory,
                             },
                             &commands,
