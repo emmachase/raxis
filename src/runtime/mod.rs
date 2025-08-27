@@ -114,7 +114,7 @@ use windows::{
 };
 use windows_core::{IUnknown, Interface};
 
-pub const LINE_HEIGHT: u32 = 16;
+pub const LINE_HEIGHT: u32 = 32;
 
 pub struct SafeCursor(pub HCURSOR);
 unsafe impl Send for SafeCursor {}
@@ -1514,7 +1514,7 @@ pub fn run_event_loop(view_fn: impl Fn(HookManager) -> Element + 'static) -> Res
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             class_name,
-            PCWSTR(w!("DirectWrite Getting Started (Rust)").as_ptr()),
+            PCWSTR(w!("Raxis").as_ptr()),
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
