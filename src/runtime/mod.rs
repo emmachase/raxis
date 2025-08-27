@@ -356,7 +356,7 @@ impl AppState {
             let dxgi_swapchain = match self.device_resources.dxgi_swapchain {
                 Some(ref dxgi_swapchain) => dxgi_swapchain,
                 None => {
-                    println!("Creating DXGI swapchain");
+                    // println!("Creating DXGI swapchain");
                     let swapchain_desc = DXGI_SWAP_CHAIN_DESC1 {
                         Format: DXGI_FORMAT_B8G8R8A8_UNORM,
                         SampleDesc: DXGI_SAMPLE_DESC {
@@ -389,7 +389,7 @@ impl AppState {
             let back_buffer = match self.device_resources.back_buffer {
                 Some(ref back_buffer) => back_buffer,
                 None => {
-                    println!("Fetching back buffer");
+                    // println!("Fetching back buffer");
                     let back_buffer: ID3D11Texture2D = dxgi_swapchain.GetBuffer(0)?;
                     self.device_resources.back_buffer = Some(back_buffer);
                     self.device_resources.back_buffer.as_ref().unwrap()
@@ -397,7 +397,7 @@ impl AppState {
             };
 
             if self.device_resources.d2d_target_bitmap.is_none() {
-                println!("Creating D2D target bitmap");
+                // println!("Creating D2D target bitmap");
                 let dpi = current_dpi(hwnd); // TODO: Get X / Y
 
                 let bitmap_properties = D2D1_BITMAP_PROPERTIES1 {
@@ -428,7 +428,7 @@ impl AppState {
             }
 
             if self.device_resources.solid_brush.is_none() {
-                println!("Creating solid brush");
+                // println!("Creating solid brush");
                 let rt = &self.device_resources.d2d_device_context;
 
                 let black = D2D1_COLOR_F {
