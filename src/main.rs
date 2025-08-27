@@ -13,7 +13,6 @@ use raxis::{
     widgets::{
         Color,
         button::Button,
-        spinner::Spinner,
         text::{ParagraphAlignment, Text, TextAlignment},
         text_input::TextInput,
     },
@@ -107,7 +106,7 @@ fn border_demos() -> Element {
         padding: BoxAmount::all(12.0),
         background_color: Some(0xFFFFFFFF),
         border: Some(Border {
-            width: 1.0,
+            width: 0.5,
             color: Color {
                 r: 0.85,
                 g: 0.85,
@@ -139,13 +138,13 @@ fn border_demos() -> Element {
                     demo_box("Inset 4px", inset, None),
                     demo_box("Center 6px", center, Some(BorderRadius::all(10.0))),
                     demo_box("Outset 8px", outset, Some(BorderRadius::all(12.0))),
-                    Element {
-                        id: Some(w_id!()),
-                        width: Sizing::fit(),
-                        height: Sizing::fit(),
-                        content: Some(ElementContent::Widget(Box::new(Spinner::default()))),
-                        ..Default::default()
-                    },
+                    // Element {
+                    //     id: Some(w_id!()),
+                    //     width: Sizing::fit(),
+                    //     height: Sizing::fit(),
+                    //     content: Some(ElementContent::Widget(Box::new(Spinner::default()))),
+                    //     ..Default::default()
+                    // },
                 ],
                 ..Default::default()
             },
@@ -259,7 +258,7 @@ fn todo_app(mut hook: HookManager) -> Element {
                         background_color: Some(0xFFFFFFFF),
                         border_radius: Some(BorderRadius::all(5.0)),
                         border: Some(Border {
-                            width: 1.0,
+                            width: 0.5,
                             color: Color {
                                 r: 0.85,
                                 g: 0.85,
@@ -388,7 +387,7 @@ fn todo_item(
         height: Sizing::fit(),
         background_color: Some(0xFFFFFFFF),
         border: Some(Border {
-            width: 1.0,
+            width: 0.5,
             color: Color {
                 r: 0.85,
                 g: 0.85,
