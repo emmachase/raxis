@@ -252,6 +252,11 @@ pub fn paint(
             &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_>, key, _parent| {
                 let element = &slots[key];
 
+                let x = element.x + offset_x;
+                let y = element.y + offset_y;
+                let width = element.computed_width;
+                let height = element.computed_height;
+
                 let has_scroll_x =
                     matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
                 let has_scroll_y =
@@ -368,6 +373,18 @@ pub fn paint(
                             renderer.render_target.PopAxisAlignedClip();
                         }
                     }
+                }
+
+                // Draw element border after content and scrollbars, and after popping clip
+                // so that Outset borders render outside the element bounds.
+                if let Some(border) = &element.border {
+                    let element_rect = RectDIP {
+                        x_dip: x,
+                        y_dip: y,
+                        width_dip: width,
+                        height_dip: height,
+                    };
+                    renderer.draw_border(&element_rect, element.border_radius.as_ref(), border);
                 }
             },
         ),

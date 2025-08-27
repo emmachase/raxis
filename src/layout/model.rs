@@ -336,6 +336,59 @@ impl DropShadow {
     }
 }
 
+// ---------- Border ----------
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderPlacement {
+    Inset,
+    Center,
+    Outset,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderDashCap {
+    Round,
+    Square,
+    Triangle,
+}
+
+impl Default for BorderDashCap {
+    fn default() -> Self {
+        BorderDashCap::Square
+    }
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub enum BorderDashStyle {
+    Solid,
+    Dash,
+    Dot,
+    DashDot,
+    DashDotDot,
+    Custom { dashes: Vec<f32>, offset: f32 },
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct Border {
+    pub width: f32,
+    pub color: Color,
+    pub placement: BorderPlacement,
+    pub dash_style: Option<BorderDashStyle>,
+    pub dash_cap: BorderDashCap,
+}
+
+impl Default for Border {
+    fn default() -> Self {
+        Self {
+            width: 1.0,
+            color: Color::default(),
+            placement: BorderPlacement::Center,
+            dash_style: None,
+            dash_cap: BorderDashCap::default(),
+        }
+    }
+}
+
 // ---------- Scrolling ----------
 
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -439,6 +492,7 @@ pub struct UIElement {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
+    pub border: Option<Border>,
 
     pub id: Option<u64>,
     pub id_map: HashMap<u64, UIKey>,
@@ -473,6 +527,7 @@ impl Default for UIElement {
             padding: BoxAmount::default(),
             border_radius: None,
             drop_shadow: None,
+            border: None,
             id: None,
             id_map: HashMap::new(),
         }
@@ -543,6 +598,7 @@ pub struct Element {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
+    pub border: Option<Border>,
 
     pub id: Option<u64>,
 }
@@ -567,6 +623,7 @@ fn to_shell(element: Element) -> (UIElement, Vec<Element>) {
             padding: element.padding,
             border_radius: element.border_radius,
             drop_shadow: element.drop_shadow,
+            border: element.border,
             id: element.id,
             ..Default::default()
         },

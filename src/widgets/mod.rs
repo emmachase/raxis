@@ -9,11 +9,15 @@ use windows::Win32::{
             D2D_RECT_F, D2D_SIZE_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
             D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED,
         },
-        D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-        D2D1_INTERPOLATION_MODE_LINEAR, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4,
-        D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
-        D2D1_SWEEP_DIRECTION_CLOCKWISE, ID2D1DeviceContext7, ID2D1Factory, ID2D1GeometrySink,
-        ID2D1Image, ID2D1SolidColorBrush,
+        D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_ROUND,
+        D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+        D2D1_DASH_STYLE, D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_DASH_DOT,
+        D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT, D2D1_DASH_STYLE_SOLID,
+        D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_MITER, D2D1_PROPERTY_TYPE_FLOAT,
+        D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
+        D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+        ID2D1DeviceContext7, ID2D1Factory, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
+        ID2D1StrokeStyle,
     },
     System::Ole::DROPEFFECT,
 };
@@ -155,6 +159,187 @@ impl From<u32> for Color {
 }
 
 impl Renderer<'_> {
+    fn create_stroke_style(
+        &self,
+        dash_style: &Option<crate::layout::model::BorderDashStyle>,
+        dash_cap: crate::layout::model::BorderDashCap,
+    ) -> Option<ID2D1StrokeStyle> {
+        unsafe {
+            let (dash, dashes, dash_offset) = match dash_style {
+                None => (D2D1_DASH_STYLE_SOLID, Vec::new(), 0.0f32),
+                Some(crate::layout::model::BorderDashStyle::Solid) => {
+                    (D2D1_DASH_STYLE_SOLID, Vec::new(), 0.0)
+                }
+                Some(crate::layout::model::BorderDashStyle::Dash) => {
+                    (D2D1_DASH_STYLE_DASH, Vec::new(), 0.0)
+                }
+                Some(crate::layout::model::BorderDashStyle::Dot) => {
+                    (D2D1_DASH_STYLE_DOT, Vec::new(), 0.0)
+                }
+                Some(crate::layout::model::BorderDashStyle::DashDot) => {
+                    (D2D1_DASH_STYLE_DASH_DOT, Vec::new(), 0.0)
+                }
+                Some(crate::layout::model::BorderDashStyle::DashDotDot) => {
+                    (D2D1_DASH_STYLE_DASH_DOT_DOT, Vec::new(), 0.0)
+                }
+                Some(crate::layout::model::BorderDashStyle::Custom { dashes, offset }) => {
+                    (D2D1_DASH_STYLE_CUSTOM, dashes.clone(), *offset)
+                }
+            };
+
+            let dash_cap_style = match dash_cap {
+                crate::layout::model::BorderDashCap::Round => D2D1_CAP_STYLE_ROUND,
+                crate::layout::model::BorderDashCap::Square => D2D1_CAP_STYLE_SQUARE,
+                crate::layout::model::BorderDashCap::Triangle => D2D1_CAP_STYLE_TRIANGLE,
+            };
+
+            let props = D2D1_STROKE_STYLE_PROPERTIES {
+                startCap: D2D1_CAP_STYLE_FLAT,
+                endCap: D2D1_CAP_STYLE_FLAT,
+                dashCap: dash_cap_style,
+                lineJoin: D2D1_LINE_JOIN_MITER,
+                miterLimit: 10.0,
+                dashStyle: dash,
+                dashOffset: dash_offset,
+            };
+
+            let dashes_slice = if dashes.is_empty() {
+                None
+            } else {
+                Some(&dashes[..])
+            };
+            match self.factory.CreateStrokeStyle(&props, dashes_slice) {
+                Ok(style) => Some(style),
+                Err(_) => None,
+            }
+        }
+    }
+
+    fn draw_rounded_rectangle_stroked(
+        &self,
+        rect: &RectDIP,
+        border_radius: &crate::layout::model::BorderRadius,
+        stroke_width: f32,
+        stroke: Option<&ID2D1StrokeStyle>,
+    ) {
+        unsafe {
+            if border_radius.top_left == border_radius.top_right
+                && border_radius.top_right == border_radius.bottom_right
+                && border_radius.bottom_right == border_radius.bottom_left
+            {
+                let rounded_rect = D2D1_ROUNDED_RECT {
+                    rect: D2D_RECT_F {
+                        left: rect.x_dip,
+                        top: rect.y_dip,
+                        right: rect.x_dip + rect.width_dip,
+                        bottom: rect.y_dip + rect.height_dip,
+                    },
+                    radiusX: border_radius.top_left,
+                    radiusY: border_radius.top_left,
+                };
+                self.render_target.DrawRoundedRectangle(
+                    &rounded_rect,
+                    self.brush,
+                    stroke_width,
+                    stroke,
+                );
+            } else {
+                if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
+                    if let Ok(sink) = path_geometry.Open() {
+                        self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                        let _ = sink.Close();
+                        self.render_target.DrawGeometry(
+                            &path_geometry,
+                            self.brush,
+                            stroke_width,
+                            stroke,
+                        );
+                    }
+                }
+            }
+        }
+    }
+
+    pub fn draw_border(
+        &self,
+        rect: &RectDIP,
+        border_radius: Option<&crate::layout::model::BorderRadius>,
+        border: &crate::layout::model::Border,
+    ) {
+        unsafe {
+            // Set brush color
+            self.brush.SetColor(&D2D1_COLOR_F {
+                r: border.color.r,
+                g: border.color.g,
+                b: border.color.b,
+                a: border.color.a,
+            });
+
+            // Adjust rect and radius for placement
+            let half = border.width * 0.5;
+            let mut adjusted = RectDIP {
+                x_dip: rect.x_dip,
+                y_dip: rect.y_dip,
+                width_dip: rect.width_dip,
+                height_dip: rect.height_dip,
+            };
+            match border.placement {
+                crate::layout::model::BorderPlacement::Center => {}
+                crate::layout::model::BorderPlacement::Inset => {
+                    adjusted.x_dip += half;
+                    adjusted.y_dip += half;
+                    adjusted.width_dip = (adjusted.width_dip - border.width).max(0.0);
+                    adjusted.height_dip = (adjusted.height_dip - border.width).max(0.0);
+                }
+                crate::layout::model::BorderPlacement::Outset => {
+                    adjusted.x_dip -= half;
+                    adjusted.y_dip -= half;
+                    adjusted.width_dip += border.width;
+                    adjusted.height_dip += border.width;
+                }
+            }
+
+            let adjusted_radius = border_radius.map(|r| {
+                let mut rr = *r;
+                match border.placement {
+                    crate::layout::model::BorderPlacement::Center => {}
+                    crate::layout::model::BorderPlacement::Inset => {
+                        rr.top_left = (rr.top_left - half).max(0.0);
+                        rr.top_right = (rr.top_right - half).max(0.0);
+                        rr.bottom_right = (rr.bottom_right - half).max(0.0);
+                        rr.bottom_left = (rr.bottom_left - half).max(0.0);
+                    }
+                    crate::layout::model::BorderPlacement::Outset => {
+                        rr.top_left += half;
+                        rr.top_right += half;
+                        rr.bottom_right += half;
+                        rr.bottom_left += half;
+                    }
+                }
+                rr
+            });
+
+            // Create stroke style if needed
+            let stroke_style = self.create_stroke_style(&border.dash_style, border.dash_cap);
+            let stroke_opt = stroke_style.as_ref();
+
+            if let Some(rr) = adjusted_radius.as_ref() {
+                self.draw_rounded_rectangle_stroked(&adjusted, rr, border.width, stroke_opt);
+            } else {
+                self.render_target.DrawRectangle(
+                    &D2D_RECT_F {
+                        left: adjusted.x_dip,
+                        top: adjusted.y_dip,
+                        right: adjusted.x_dip + adjusted.width_dip,
+                        bottom: adjusted.y_dip + adjusted.height_dip,
+                    },
+                    self.brush,
+                    border.width,
+                    stroke_opt,
+                );
+            }
+        }
+    }
     pub fn draw_blurred_shadow(
         &self,
         rect: &RectDIP,

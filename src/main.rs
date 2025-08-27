@@ -5,17 +5,151 @@ use std::{cell::RefCell, rc::Rc};
 use raxis::{
     HookManager,
     layout::model::{
-        BorderRadius, BoxAmount, Direction, DropShadow, Element, ElementContent, ScrollConfig,
-        Sizing, VerticalAlignment,
+        Border, BorderDashCap, BorderDashStyle, BorderPlacement, BorderRadius, BoxAmount,
+        Direction, DropShadow, Element, ElementContent, ScrollConfig, Sizing, VerticalAlignment,
     },
     util::unique::combine_id,
     w_id,
     widgets::{
+        Color,
         button::Button,
         text::{ParagraphAlignment, Text},
         text_input::TextInput,
     },
 };
+
+fn demo_box(label: &str, border: Border, radius: Option<BorderRadius>) -> Element {
+    Element {
+        id: Some(combine_id(w_id!(), label)),
+        width: Sizing::fixed(160.0),
+        height: Sizing::fixed(80.0),
+        background_color: Some(0xFAFAFAFF),
+        padding: BoxAmount::all(8.0),
+        border: Some(border),
+        border_radius: radius,
+        vertical_alignment: VerticalAlignment::Center,
+        content: Some(ElementContent::Widget(Box::new(
+            Text::new(label).with_paragraph_alignment(ParagraphAlignment::Center),
+        ))),
+        ..Default::default()
+    }
+}
+
+fn border_demos() -> Element {
+    let inset = Border {
+        width: 4.0,
+        color: Color::from(0x1976D2FF),
+        placement: BorderPlacement::Inset,
+        dash_style: None,
+        dash_cap: BorderDashCap::Square,
+    };
+    let center = Border {
+        width: 6.0,
+        color: Color::from(0xE53935FF),
+        placement: BorderPlacement::Center,
+        dash_style: None,
+        dash_cap: BorderDashCap::Square,
+    };
+    let outset = Border {
+        width: 8.0,
+        color: Color::from(0xFB8C00FF),
+        placement: BorderPlacement::Outset,
+        dash_style: None,
+        dash_cap: BorderDashCap::Square,
+    };
+
+    let dashed = Border {
+        width: 3.0,
+        color: Color::from(0x424242FF),
+        placement: BorderPlacement::Center,
+        dash_style: Some(BorderDashStyle::Dash),
+        dash_cap: BorderDashCap::Round,
+    };
+    let dotted = Border {
+        width: 3.0,
+        color: Color::from(0x424242FF),
+        placement: BorderPlacement::Center,
+        dash_style: Some(BorderDashStyle::Dot),
+        dash_cap: BorderDashCap::Square,
+    };
+    let dash_dot = Border {
+        width: 3.0,
+        color: Color::from(0x424242FF),
+        placement: BorderPlacement::Center,
+        dash_style: Some(BorderDashStyle::DashDot),
+        dash_cap: BorderDashCap::Triangle,
+    };
+    let dash_dot_dot = Border {
+        width: 3.0,
+        color: Color::from(0x424242FF),
+        placement: BorderPlacement::Center,
+        dash_style: Some(BorderDashStyle::DashDotDot),
+        dash_cap: BorderDashCap::Square,
+    };
+    let custom = Border {
+        width: 3.0,
+        color: Color::from(0x424242FF),
+        placement: BorderPlacement::Center,
+        dash_style: Some(BorderDashStyle::Custom {
+            dashes: vec![6.0, 2.0, 2.0, 2.0],
+            offset: 0.0,
+        }),
+        dash_cap: BorderDashCap::Round,
+    };
+
+    Element {
+        id: Some(w_id!()),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::fit(),
+        child_gap: 10.0,
+        padding: BoxAmount::all(12.0),
+        background_color: Some(0xFFFFFFFF),
+        border_radius: Some(BorderRadius::all(6.0)),
+        drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
+        children: vec![
+            // Title
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: Some(ElementContent::Widget(Box::new(
+                    Text::new("Border demos").with_font_size(20.0),
+                ))),
+                ..Default::default()
+            },
+            // Placements row
+            Element {
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 10.0,
+                children: vec![
+                    demo_box("Inset 4px", inset, None),
+                    demo_box("Center 6px", center, Some(BorderRadius::all(10.0))),
+                    demo_box("Outset 8px", outset, Some(BorderRadius::all(12.0))),
+                ],
+                ..Default::default()
+            },
+            // Dash styles row
+            Element {
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 10.0,
+                children: vec![
+                    demo_box("Dashed", dashed, Some(BorderRadius::tl_br(8.0))),
+                    demo_box("Dotted", dotted, Some(BorderRadius::tr_bl(8.0))),
+                    demo_box("DashDot", dash_dot, Some(BorderRadius::top(8.0))),
+                    demo_box("DashDotDot", dash_dot_dot, Some(BorderRadius::bottom(8.0))),
+                    demo_box("Custom", custom, None),
+                ],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
 
 #[derive(Debug, Clone)]
 struct TodoItem {
@@ -73,6 +207,8 @@ fn todo_app(mut hook: HookManager) -> Element {
                 ))),
                 ..Default::default()
             },
+            // Border demos
+            border_demos(),
             // Input section
             Element {
                 id: Some(w_id!()),
@@ -175,7 +311,7 @@ fn todo_item(
     todo_state: Rc<RefCell<TodoState>>,
 ) -> Element {
     Element {
-        id: Some(combine_id(w_id!(), item.id.into())),
+        id: Some(combine_id(w_id!(), item.id)),
         direction: Direction::LeftToRight,
         width: Sizing::grow(),
         height: Sizing::fit(),
@@ -187,7 +323,7 @@ fn todo_item(
         children: vec![
             // Checkbox
             Element {
-                id: Some(combine_id(w_id!(), item.id.into())),
+                id: Some(combine_id(w_id!(), item.id)),
                 width: Sizing::fixed(20.0),
                 height: Sizing::fixed(20.0),
                 background_color: Some(if item.completed {
@@ -216,7 +352,7 @@ fn todo_item(
             },
             // Todo text
             Element {
-                id: Some(combine_id(w_id!(), item.id.into())),
+                id: Some(combine_id(w_id!(), item.id)),
                 width: Sizing::grow(),
                 height: Sizing::fit(),
                 vertical_alignment: VerticalAlignment::Center,
@@ -227,7 +363,7 @@ fn todo_item(
             },
             // Delete button
             Element {
-                id: Some(combine_id(w_id!(), item.id.into())),
+                id: Some(combine_id(w_id!(), item.id)),
                 width: Sizing::fit(),
                 height: Sizing::fit(),
                 vertical_alignment: VerticalAlignment::Center,

@@ -1,4 +1,4 @@
-use std::hash::{DefaultHasher, Hasher};
+use std::hash::{DefaultHasher, Hash, Hasher};
 
 pub const fn hash(module_path: &'static str, file: &'static str, line: u32, column: u32) -> u64 {
     let mut hash = 0xcbf29ce484222325;
@@ -37,9 +37,9 @@ macro_rules! w_id {
     }};
 }
 
-pub fn combine_id(id: u64, child_id: u64) -> u64 {
+pub fn combine_id(id: u64, child_id: impl Hash) -> u64 {
     let mut s = DefaultHasher::new();
     s.write_u64(id);
-    s.write_u64(child_id);
+    child_id.hash(&mut s);
     s.finish()
 }

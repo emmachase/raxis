@@ -46,8 +46,9 @@ use windows::Win32::Graphics::Dxgi::Common::{
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
-    IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
+    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4, IDXGIFactory7, IDXGIOutput,
+    IDXGISurface, IDXGISwapChain1,
 };
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
@@ -366,7 +367,7 @@ impl AppState {
                         BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                         BufferCount: 2,
                         Scaling: DXGI_SCALING_NONE,
-                        SwapEffect: DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+                        SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
                         AlphaMode: DXGI_ALPHA_MODE_IGNORE,
 
                         ..Default::default()
@@ -1261,6 +1262,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
                     if let Err(e) = state.on_resize(width, height) {
                         eprintln!("Failed to resize: {e}");
                     }
+                    // let _ = InvalidateRect(Some(hwnd), None, true);
                 }
                 LRESULT(0)
             }
