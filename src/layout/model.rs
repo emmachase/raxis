@@ -116,7 +116,7 @@ pub enum Sizing {
 }
 
 impl Sizing {
-    pub fn min(&self) -> f32 {
+    pub fn get_min(&self) -> f32 {
         match self {
             Sizing::Fixed { px } => *px,
             Sizing::Grow { min, .. } => *min,
@@ -125,12 +125,30 @@ impl Sizing {
         }
     }
 
-    pub fn max(&self) -> f32 {
+    pub fn get_max(&self) -> f32 {
         match self {
             Sizing::Fixed { px } => *px,
             Sizing::Grow { max, .. } => *max,
             Sizing::Fit { max, .. } => *max,
             Sizing::Percent { .. } => f32::INFINITY,
+        }
+    }
+
+    pub fn min(self, min: f32) -> Self {
+        match self {
+            Sizing::Fixed { px } => Sizing::Fixed { px },
+            Sizing::Grow { max, .. } => Sizing::Grow { min, max },
+            Sizing::Fit { max, .. } => Sizing::Fit { min, max },
+            Sizing::Percent { .. } => Sizing::Percent { percent: 1.0 },
+        }
+    }
+
+    pub fn max(self, max: f32) -> Self {
+        match self {
+            Sizing::Fixed { px } => Sizing::Fixed { px },
+            Sizing::Grow { min, .. } => Sizing::Grow { min, max },
+            Sizing::Fit { min, .. } => Sizing::Fit { min, max },
+            Sizing::Percent { .. } => Sizing::Percent { percent: 1.0 },
         }
     }
 

@@ -228,8 +228,8 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                 element!().computed_width = 0.0;
             }
             (Axis::X, sizing, _) => {
-                let min = sizing.min();
-                let max = sizing.max();
+                let min = sizing.get_min();
+                let max = sizing.get_max();
                 element!().computed_width = element!().computed_width.clamp(min, max);
                 element!().min_width = element!().min_width.clamp(min, max);
             }
@@ -237,8 +237,8 @@ pub fn fit_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
                 element!().computed_height = 0.0;
             }
             (Axis::Y, _, sizing) => {
-                let min = sizing.min();
-                let max = sizing.max();
+                let min = sizing.get_min();
+                let max = sizing.get_max();
                 element!().computed_height = element!().computed_height.clamp(min, max);
                 element!().min_height = element!().min_height.clamp(min, max);
             }

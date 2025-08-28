@@ -246,10 +246,7 @@ fn todo_app(mut hook: HookManager) -> Element {
                     Element {
                         id: Some(w_id!()),
                         width: Sizing::grow(),
-                        height: Sizing::Fit {
-                            min: 40.0,
-                            max: 120.0,
-                        },
+                        height: Sizing::fit().min(40.0).max(120.0),
                         scroll: Some(ScrollConfig {
                             vertical: Some(true),
                             sticky_bottom: Some(true),
@@ -333,10 +330,7 @@ fn todo_app(mut hook: HookManager) -> Element {
 
                         children: vec![Element {
                             id: Some(w_id!()),
-                            width: Sizing::Grow {
-                                min: 80.0,
-                                max: f32::INFINITY,
-                            },
+                            width: Sizing::grow().min(80.0),
                             height: Sizing::grow(),
                             content: Some(ElementContent::Widget(Box::new(
                                 Text::new("Add")
@@ -524,14 +518,8 @@ fn todo_item(
 
                 children: vec![Element {
                     id: Some(combine_id(w_id!(), item.id)),
-                    width: Sizing::Grow {
-                        min: 32.0,
-                        max: f32::INFINITY,
-                    },
-                    height: Sizing::Grow {
-                        min: 32.0,
-                        max: f32::INFINITY,
-                    },
+                    width: Sizing::grow().min(32.0),
+                    height: Sizing::grow().min(32.0),
                     content: Some(ElementContent::Widget(Box::new(
                         Text::new("✕")
                             .with_paragraph_alignment(ParagraphAlignment::Center)
