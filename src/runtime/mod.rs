@@ -189,7 +189,9 @@ fn state_mut_from_hwnd<State, Message>(hwnd: HWND) -> Option<MaybeGuard<State, M
         #[cfg(not(debug_assertions))]
         if ptr != 0 {
             Some(MaybeGuard {
-                guard: (&mut *(ptr as *mut WinUserData<State>)).get_mut().unwrap(),
+                guard: (&mut *(ptr as *mut WinUserData<State, Message>))
+                    .get_mut()
+                    .unwrap(),
             })
         } else {
             None

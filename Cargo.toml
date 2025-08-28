@@ -7,6 +7,7 @@ edition = "2024"
 
 [dependencies]
 const_format = "0.2.34"
+dhat = { version = "0.3.3", optional = true }
 slotmap = "1.0.7"
 smol_str = "0.3.2"
 unicode-segmentation = "1.11"
@@ -38,7 +39,11 @@ windows-core = "0.61.2"
 windows-numerics = "0.2.0"
 
 [profile.release]
-strip = true    # Automatically strip symbols from the binary.
-opt-level = "z" # Optimize for size.
-lto = "fat"
-panic = "abort"
+# strip = true    # Automatically strip symbols from the binary.
+# opt-level = "z" # Optimize for size.
+# lto = "fat"
+# panic = "abort"
+debug = 1
+
+[features]
+dhat-heap = ["dhat"]

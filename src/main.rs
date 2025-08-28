@@ -18,6 +18,10 @@ use raxis::{
     },
 };
 
+#[cfg(feature = "dhat-heap")]
+#[global_allocator]
+static ALLOC: dhat::Alloc = dhat::Alloc;
+
 fn demo_box(label: &str, border: Border, radius: Option<BorderRadius>) -> Element {
     Element {
         id: Some(combine_id(w_id!(), label)),
@@ -106,7 +110,7 @@ fn border_demos() -> Element {
         padding: BoxAmount::all(12.0),
         background_color: Some(0xFFFFFFFF),
         border: Some(Border {
-            width: 0.5,
+            width: 1.0,
             color: Color {
                 r: 0.85,
                 g: 0.85,
@@ -115,7 +119,7 @@ fn border_demos() -> Element {
             },
             ..Default::default()
         }),
-        border_radius: Some(BorderRadius::all(6.0)),
+        border_radius: Some(BorderRadius::all(8.0)),
         // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
         children: vec![
             // Title
@@ -253,9 +257,9 @@ fn todo_app(mut hook: HookManager) -> Element {
                             ..Default::default()
                         }),
                         background_color: Some(0xFFFFFFFF),
-                        border_radius: Some(BorderRadius::all(5.0)),
+                        border_radius: Some(BorderRadius::all(8.0)),
                         border: Some(Border {
-                            width: 0.5,
+                            width: 1.0,
                             color: Color {
                                 r: 0.85,
                                 g: 0.85,
@@ -381,7 +385,7 @@ fn todo_item(
         height: Sizing::fit(),
         background_color: Some(0xFFFFFFFF),
         border: Some(Border {
-            width: 0.5,
+            width: 1.0,
             color: Color {
                 r: 0.85,
                 g: 0.85,
@@ -545,5 +549,8 @@ fn update(_state: &mut (), _message: ()) {
 }
 
 fn main() {
+    #[cfg(feature = "dhat-heap")]
+    let _profiler = dhat::Profiler::new_heap();
+
     raxis::runtime::run_event_loop(view, update, ()).expect("Failed to run event loop");
 }
