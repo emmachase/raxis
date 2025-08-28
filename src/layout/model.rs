@@ -338,22 +338,21 @@ impl DropShadow {
 
 // ---------- Border ----------
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum BorderPlacement {
+    #[default]
     Inset,
     Center,
     Outset,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum BorderDashCap {
     Round,
     #[default]
     Square,
     Triangle,
 }
-
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum BorderDashStyle {
@@ -379,7 +378,7 @@ impl Default for Border {
         Self {
             width: 1.0,
             color: Color::default(),
-            placement: BorderPlacement::Center,
+            placement: BorderPlacement::Inset,
             dash_style: None,
             dash_cap: BorderDashCap::default(),
         }

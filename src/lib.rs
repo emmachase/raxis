@@ -66,7 +66,8 @@ impl HookManager<'_> {
     }
 }
 
-pub type ViewFn = dyn Fn(HookManager) -> Element;
+pub type ViewFn<State> = dyn Fn(&State, HookManager) -> Element;
+pub type UpdateFn<State, Message> = dyn Fn(&mut State, Message);
 
 pub enum DeferredControl {
     StartDrag { data: DragData, src_id: u64 },

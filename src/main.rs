@@ -218,7 +218,7 @@ fn todo_app(mut hook: HookManager) -> Element {
         id: Some(w_id!()),
         background_color: Some(0xF5F5F5FF), // Light gray background
         direction: Direction::TopToBottom,
-        width: Sizing::grow(),
+        width: Sizing::percent(1.0),
         height: Sizing::grow(),
         padding: BoxAmount::all(20.0),
         child_gap: 15.0,
@@ -548,10 +548,14 @@ fn todo_item(
     }
 }
 
-fn view(hook: HookManager) -> Element {
+fn view(_state: &(), hook: HookManager) -> Element {
     todo_app(hook)
 }
 
+fn update(_state: &mut (), _message: ()) {
+    // todo
+}
+
 fn main() {
-    raxis::runtime::run_event_loop(view).expect("Failed to run event loop");
+    raxis::runtime::run_event_loop(view, update, ()).expect("Failed to run event loop");
 }
