@@ -77,8 +77,8 @@ use windows::{
             Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo},
             Dxgi::Common::DXGI_FORMAT_UNKNOWN,
             Gdi::{
-                BeginPaint, EndPaint, GetDC, GetDeviceCaps, InvalidateRect, PAINTSTRUCT, ReleaseDC,
-                ScreenToClient, UpdateWindow, VREFRESH,
+                GetDC, GetDeviceCaps, InvalidateRect, ReleaseDC, ScreenToClient, UpdateWindow,
+                VREFRESH,
             },
         },
         System::{
@@ -1342,11 +1342,6 @@ fn wndproc_impl<State: 'static, Message: 'static>(
                 if let Some((device_resources, commands, redraw_request)) = commands {
                     let mut device_resources = device_resources.borrow_mut();
                     device_resources.create_device_resources(hwnd).ok();
-                    // Refresh target DPI in case it changed (e.g. monitor move)
-                    // self.update_dpi(hwnd);
-                    let mut ps = PAINTSTRUCT::default();
-                    // println!("BeginPaint");
-                    BeginPaint(hwnd, &mut ps);
 
                     if let (rt, Some(brush)) = (
                         &device_resources.d2d_device_context,
@@ -1388,11 +1383,9 @@ fn wndproc_impl<State: 'static, Message: 'static>(
                         }
                     }
 
-                    let _ = EndPaint(hwnd, &ps);
-
                     // TODO: Pass present dirty rects / scroll info
                     if let Some(ref swap_chain) = device_resources.dxgi_swapchain {
-                        let _ = swap_chain.Present(1, DXGI_PRESENT::default());
+                        let _ = swap_chain.Present(0, DXGI_PRESENT::default());
                     }
 
                     if matches!(redraw_request, RedrawRequest::Immediate) {
