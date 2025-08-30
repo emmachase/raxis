@@ -70,7 +70,7 @@ impl Default for WidgetState {
     }
 }
 
-impl Widget for Spinner {
+impl<Message> Widget<Message> for Spinner {
     fn state(&self, _device_resources: &crate::runtime::DeviceResources) -> super::State {
         Some(WidgetState::default().into_any())
     }
@@ -92,7 +92,7 @@ impl Widget for Spinner {
     fn paint(
         &mut self,
         instance: &mut Instance,
-        _shell: &Shell,
+        _shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         now: Instant,
@@ -148,7 +148,7 @@ impl Widget for Spinner {
         &mut self,
         _instance: &mut Instance,
         hwnd: windows::Win32::Foundation::HWND,
-        shell: &mut Shell,
+        shell: &mut Shell<Message>,
         event: &super::Event,
         _bounds: Bounds,
     ) {

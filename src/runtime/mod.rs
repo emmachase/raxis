@@ -3,6 +3,7 @@ pub mod dragdrop;
 pub mod focus;
 pub mod scroll;
 pub mod smooth_scroll;
+pub mod task;
 
 use crate::gfx::PointDIP;
 use crate::gfx::command_executor::CommandExecutor;
@@ -17,18 +18,21 @@ use crate::layout::{
 use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
+use crate::runtime::task::{Action, Task, into_stream};
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::{Cursor, DragData, DragEvent, Event, Modifiers, Renderer};
 use crate::{DeferredControl, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id};
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
 use slotmap::DefaultKey;
 use std::cell::RefCell;
-use std::ffi::c_void;
 use std::mem::ManuallyDrop;
 use std::ops::Deref;
 use std::ops::DerefMut;
 use std::rc::Rc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
+use std::thread;
 use std::time::Instant;
 use windows::Win32::Foundation::HMODULE;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_IGNORE;
@@ -61,8 +65,8 @@ use windows::Win32::UI::Input::Ime::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
-    SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
-    WM_DPICHANGED, WM_KEYUP, WM_MOUSEWHEEL, WM_TIMER,
+    PostMessageW, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SystemParametersInfoW, WM_DPICHANGED, WM_KEYUP, WM_MOUSEWHEEL, WM_TIMER, WM_USER,
 };
 use windows::{
     Win32::{
@@ -74,12 +78,9 @@ use windows::{
                 D2D1CreateFactory, ID2D1SolidColorBrush,
             },
             DirectWrite::{DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory},
-            Dwm::{DWM_TIMING_INFO, DwmGetCompositionTimingInfo},
+            Dwm::DWM_TIMING_INFO,
             Dxgi::Common::DXGI_FORMAT_UNKNOWN,
-            Gdi::{
-                GetDC, GetDeviceCaps, InvalidateRect, ReleaseDC, ScreenToClient, UpdateWindow,
-                VREFRESH,
-            },
+            Gdi::{InvalidateRect, ScreenToClient, UpdateWindow},
         },
         System::{
             Com::CoInitialize,
@@ -99,12 +100,12 @@ use windows::{
                 },
             },
             WindowsAndMessaging::{
-                self as WAM, CREATESTRUCTW, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
+                self as WAM, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
-                GetMessageTime, GetMessageW, GetSystemMetrics, HCURSOR, HTCLIENT, IDC_ARROW,
-                IDC_IBEAM, LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK,
-                SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos,
-                ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_CREATE, WM_DESTROY,
+                GetMessageTime, GetMessageW, GetSystemMetrics, HTCLIENT, IDC_ARROW, IDC_IBEAM,
+                LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK, SW_SHOW,
+                SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos,
+                ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY,
                 WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
                 WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
                 WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
@@ -117,9 +118,13 @@ use windows_core::{IUnknown, Interface};
 
 pub const LINE_HEIGHT: u32 = 32;
 
-pub struct SafeCursor(pub HCURSOR);
-unsafe impl Send for SafeCursor {}
-unsafe impl Sync for SafeCursor {}
+// Custom message for async task results
+const WM_ASYNC_MESSAGE: u32 = WM_USER + 1;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct UncheckedHWND(pub HWND);
+unsafe impl Send for UncheckedHWND {}
+unsafe impl Sync for UncheckedHWND {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum DragAxis {
@@ -227,13 +232,13 @@ struct AppState<State, Message> {
 
     clock: f64,
     timing_info: DWM_TIMING_INFO,
-    view_fn: Box<ViewFn<State>>,
-    _update_fn: Box<UpdateFn<State, Message>>,
+    view_fn: Box<ViewFn<State, Message>>,
+    update_fn: Box<UpdateFn<State, Message>>,
     user_state: State,
 
-    ui_tree: OwnedUITree,
+    ui_tree: OwnedUITree<Message>,
 
-    shell: Shell,
+    shell: Shell<Message>,
 
     scroll_state_manager: ScrollStateManager,
     smooth_scroll_manager: SmoothScrollManager,
@@ -251,6 +256,10 @@ struct AppState<State, Message> {
 
     // Active scrollbar dragging state (if any)
     scroll_drag: Option<ScrollDragState>,
+
+    // Async task executor
+    task_sender: mpsc::Sender<Task<Message>>,
+    message_receiver: mpsc::Receiver<Message>,
 }
 
 pub struct DeviceResources {
@@ -383,11 +392,14 @@ impl DeviceResources {
     }
 }
 
-impl<State: 'static, Message: 'static> AppState<State, Message> {
+static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
+
+impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
     fn new(
-        view_fn: Box<ViewFn<State>>,
+        view_fn: Box<ViewFn<State, Message>>,
         update_fn: Box<UpdateFn<State, Message>>,
         user_state: State,
+        hwnd: HWND,
     ) -> Result<Self> {
         unsafe {
             let mut d3d_device = None;
@@ -451,11 +463,58 @@ impl<State: 'static, Message: 'static> AppState<State, Message> {
                 dxgi_swapchain: None,
             };
 
-            let mut ui_tree = OwnedUITree::default();
+            let mut ui_tree = OwnedUITree::<Message>::default();
 
             create_tree_root(&user_state, &view_fn, &device_resources, &mut ui_tree);
 
-            let shell = Shell::new();
+            // Create channels for async task execution
+            let (task_sender, task_receiver) = mpsc::channel::<Task<Message>>();
+            let (message_sender, message_receiver) = mpsc::channel::<Message>();
+
+            let shell = Shell::new(message_sender.clone());
+
+            // Spawn executor thread with smol runtime
+            {
+                let message_sender = message_sender.clone();
+                let hwnd = UncheckedHWND(hwnd);
+                thread::spawn(move || {
+                    smol::block_on(async {
+                        while let Ok(task) = task_receiver.recv() {
+                            if let Some(stream) = into_stream(task) {
+                                let mut stream = stream;
+                                let message_sender = message_sender.clone();
+                                let hwnd = hwnd;
+
+                                smol::spawn(async move {
+                                    let hwnd = hwnd;
+                                    use futures::StreamExt;
+                                    while let Some(action) = stream.next().await {
+                                        if let Action::Output(message) = action {
+                                            // Send message to channel for UI thread processing
+                                            let _ = message_sender.send(message);
+
+                                            // If the UI thread is not processing messages, notify it
+                                            if PENDING_MESSAGE_PROCESSING
+                                                .swap(true, Ordering::SeqCst)
+                                                == false
+                                            {
+                                                PostMessageW(
+                                                    Some(hwnd.0),
+                                                    WM_ASYNC_MESSAGE,
+                                                    WPARAM(0),
+                                                    LPARAM(0),
+                                                )
+                                                .ok();
+                                            }
+                                        }
+                                    }
+                                })
+                                .detach();
+                            }
+                        }
+                    });
+                });
+            }
 
             Ok(Self {
                 device_resources: Rc::new(RefCell::new(device_resources)),
@@ -463,7 +522,7 @@ impl<State: 'static, Message: 'static> AppState<State, Message> {
                 timing_info: DWM_TIMING_INFO::default(),
                 ui_tree,
                 view_fn,
-                _update_fn: update_fn,
+                update_fn,
                 user_state,
                 shell,
                 scroll_state_manager: ScrollStateManager::default(),
@@ -474,6 +533,8 @@ impl<State: 'static, Message: 'static> AppState<State, Message> {
                 last_click_pos: POINT { x: 0, y: 0 },
                 click_count: 0,
                 scroll_drag: None,
+                task_sender,
+                message_receiver,
             })
         }
     }
@@ -616,13 +677,38 @@ impl<State: 'static, Message: 'static> AppState<State, Message> {
                 .set_scroll_position(element_id, current_pos);
         }
     }
+
+    // Process async messages from executor thread
+    fn process_async_messages(&mut self, hwnd: HWND) {
+        let mut cap = 100;
+        while let Ok(message) = self.message_receiver.try_recv() {
+            if let Some(task) = (self.update_fn)(&mut self.user_state, message) {
+                self.spawn_task(task);
+            }
+
+            // Limit processing to 100 messages per frame
+            cap -= 1;
+            if cap == 0 {
+                // Post a message to the window to continue processing later
+                unsafe { PostMessageW(Some(hwnd), WM_ASYNC_MESSAGE, WPARAM(0), LPARAM(0)).ok() };
+                break;
+            }
+        }
+
+        PENDING_MESSAGE_PROCESSING.store(false, Ordering::SeqCst);
+    }
+
+    // Spawn a task on the executor thread
+    fn spawn_task(&self, task: Task<Message>) {
+        let _ = self.task_sender.send(task);
+    }
 }
 
-fn create_tree_root<State: 'static>(
+fn create_tree_root<State: 'static, Message>(
     state: &State,
-    view_fn: &ViewFn<State>,
+    view_fn: &ViewFn<State, Message>,
     device_resources: &DeviceResources,
-    ui_tree: &mut OwnedUITree,
+    ui_tree: &mut OwnedUITree<Message>,
 ) {
     let children = view_fn(state, HookManager { ui_tree });
     create_tree(
@@ -650,7 +736,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
     WNDPROC_IMPL.get().unwrap()(hwnd, msg, wparam, lparam)
 }
 
-fn wndproc_impl<State: 'static, Message: 'static>(
+fn wndproc_impl<State: 'static, Message: 'static + Send>(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
@@ -658,6 +744,14 @@ fn wndproc_impl<State: 'static, Message: 'static>(
 ) -> LRESULT {
     let result = unsafe {
         match msg {
+            WM_ASYNC_MESSAGE => {
+                // Handle async messages from executor thread
+                if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                    let state = state.deref_mut();
+                    state.process_async_messages(hwnd);
+                }
+                LRESULT(0)
+            }
             WM_IME_STARTCOMPOSITION => {
                 // println!("WM_IME_STARTCOMPOSITION");
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
@@ -1154,70 +1248,6 @@ fn wndproc_impl<State: 'static, Message: 'static>(
 
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
-            WM_CREATE => {
-                // println!("WM_CREATE");
-                let pcs = lparam.0 as *const CREATESTRUCTW;
-                let ptr = (*pcs).lpCreateParams;
-                SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr as isize);
-
-                if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
-                    let state = state.deref_mut();
-                    // Get the composition refresh rate. If the DWM isn't running,
-                    // get the refresh rate from GDI -- probably going to be 60Hz
-                    let timing_info = &mut state.timing_info;
-                    if DwmGetCompositionTimingInfo(hwnd, timing_info).is_err() {
-                        println!("Failed to get composition timing info");
-                        let hdc = GetDC(Some(hwnd));
-                        timing_info.rateCompose.uiDenominator = 1;
-                        timing_info.rateCompose.uiNumerator =
-                            GetDeviceCaps(Some(hdc), VREFRESH) as u32;
-                        ReleaseDC(Some(hwnd), hdc);
-                    }
-
-                    println!(
-                        "Refresh rate: num {} / den {}",
-                        timing_info.rateCompose.uiNumerator as f64,
-                        timing_info.rateCompose.uiDenominator as f64
-                    );
-
-                    // Register OLE drop target
-                    if state.drop_target.is_none() {
-                        let dt: IDropTarget = DropTarget::new(hwnd, |hwnd, event| {
-                            // Dispatch drag/drop events to the Shell
-                            if let Some(mut app_state) = state_mut_from_hwnd::<State, Message>(hwnd)
-                            {
-                                let app_state = app_state.deref_mut();
-                                if let Some(result) = app_state.shell.dispatch_drag_event(
-                                    &mut app_state.ui_tree,
-                                    &event,
-                                    match &event {
-                                        DragEvent::DragEnter { drag_info }
-                                        | DragEvent::DragOver { drag_info }
-                                        | DragEvent::Drop { drag_info } => drag_info.position,
-                                        DragEvent::DragLeave => PointDIP {
-                                            x_dip: 0.0,
-                                            y_dip: 0.0,
-                                        }, // Position not needed for DragLeave
-                                    },
-                                ) {
-                                    // We don't get any other events while drag is ongoing, assume we need to redraw
-                                    let _ = InvalidateRect(Some(hwnd), None, false);
-                                    result.effect
-                                } else {
-                                    windows::Win32::System::Ole::DROPEFFECT_NONE
-                                }
-                            } else {
-                                windows::Win32::System::Ole::DROPEFFECT_NONE
-                            }
-                        })
-                        .into();
-                        let _ = RegisterDragDrop(hwnd, &dt);
-                        state.drop_target = Some(dt);
-                    }
-                }
-
-                LRESULT(0)
-            }
             WM_SIZE => {
                 // println!("WM_SIZE");
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
@@ -1494,10 +1524,11 @@ fn get_modifiers() -> Modifiers {
     }
 }
 
-pub fn run_event_loop<State: 'static, Message: 'static>(
-    view_fn: impl Fn(&State, HookManager) -> Element + 'static,
-    update_fn: impl Fn(&mut State, Message) + 'static,
+pub fn run_event_loop<State: 'static, Message: 'static + Send>(
+    view_fn: impl Fn(&State, HookManager<Message>) -> Element<Message> + 'static,
+    update_fn: impl Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
     user_state: State,
+    boot_fn: impl Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
 ) -> Result<()> {
     WNDPROC_IMPL
         .set(Box::new(wndproc_impl::<State, Message>))
@@ -1526,19 +1557,7 @@ pub fn run_event_loop<State: 'static, Message: 'static>(
         };
         RegisterClassW(&wc);
 
-        let app = AppState::new(Box::new(view_fn), Box::new(update_fn), user_state)?;
-        let mut dpi_x = 0.0f32;
-        let mut dpi_y = 0.0f32;
-        app.device_resources
-            .borrow()
-            .d2d_factory
-            .GetDesktopDpi(&mut dpi_x, &mut dpi_y);
-
-        let app = Mutex::new(app);
-
-        let boxed = Box::new(app);
-        let ptr = Box::into_raw(boxed) as isize;
-
+        // Create window first without user data
         let hwnd = CreateWindowExW(
             WINDOW_EX_STYLE::default(),
             class_name,
@@ -1546,13 +1565,77 @@ pub fn run_event_loop<State: 'static, Message: 'static>(
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            (800.0 / dips_scale_for_dpi(dpi_x)) as i32,
-            (600.0 / dips_scale_for_dpi(dpi_y)) as i32,
+            800, // Will be adjusted after DPI calculation
+            600, // Will be adjusted after DPI calculation
             None,
             None,
             Some(hinstance.into()),
-            Some(ptr as *const c_void),
+            None, // No user data yet
         )?;
+
+        // Now create the app state with the hwnd
+        let mut app = AppState::new(Box::new(view_fn), Box::new(update_fn), user_state, hwnd)?;
+        let mut dpi_x = 0.0f32;
+        let mut dpi_y = 0.0f32;
+        app.device_resources
+            .borrow()
+            .d2d_factory
+            .GetDesktopDpi(&mut dpi_x, &mut dpi_y);
+
+        // Register OLE drop target
+        let dt: IDropTarget = DropTarget::new(hwnd, |hwnd, event| {
+            // Dispatch drag/drop events to the Shell
+            if let Some(mut app_state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                let app_state = app_state.deref_mut();
+                if let Some(result) = app_state.shell.dispatch_drag_event(
+                    &mut app_state.ui_tree,
+                    &event,
+                    match &event {
+                        DragEvent::DragEnter { drag_info }
+                        | DragEvent::DragOver { drag_info }
+                        | DragEvent::Drop { drag_info } => drag_info.position,
+                        DragEvent::DragLeave => PointDIP {
+                            x_dip: 0.0,
+                            y_dip: 0.0,
+                        }, // Position not needed for DragLeave
+                    },
+                ) {
+                    // We don't get any other events while drag is ongoing, assume we need to redraw
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                    result.effect
+                } else {
+                    windows::Win32::System::Ole::DROPEFFECT_NONE
+                }
+            } else {
+                windows::Win32::System::Ole::DROPEFFECT_NONE
+            }
+        })
+        .into();
+        let _ = RegisterDragDrop(hwnd, &dt);
+        app.drop_target = Some(dt);
+
+        if let Some(task) = boot_fn(&app.user_state) {
+            app.spawn_task(task);
+        }
+
+        let app = Mutex::new(app);
+        let boxed = Box::new(app);
+        let ptr = Box::into_raw(boxed) as isize;
+
+        // Set the window's user data to point to our AppState
+        SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr);
+
+        // Resize window based on DPI
+        SetWindowPos(
+            hwnd,
+            None,
+            0,
+            0,
+            (800.0 / dips_scale_for_dpi(dpi_x)) as i32,
+            (600.0 / dips_scale_for_dpi(dpi_y)) as i32,
+            SWP_NOZORDER | SWP_NOACTIVATE,
+        )
+        .ok();
 
         // We don't care if the window was previously hidden or not
         let _ = ShowWindow(hwnd, SW_SHOW);

@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, time::Instant};
+use std::{any::Any, cell::RefCell, sync::mpsc, time::Instant};
 
 use windows::Win32::{
     Foundation::HWND,
@@ -32,8 +32,8 @@ pub struct HookState {
     hooks: Vec<RefCell<Box<dyn Any>>>,
 }
 
-pub struct HookManager<'a> {
-    ui_tree: BorrowedUITree<'a>,
+pub struct HookManager<'a, Message> {
+    ui_tree: BorrowedUITree<'a, Message>,
 }
 
 pub struct HookInstance<'a> {
@@ -55,7 +55,7 @@ impl<'a> HookInstance<'a> {
     }
 }
 
-impl HookManager<'_> {
+impl<Message> HookManager<'_, Message> {
     pub fn instance(&mut self, id: u64) -> HookInstance {
         let state = self.ui_tree.hook_state.entry(id).or_insert_with(|| {
             println!("Creating hook state for {id}");
@@ -66,8 +66,9 @@ impl HookManager<'_> {
     }
 }
 
-pub type ViewFn<State> = dyn Fn(&State, HookManager) -> Element;
-pub type UpdateFn<State, Message> = dyn Fn(&mut State, Message);
+pub type ViewFn<State, Message> = dyn Fn(&State, HookManager<Message>) -> Element<Message>;
+pub type UpdateFn<State, Message> =
+    dyn Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
 
 pub enum DeferredControl {
     StartDrag { data: DragData, src_id: u64 },
@@ -76,7 +77,7 @@ pub enum DeferredControl {
     DisableIME,
 }
 
-pub struct Shell {
+pub struct Shell<Message> {
     focus_manager: focus::FocusManager,
     input_method: InputMethod,
 
@@ -93,6 +94,8 @@ pub struct Shell {
     redraw_request: RedrawRequest,
 
     deferred_controls: Vec<DeferredControl>,
+
+    message_sender: mpsc::Sender<Message>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -107,16 +110,10 @@ pub enum InputMethod {
     Enabled { position: gfx::PointDIP },
 }
 
-impl Default for Shell {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 pub const REDRAW_TIMER_ID: usize = 50;
 
-impl Shell {
-    pub fn new() -> Self {
+impl<Message> Shell<Message> {
+    pub fn new(message_sender: mpsc::Sender<Message>) -> Self {
         Self {
             focus_manager: focus::FocusManager::new(),
             input_method: InputMethod::Disabled,
@@ -126,6 +123,7 @@ impl Shell {
             operation_queue: Vec::new(),
             redraw_request: RedrawRequest::Wait,
             deferred_controls: Vec::new(),
+            message_sender,
         }
     }
 
@@ -181,7 +179,7 @@ impl Shell {
         }
     }
 
-    pub fn dispatch_event(&mut self, hwnd: HWND, ui_tree: BorrowedUITree, event: Event) {
+    pub fn dispatch_event(&mut self, hwnd: HWND, ui_tree: BorrowedUITree<Message>, event: Event) {
         self.event_captured = false;
 
         // Handle regular events with reverse BFS traversal
@@ -206,7 +204,7 @@ impl Shell {
     pub fn dispatch_event_to(
         &mut self,
         hwnd: HWND,
-        ui_tree: BorrowedUITree,
+        ui_tree: BorrowedUITree<Message>,
         event: Event,
         target_id: u64,
     ) {
@@ -235,7 +233,11 @@ impl Shell {
         });
     }
 
-    pub fn dispatch_operations(&mut self, ui_tree: BorrowedUITree) {
+    pub fn publish(&self, message: Message) {
+        self.message_sender.send(message).unwrap();
+    }
+
+    pub fn dispatch_operations(&mut self, ui_tree: BorrowedUITree<Message>) {
         for operation in self.operation_queue.drain(..) {
             dispatch_operation(ui_tree, &*operation);
         }
@@ -244,7 +246,7 @@ impl Shell {
     /// Dispatch drag/drop events to widgets based on position
     pub fn dispatch_drag_event(
         &mut self,
-        ui_tree: BorrowedUITree,
+        ui_tree: BorrowedUITree<Message>,
         event: &DragEvent,
         position: gfx::PointDIP,
     ) -> Option<DropResult> {

@@ -377,7 +377,7 @@ impl TextWidgetState {
     }
 }
 
-impl Widget for Text {
+impl<Message> Widget<Message> for Text {
     fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
         match TextWidgetState::new(
             device_resources.dwrite_factory.clone(),
@@ -428,7 +428,7 @@ impl Widget for Text {
         &mut self,
         _instance: &mut Instance,
         _hwnd: HWND,
-        _shell: &mut Shell,
+        _shell: &mut Shell<Message>,
         _event: &super::Event,
         _bounds: Bounds,
     ) {
@@ -438,7 +438,7 @@ impl Widget for Text {
     fn paint(
         &mut self,
         instance: &mut Instance,
-        _shell: &Shell,
+        _shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         _now: Instant,
@@ -467,11 +467,7 @@ impl Widget for Text {
 
         // Draw the text
         if let Some(layout) = &state.text_layout {
-            recorder.draw_text(
-                &bounds.content_box,
-                layout,
-                self.color,
-            );
+            recorder.draw_text(&bounds.content_box, layout, self.color);
         }
     }
 

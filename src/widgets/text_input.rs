@@ -59,7 +59,9 @@ pub type TextInputEventHandler = Box<dyn Fn(&str) + 'static>;
 ///
 /// It encapsulates selection state, hit-testing, and cached layout bounds
 /// for cursor hit-testing.
-pub struct TextInput {
+pub struct TextInput<Message> {
+    _marker: std::marker::PhantomData<Message>,
+
     on_text_changed: Option<TextInputEventHandler>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
@@ -67,9 +69,10 @@ pub struct TextInput {
     pub font_family: String,
 }
 
-impl Default for TextInput {
+impl<Message> Default for TextInput<Message> {
     fn default() -> Self {
         Self {
+            _marker: std::marker::PhantomData,
             on_text_changed: None,
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
@@ -79,7 +82,7 @@ impl Default for TextInput {
     }
 }
 
-impl Debug for TextInput {
+impl<Message> Debug for TextInput<Message> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("TextInput")
             .field("on_text_changed", &self.on_text_changed.is_some())
@@ -87,9 +90,10 @@ impl Debug for TextInput {
     }
 }
 
-impl TextInput {
+impl<Message: 'static> TextInput<Message> {
     pub fn new() -> Self {
         Self {
+            _marker: std::marker::PhantomData,
             on_text_changed: None,
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
@@ -127,11 +131,11 @@ impl TextInput {
     }
 
     pub fn get_text(&self, instance: &Instance) -> String {
-        with_state!(instance as WidgetState).text.clone()
+        with_state!(instance as WidgetState<Message>).text.clone()
     }
 
     pub fn set_text(&self, instance: &mut Instance, text: String) {
-        let state = with_state!(mut instance as WidgetState);
+        let state = with_state!(mut instance as WidgetState<Message>);
         state.text = text;
         state.selection_anchor = 0;
         state.selection_active = 0;
@@ -141,7 +145,9 @@ impl TextInput {
     }
 }
 
-struct WidgetState {
+struct WidgetState<Message> {
+    _marker: std::marker::PhantomData<Message>,
+
     // DirectWrite objects (shared/cloneable COM interfaces)
     dwrite_factory: IDWriteFactory,
     text_format: IDWriteTextFormat,
@@ -201,7 +207,7 @@ struct WidgetState {
     redo_stack: Vec<UndoState>,
 }
 
-impl WidgetState {
+impl<Message: 'static> WidgetState<Message> {
     pub fn into_any(self) -> Box<dyn Any> {
         Box::new(self)
     }
@@ -214,9 +220,9 @@ pub enum SelectionMode {
     Paragraph,
 }
 
-impl Widget for TextInput {
+impl<Message: 'static> Widget<Message> for TextInput<Message> {
     fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
-        match WidgetState::new(
+        match WidgetState::<Message>::new(
             device_resources.dwrite_factory.clone(),
             &self.font_family,
             self.font_size,
@@ -229,7 +235,7 @@ impl Widget for TextInput {
     }
 
     fn limits_x(&self, instance: &mut Instance) -> limit_response::SizingForX {
-        let state = with_state!(instance as WidgetState);
+        let state = with_state!(instance as WidgetState<Message>);
         if let Some(layout) = &state.layout {
             let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
 
@@ -253,7 +259,7 @@ impl Widget for TextInput {
     }
 
     fn limits_y(&self, instance: &mut Instance, width: f32) -> limit_response::SizingForY {
-        let state = with_state!(instance as WidgetState);
+        let state = with_state!(instance as WidgetState<Message>);
         if let Some(layout) = &state.layout {
             unsafe {
                 layout.SetMaxWidth(width).unwrap();
@@ -278,11 +284,11 @@ impl Widget for TextInput {
         &mut self,
         instance: &mut Instance,
         hwnd: HWND,
-        shell: &mut Shell,
+        shell: &mut Shell<Message>,
         event: &super::Event,
         bounds: Bounds,
     ) {
-        let state = with_state!(mut instance as WidgetState);
+        let state = with_state!(mut instance as WidgetState<Message>);
 
         let RectDIP { x_dip, y_dip, .. } = bounds.content_box;
         match event {
@@ -541,12 +547,12 @@ impl Widget for TextInput {
     fn paint(
         &mut self,
         instance: &mut Instance,
-        shell: &Shell,
+        shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         _now: Instant,
     ) {
-        let state = with_state!(mut instance as WidgetState);
+        let state = with_state!(mut instance as WidgetState<Message>);
 
         // Rebuild text format if needed
         if state.needs_text_format_rebuild(
@@ -585,19 +591,19 @@ impl Widget for TextInput {
         }
     }
 
-    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget> {
+    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget<Message>> {
         Some(self)
     }
 }
 
-impl WidgetDragDropTarget for TextInput {
+impl<Message: 'static> WidgetDragDropTarget<Message> for TextInput<Message> {
     fn drag_enter(
         &mut self,
         instance: &mut Instance,
         drag_info: &DragInfo,
         widget_bounds: Bounds,
     ) -> windows::Win32::System::Ole::DROPEFFECT {
-        let state = with_state!(mut instance as WidgetState);
+        let state = with_state!(mut instance as WidgetState<Message>);
         match &drag_info.data {
             DragData::Text(_) => {
                 let widget_x = drag_info.position.x_dip - widget_bounds.content_box.x_dip;
@@ -619,7 +625,7 @@ impl WidgetDragDropTarget for TextInput {
         drag_info: &DragInfo,
         widget_bounds: Bounds,
     ) -> windows::Win32::System::Ole::DROPEFFECT {
-        let state = with_state!(mut instance as WidgetState);
+        let state = with_state!(mut instance as WidgetState<Message>);
         match &drag_info.data {
             DragData::Text(_) => {
                 let widget_x = drag_info.position.x_dip - widget_bounds.content_box.x_dip;
@@ -635,18 +641,18 @@ impl WidgetDragDropTarget for TextInput {
     }
 
     fn drag_leave(&mut self, instance: &mut Instance, _widget_bounds: Bounds) {
-        let state = with_state!(mut instance as WidgetState);
+        let state = with_state!(mut instance as WidgetState<Message>);
         state.set_ole_drop_preview(None);
     }
 
     fn drop(
         &mut self,
         instance: &mut Instance,
-        shell: &mut Shell,
+        shell: &mut Shell<Message>,
         drag_info: &DragInfo,
         widget_bounds: Bounds,
     ) -> DropResult {
-        let state = with_state!(mut instance as WidgetState);
+        let state = with_state!(mut instance as WidgetState<Message>);
         match &drag_info.data {
             DragData::Text(text) => {
                 // Convert client coordinates to widget-relative coordinates
@@ -673,7 +679,7 @@ impl WidgetDragDropTarget for TextInput {
     }
 }
 
-impl WidgetState {
+impl<Message> WidgetState<Message> {
     pub fn new(
         dwrite_factory: IDWriteFactory,
         font_family: &str,
@@ -722,6 +728,7 @@ impl WidgetState {
         };
 
         let mut s = Self {
+            _marker: std::marker::PhantomData,
             dwrite_factory,
             text_format,
             text: String::new(),
@@ -956,7 +963,7 @@ impl WidgetState {
     pub fn draw(
         &mut self,
         id: u64,
-        shell: &Shell,
+        shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: RectDIP,
         now: Instant,
@@ -1088,7 +1095,7 @@ impl WidgetState {
         None
     }
 
-    fn handoff_ole_drag(&mut self, instance_id: u64, shell: &mut Shell, data: &DragData) {
+    fn handoff_ole_drag(&mut self, instance_id: u64, shell: &mut Shell<Message>, data: &DragData) {
         // Mark that we can perform drag-to-move
         self.set_can_drag_drop(true);
 

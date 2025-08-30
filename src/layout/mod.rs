@@ -25,24 +25,34 @@ mod positioning;
 use fit_along_axis::fit_along_axis;
 use grow_and_shrink_along_axis::grow_and_shrink_along_axis;
 
-#[derive(Default)]
-pub struct OwnedUITree {
+pub struct OwnedUITree<Message> {
     pub root: UIKey,
-    pub slots: SlotMap<UIKey, UIElement>,
+    pub slots: SlotMap<UIKey, UIElement<Message>>,
     pub widget_state: HashMap<u64, Instance>,
     pub hook_state: HashMap<u64, HookState>,
 }
-pub type BorrowedUITree<'a> = &'a mut OwnedUITree;
+pub type BorrowedUITree<'a, Message> = &'a mut OwnedUITree<Message>;
+
+impl<Message> Default for OwnedUITree<Message> {
+    fn default() -> Self {
+        Self {
+            root: UIKey::default(),
+            slots: SlotMap::new(),
+            widget_state: HashMap::new(),
+            hook_state: HashMap::new(),
+        }
+    }
+}
 
 #[allow(dead_code)]
-fn set_parent_references(ui_tree: BorrowedUITree<'_>, root: UIKey) {
+fn set_parent_references<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
         ui_tree.slots[key].parent = parent;
     });
 }
 
 #[allow(dead_code)]
-fn propagate_inherited_properties(ui_tree: BorrowedUITree<'_>, root: UIKey) {
+fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
         if let Some(parent_key) = parent {
             if ui_tree.slots[key].color.is_none() && ui_tree.slots[parent_key].color.is_some() {
@@ -54,7 +64,7 @@ fn propagate_inherited_properties(ui_tree: BorrowedUITree<'_>, root: UIKey) {
     });
 }
 
-fn wrap_text(ui_tree: BorrowedUITree<'_>, root: UIKey) {
+fn wrap_text<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, _parent| {
         if let Some(ElementContent::Text { layout, .. }) = ui_tree.slots[key].content.as_ref() {
             let element = &ui_tree.slots[key];
@@ -73,8 +83,8 @@ fn wrap_text(ui_tree: BorrowedUITree<'_>, root: UIKey) {
     });
 }
 
-pub fn layout(
-    ui_tree: BorrowedUITree<'_>,
+pub fn layout<Message>(
+    ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {
@@ -97,9 +107,9 @@ pub const DEFAULT_SCROLLBAR_THUMB_COLOR: u32 = 0x00000055;
 pub const DEFAULT_SCROLLBAR_SIZE: f32 = 16.0;
 pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 
-pub fn paint(
-    shell: &Shell,
-    ui_tree: BorrowedUITree<'_>,
+pub fn paint<Message>(
+    shell: &Shell<Message>,
+    ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) -> DrawCommandList {
@@ -107,9 +117,9 @@ pub fn paint(
     generate_paint_commands(shell, ui_tree, root, scroll_state_manager)
 }
 
-pub fn generate_paint_commands(
-    shell: &Shell,
-    ui_tree: BorrowedUITree<'_>,
+pub fn generate_paint_commands<Message>(
+    shell: &Shell<Message>,
+    ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) -> DrawCommandList {
@@ -217,7 +227,7 @@ pub fn generate_paint_commands(
                 }
             },
             Some(
-                &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_>, key, _parent| {
+                &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_, Message>, key, _parent| {
                     let mut recorder = recorder_clone.borrow_mut();
                     let element = &slots[key];
 
@@ -314,8 +324,8 @@ pub enum ScrollDirection {
     Negative,
 }
 
-pub fn can_scroll_further(
-    element: &UIElement,
+pub fn can_scroll_further<Message>(
+    element: &UIElement<Message>,
     axis: Axis,
     direction: ScrollDirection,
     scroll_state_manager: &ScrollStateManager,
@@ -339,8 +349,8 @@ pub fn can_scroll_further(
     }
 }
 
-pub fn compute_scrollbar_geom(
-    element: &UIElement,
+pub fn compute_scrollbar_geom<Message>(
+    element: &UIElement<Message>,
     axis: Axis,
     scroll_state_manager: &ScrollStateManager,
 ) -> Option<ScrollbarGeom> {

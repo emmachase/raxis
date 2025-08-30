@@ -7,8 +7,8 @@ use crate::{
     runtime::scroll::ScrollPosition,
 };
 
-pub fn position_elements(
-    ui_tree: BorrowedUITree<'_>,
+pub fn position_elements<Message>(
+    ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {

@@ -313,7 +313,7 @@ impl ButtonWidgetState {
     }
 }
 
-impl Widget for Button {
+impl<Message> Widget<Message> for Button {
     fn state(&self, _device_resources: &crate::runtime::DeviceResources) -> super::State {
         Some(ButtonWidgetState::new().into_any())
     }
@@ -336,7 +336,7 @@ impl Widget for Button {
         &mut self,
         instance: &mut Instance,
         hwnd: HWND,
-        shell: &mut Shell,
+        shell: &mut Shell<Message>,
         event: &super::Event,
         bounds: Bounds,
     ) {
@@ -396,7 +396,7 @@ impl Widget for Button {
     fn paint(
         &mut self,
         instance: &mut Instance,
-        _shell: &Shell,
+        _shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         _now: Instant,

@@ -6,9 +6,12 @@ edition = "2024"
 [lib]
 
 [dependencies]
+async-stream = "0.3.6"
 const_format = "0.2.34"
 dhat = { version = "0.3.3", optional = true }
+futures = "0.3.31"
 slotmap = "1.0.7"
+smol = "2.0.2"
 smol_str = "0.3.2"
 unicode-segmentation = "1.11"
 windows = { version = "0.61.3", features = [

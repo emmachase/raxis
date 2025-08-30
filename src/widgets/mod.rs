@@ -113,6 +113,7 @@ pub enum Event {
     },
 }
 
+#[derive(Debug)]
 pub enum DragEvent {
     DragEnter { drag_info: DragInfo },
     DragOver { drag_info: DragInfo },
@@ -861,7 +862,11 @@ pub struct Instance {
 }
 
 impl Instance {
-    pub fn new(id: u64, widget: &dyn Widget, device_resources: &DeviceResources) -> Self {
+    pub fn new<Message>(
+        id: u64,
+        widget: &dyn Widget<Message>,
+        device_resources: &DeviceResources,
+    ) -> Self {
         Self {
             id,
             state: widget.state(device_resources),
@@ -870,7 +875,7 @@ impl Instance {
 }
 
 #[allow(unused)]
-pub trait Widget: std::fmt::Debug {
+pub trait Widget<Message>: std::fmt::Debug {
     fn limits_x(&self, instance: &mut Instance) -> limit_response::SizingForX;
     fn limits_y(&self, instance: &mut Instance, width: f32) -> limit_response::SizingForY;
 
@@ -881,7 +886,7 @@ pub trait Widget: std::fmt::Debug {
     fn paint(
         &mut self,
         instance: &mut Instance,
-        shell: &Shell,
+        shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         bounds: Bounds,
         now: Instant,
@@ -891,7 +896,7 @@ pub trait Widget: std::fmt::Debug {
         &mut self,
         instance: &mut Instance,
         hwnd: HWND,
-        shell: &mut Shell,
+        shell: &mut Shell<Message>,
         event: &Event,
         bounds: Bounds,
     );
@@ -902,7 +907,7 @@ pub trait Widget: std::fmt::Debug {
 
     fn operate(&mut self, instance: &mut Instance, operation: &dyn Operation) {}
 
-    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget> {
+    fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget<Message>> {
         None
     }
 
@@ -923,7 +928,7 @@ pub trait Operation {
     // fn focusable(&self, focusable: &mut dyn Focusable, id: Option<u64>, key: UIKey) {}
 }
 
-pub fn dispatch_operation(ui_tree: BorrowedUITree, operation: &dyn Operation) {
+pub fn dispatch_operation<Message>(ui_tree: BorrowedUITree<Message>, operation: &dyn Operation) {
     visitors::visit_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
         let element = &mut ui_tree.slots[key];
         if let Some(ElementContent::Widget(widget)) = element.content.as_mut() {
@@ -940,7 +945,7 @@ pub struct Bounds {
     pub border_box: RectDIP,
 }
 
-impl UIElement {
+impl<Message> UIElement<Message> {
     pub fn bounds(&self) -> Bounds {
         Bounds {
             content_box: RectDIP {

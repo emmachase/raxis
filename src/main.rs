@@ -8,6 +8,7 @@ use raxis::{
         Border, BorderDashCap, BorderDashStyle, BorderPlacement, BorderRadius, BoxAmount,
         Direction, Element, ElementContent, ScrollConfig, Sizing, VerticalAlignment,
     },
+    runtime::task::Task,
     util::unique::combine_id,
     w_id,
     widgets::{
@@ -22,7 +23,9 @@ use raxis::{
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-fn demo_box(label: &str, border: Border, radius: Option<BorderRadius>) -> Element {
+enum Message {}
+
+fn demo_box(label: &str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
     Element {
         id: Some(combine_id(w_id!(), label)),
         width: Sizing::fixed(160.0),
@@ -39,7 +42,7 @@ fn demo_box(label: &str, border: Border, radius: Option<BorderRadius>) -> Elemen
     }
 }
 
-fn border_demos() -> Element {
+fn border_demos() -> Element<Message> {
     let inset = Border {
         width: 4.0,
         color: Color::from(0x1976D2FF),
@@ -195,7 +198,7 @@ struct TodoState {
     input_text: String,
 }
 
-fn todo_app(mut hook: HookManager) -> Element {
+fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
     let todo_state = instance
         .use_hook(|| {
@@ -374,10 +377,10 @@ fn todo_app(mut hook: HookManager) -> Element {
 }
 
 fn todo_item(
-    _hook: &mut HookManager,
+    _hook: &mut HookManager<Message>,
     item: TodoItem,
     todo_state: Rc<RefCell<TodoState>>,
-) -> Element {
+) -> Element<Message> {
     Element {
         id: Some(combine_id(w_id!(), item.id)),
         direction: Direction::LeftToRight,
@@ -540,17 +543,18 @@ fn todo_item(
     }
 }
 
-fn view(_state: &(), hook: HookManager) -> Element {
+fn view(_state: &(), hook: HookManager<Message>) -> Element<Message> {
     todo_app(hook)
 }
 
-fn update(_state: &mut (), _message: ()) {
-    // todo
+fn update(_state: &mut (), _message: Message) -> Option<Task<Message>> {
+    None
 }
 
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    raxis::runtime::run_event_loop(view, update, ()).expect("Failed to run event loop");
+    raxis::runtime::run_event_loop(view, update, (), |_state| None)
+        .expect("Failed to run event loop");
 }

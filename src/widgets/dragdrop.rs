@@ -45,7 +45,7 @@ impl Default for DropResult {
 
 /// Trait for widgets that can participate in drag and drop operations
 #[allow(unused)]
-pub trait WidgetDragDropTarget {
+pub trait WidgetDragDropTarget<Message> {
     /// Called when a drag operation enters the widget's bounds
     /// Returns the drop effect that would be applied if dropped here
     fn drag_enter(
@@ -78,7 +78,7 @@ pub trait WidgetDragDropTarget {
     fn drop(
         &mut self,
         instance: &mut Instance,
-        shell: &mut Shell,
+        shell: &mut Shell<Message>,
         drag_info: &DragInfo,
         widget_bounds: Bounds,
     ) -> DropResult {

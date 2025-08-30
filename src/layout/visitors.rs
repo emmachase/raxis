@@ -30,9 +30,12 @@ impl From<()> for VisitAction {
 }
 
 /// Breadth-first traversal that visits nodes from leaves back to the root.
-pub fn visit_reverse_bfs<F, R>(ui_tree: BorrowedUITree, element: UIKey, mut visitor: F)
-where
-    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
+pub fn visit_reverse_bfs<Message, F, R>(
+    ui_tree: BorrowedUITree<'_, Message>,
+    element: UIKey,
+    mut visitor: F,
+) where
+    F: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> R,
     R: Into<VisitAction>,
 {
     let mut queue: VecDeque<(UIKey, Option<UIKey>)> = VecDeque::from([(element, None)]);
@@ -55,9 +58,12 @@ where
 }
 
 /// Standard breadth-first traversal.
-pub fn visit_bfs<F, R>(ui_tree: BorrowedUITree, element: UIKey, mut visitor: F)
-where
-    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
+pub fn visit_bfs<Message, F, R>(
+    ui_tree: BorrowedUITree<'_, Message>,
+    element: UIKey,
+    mut visitor: F,
+) where
+    F: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> R,
     R: Into<VisitAction>,
 {
     let mut queue: VecDeque<(UIKey, Option<UIKey>)> = VecDeque::from([(element, None)]);
@@ -74,14 +80,14 @@ where
 
 /// Breadth-first traversal that defers visiting nodes based on a predicate.
 /// Nodes that are deferred are revisited in subsequent passes until none are deferred.
-pub fn visit_deferring_bfs<S, F, R>(
-    ui_tree: BorrowedUITree,
+pub fn visit_deferring_bfs<Message, S, F, R>(
+    ui_tree: BorrowedUITree<'_, Message>,
     element: UIKey,
     mut should_defer: S,
     mut visitor: F,
 ) where
-    S: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> bool,
-    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
+    S: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> bool,
+    F: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> R,
     R: Into<VisitAction>,
 {
     let mut queue: VecDeque<(UIKey, Option<UIKey>)> = VecDeque::from([(element, None)]);
@@ -111,14 +117,14 @@ pub fn visit_deferring_bfs<S, F, R>(
 }
 
 /// Depth-first traversal with optional "exit-children" callback.
-pub fn visit_dfs<F, E, R>(
-    ui_tree: BorrowedUITree,
+pub fn visit_dfs<Message, F, E, R>(
+    ui_tree: BorrowedUITree<'_, Message>,
     element: UIKey,
     mut visitor: F,
     mut exit_children_visitor: Option<E>,
 ) where
-    F: FnMut(BorrowedUITree, UIKey, Option<UIKey>) -> R,
-    E: FnMut(BorrowedUITree, UIKey, Option<UIKey>),
+    F: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> R,
+    E: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>),
     R: Into<VisitAction>,
 {
     #[derive(Clone, Copy)]

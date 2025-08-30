@@ -5,7 +5,11 @@ use crate::layout::{
     visitors,
 };
 
-pub fn grow_and_shrink_along_axis(ui_tree: BorrowedUITree<'_>, root: UIKey, axis: Axis) {
+pub fn grow_and_shrink_along_axis<Message>(
+    ui_tree: BorrowedUITree<'_, Message>,
+    root: UIKey,
+    axis: Axis,
+) {
     let x_axis = matches!(axis, Axis::X);
 
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, _parent| {
