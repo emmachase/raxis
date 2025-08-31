@@ -6,7 +6,7 @@ use crate::layout::{
 };
 
 pub fn grow_and_shrink_along_axis<Message>(
-    ui_tree: BorrowedUITree<'_, Message>,
+    ui_tree: BorrowedUITree<'_, '_, Message>,
     root: UIKey,
     axis: Axis,
 ) {

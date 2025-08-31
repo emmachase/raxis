@@ -1,4 +1,4 @@
-use std::{any::Any, cell::RefCell, sync::mpsc, time::Instant};
+use std::{any::Any, cell::RefCell, marker::PhantomData, sync::mpsc, time::Instant};
 
 use windows::Win32::{
     Foundation::HWND,
@@ -32,16 +32,17 @@ pub struct HookState {
     hooks: Vec<RefCell<Box<dyn Any>>>,
 }
 
-pub struct HookManager<'a, Message> {
-    ui_tree: BorrowedUITree<'a, Message>,
+pub struct HookManager<'a, 'b, Message> {
+    ui_tree: BorrowedUITree<'a, 'b, Message>,
 }
 
-pub struct HookInstance<'a> {
+pub struct HookInstance<'a, 'b> {
+    marker: PhantomData<&'b ()>,
     state: &'a mut HookState,
     position: usize,
 }
 
-impl<'a> HookInstance<'a> {
+impl<'a, 'b> HookInstance<'a, 'b> {
     pub fn use_hook<T: 'static>(&mut self, initializer: impl FnOnce() -> T) -> &mut T {
         if self.position >= self.state.hooks.len() {
             self.state.hooks.push(RefCell::new(Box::new(initializer())));
@@ -55,18 +56,23 @@ impl<'a> HookInstance<'a> {
     }
 }
 
-impl<Message> HookManager<'_, Message> {
-    pub fn instance(&mut self, id: u64) -> HookInstance {
+impl<'a, 'b, Message> HookManager<'a, 'b, Message> {
+    pub fn instance(&'a mut self, id: u64) -> HookInstance<'a, 'b> {
         let state = self.ui_tree.hook_state.entry(id).or_insert_with(|| {
             println!("Creating hook state for {id}");
             HookState::default()
         });
 
-        HookInstance { state, position: 0 }
+        HookInstance {
+            marker: PhantomData,
+            state,
+            position: 0,
+        }
     }
 }
 
-pub type ViewFn<State, Message> = dyn Fn(&State, HookManager<Message>) -> Element<Message>;
+pub type ViewFn<'a, 'b, State, Message> =
+    dyn Fn(&State, HookManager<'a, 'b, Message>) -> Element<'b, Message>;
 pub type UpdateFn<State, Message> =
     dyn Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
 

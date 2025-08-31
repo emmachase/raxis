@@ -32,21 +32,21 @@ pub enum ParagraphAlignment {
 }
 
 /// Simple text display widget for showing read-only text
-#[derive(Debug)]
-pub struct Text {
-    pub text: String,
+#[derive(Debug, Clone, Copy)]
+pub struct Text<'a> {
+    pub text: &'a str,
     pub font_size: f32,
     pub color: Color,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
-    pub font_family: String,
+    pub font_family: &'a str,
     pub word_wrap: bool,
 }
 
-impl Text {
-    pub fn new(text: impl Into<String>) -> Self {
+impl<'a> Text<'a> {
+    pub fn new(text: &'a str) -> Self {
         Self {
-            text: text.into(),
+            text,
             font_size: 14.0,
             color: Color {
                 r: 0.0,
@@ -56,7 +56,7 @@ impl Text {
             },
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
-            font_family: "Segoe UI".to_string(),
+            font_family: "Segoe UI",
             word_wrap: true,
         }
     }
@@ -81,8 +81,8 @@ impl Text {
         self
     }
 
-    pub fn with_font_family(mut self, font_family: impl Into<String>) -> Self {
-        self.font_family = font_family.into();
+    pub fn with_font_family(mut self, font_family: &'a str) -> Self {
+        self.font_family = font_family;
         self
     }
 
@@ -92,7 +92,7 @@ impl Text {
     }
 }
 
-impl Default for Text {
+impl<'a> Default for Text<'a> {
     fn default() -> Self {
         Self::new("Text")
     }
@@ -377,7 +377,7 @@ impl TextWidgetState {
     }
 }
 
-impl<Message> Widget<Message> for Text {
+impl<'a, Message> Widget<Message> for Text<'a> {
     fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
         match TextWidgetState::new(
             device_resources.dwrite_factory.clone(),

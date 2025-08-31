@@ -428,7 +428,7 @@ pub struct ScrollConfig {
 // ---------- Element tree ----------
 
 #[derive(Debug)]
-pub enum ElementContent<Message> {
+pub enum ElementContent<'a, Message> {
     Text {
         /// Array of text spans that make up the text content
         // pub spans: Vec<TextSpan>,
@@ -438,10 +438,10 @@ pub enum ElementContent<Message> {
         /// Device layout
         layout: Option<IDWriteTextLayout>,
     },
-    Widget(Box<dyn Widget<Message>>),
+    Widget(Box<dyn Widget<Message> + 'a>),
 }
 
-impl<Message> ElementContent<Message> {
+impl<'a, Message> ElementContent<'a, Message> {
     pub fn is_text(&self) -> bool {
         matches!(self, ElementContent::Text { .. })
     }
@@ -458,7 +458,7 @@ impl<Message> ElementContent<Message> {
         }
     }
 
-    pub fn unwrap_widget(&mut self) -> &mut Box<dyn Widget<Message>> {
+    pub fn unwrap_widget(&mut self) -> &mut Box<dyn Widget<Message> + 'a> {
         if let ElementContent::Widget(widget) = self {
             widget
         } else {
@@ -470,11 +470,11 @@ impl<Message> ElementContent<Message> {
 pub type UIKey = slotmap::DefaultKey;
 
 #[derive(Debug)]
-pub struct UIElement<Message> {
+pub struct UIElement<'a, Message> {
     pub parent: Option<UIKey>,
     pub children: Vec<UIKey>,
 
-    pub content: Option<ElementContent<Message>>,
+    pub content: Option<ElementContent<'a, Message>>,
 
     pub direction: Direction,
 
@@ -512,7 +512,7 @@ pub struct UIElement<Message> {
     pub id_map: HashMap<u64, UIKey>,
 }
 
-impl<Message> Default for UIElement<Message> {
+impl<'a, Message> Default for UIElement<'a, Message> {
     fn default() -> Self {
         Self {
             parent: None,
@@ -587,10 +587,10 @@ impl<Message> Default for UIElement<Message> {
 // }
 
 #[derive(Debug)]
-pub struct Element<Message> {
-    pub children: Vec<Element<Message>>,
+pub struct Element<'a, Message> {
+    pub children: Vec<Element<'a, Message>>,
 
-    pub content: Option<ElementContent<Message>>,
+    pub content: Option<ElementContent<'a, Message>>,
 
     pub direction: Direction,
 
@@ -617,7 +617,7 @@ pub struct Element<Message> {
     pub id: Option<u64>,
 }
 
-impl<Message> Default for Element<Message> {
+impl<'a, Message> Default for Element<'a, Message> {
     fn default() -> Self {
         Self {
             children: Vec::new(),
@@ -670,10 +670,10 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
     )
 }
 
-pub fn create_tree<Message>(
+pub fn create_tree<'a, Message>(
     device_resources: &DeviceResources,
-    tree: &mut OwnedUITree<Message>,
-    root: Element<Message>,
+    tree: &mut OwnedUITree<'a, Message>,
+    root: Element<'a, Message>,
 ) {
     let mut queue = vec![(root, None)];
     let mut root_key = None;

@@ -8,7 +8,7 @@ use crate::{
 };
 
 pub fn position_elements<Message>(
-    ui_tree: BorrowedUITree<'_, Message>,
+    ui_tree: BorrowedUITree<'_, '_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {

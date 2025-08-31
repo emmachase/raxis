@@ -25,15 +25,15 @@ mod positioning;
 use fit_along_axis::fit_along_axis;
 use grow_and_shrink_along_axis::grow_and_shrink_along_axis;
 
-pub struct OwnedUITree<Message> {
+pub struct OwnedUITree<'a, Message> {
     pub root: UIKey,
-    pub slots: SlotMap<UIKey, UIElement<Message>>,
+    pub slots: SlotMap<UIKey, UIElement<'a, Message>>,
     pub widget_state: HashMap<u64, Instance>,
     pub hook_state: HashMap<u64, HookState>,
 }
-pub type BorrowedUITree<'a, Message> = &'a mut OwnedUITree<Message>;
+pub type BorrowedUITree<'a, 'b, Message> = &'a mut OwnedUITree<'b, Message>;
 
-impl<Message> Default for OwnedUITree<Message> {
+impl<'a, Message> Default for OwnedUITree<'a, Message> {
     fn default() -> Self {
         Self {
             root: UIKey::default(),
@@ -45,14 +45,14 @@ impl<Message> Default for OwnedUITree<Message> {
 }
 
 #[allow(dead_code)]
-fn set_parent_references<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
+fn set_parent_references<Message>(ui_tree: BorrowedUITree<'_, '_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
         ui_tree.slots[key].parent = parent;
     });
 }
 
 #[allow(dead_code)]
-fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
+fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, '_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
         if let Some(parent_key) = parent {
             if ui_tree.slots[key].color.is_none() && ui_tree.slots[parent_key].color.is_some() {
@@ -64,7 +64,7 @@ fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>,
     });
 }
 
-fn wrap_text<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
+fn wrap_text<Message>(ui_tree: BorrowedUITree<'_, '_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, _parent| {
         if let Some(ElementContent::Text { layout, .. }) = ui_tree.slots[key].content.as_ref() {
             let element = &ui_tree.slots[key];
@@ -84,7 +84,7 @@ fn wrap_text<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
 }
 
 pub fn layout<Message>(
-    ui_tree: BorrowedUITree<'_, Message>,
+    ui_tree: BorrowedUITree<'_, '_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {
@@ -109,7 +109,7 @@ pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 
 pub fn paint<Message>(
     shell: &Shell<Message>,
-    ui_tree: BorrowedUITree<'_, Message>,
+    ui_tree: BorrowedUITree<'_, '_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) -> DrawCommandList {
@@ -119,7 +119,7 @@ pub fn paint<Message>(
 
 pub fn generate_paint_commands<Message>(
     shell: &Shell<Message>,
-    ui_tree: BorrowedUITree<'_, Message>,
+    ui_tree: BorrowedUITree<'_, '_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) -> DrawCommandList {
@@ -227,7 +227,7 @@ pub fn generate_paint_commands<Message>(
                 }
             },
             Some(
-                &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_, Message>, key, _parent| {
+                &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_, '_, Message>, key, _parent| {
                     let mut recorder = recorder_clone.borrow_mut();
                     let element = &slots[key];
 

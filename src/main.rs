@@ -25,7 +25,11 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 
 enum Message {}
 
-fn demo_box(label: &str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
+fn demo_box<'a>(
+    label: &'a str,
+    border: Border,
+    radius: Option<BorderRadius>,
+) -> Element<'a, Message> {
     Element {
         id: Some(combine_id(w_id!(), label)),
         width: Sizing::fixed(160.0),

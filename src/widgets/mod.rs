@@ -945,7 +945,7 @@ pub struct Bounds {
     pub border_box: RectDIP,
 }
 
-impl<Message> UIElement<Message> {
+impl<Message> UIElement<'_, Message> {
     pub fn bounds(&self) -> Bounds {
         Bounds {
             content_box: RectDIP {

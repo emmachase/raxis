@@ -7,7 +7,7 @@ use crate::{
     widgets::limit_response,
 };
 
-pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey, axis: Axis) {
+pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, '_, Message>, root: UIKey, axis: Axis) {
     // Helper to check scroll flag for an axis
     fn is_scroll_enabled<Message>(el: &UIElement<Message>, axis: Axis) -> bool {
         el.scroll

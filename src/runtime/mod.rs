@@ -140,16 +140,16 @@ struct ScrollDragState {
     grab_offset: f32,
 }
 
-struct MaybeGuard<State: 'static, Message: 'static> {
+struct MaybeGuard<'a, State: 'static, Message: 'static> {
     #[cfg(debug_assertions)]
-    guard: std::sync::MutexGuard<'static, AppState<State, Message>>,
+    guard: std::sync::MutexGuard<'a, AppState<'a, State, Message>>,
 
     #[cfg(not(debug_assertions))]
-    guard: &'static mut AppState<State, Message>,
+    guard: &'a mut AppState<'a, State, Message>,
 }
 
-impl<State: 'static, Message> Deref for MaybeGuard<State, Message> {
-    type Target = AppState<State, Message>;
+impl<'a, State: 'static, Message> Deref for MaybeGuard<'a, State, Message> {
+    type Target = AppState<'a, State, Message>;
 
     fn deref(&self) -> &Self::Target {
         #[cfg(debug_assertions)]
@@ -160,7 +160,7 @@ impl<State: 'static, Message> Deref for MaybeGuard<State, Message> {
     }
 }
 
-impl<State: 'static, Message> DerefMut for MaybeGuard<State, Message> {
+impl<'a, State: 'static, Message> DerefMut for MaybeGuard<'a, State, Message> {
     fn deref_mut(&mut self) -> &mut Self::Target {
         #[cfg(debug_assertions)]
         return self.guard.deref_mut();
@@ -170,10 +170,10 @@ impl<State: 'static, Message> DerefMut for MaybeGuard<State, Message> {
     }
 }
 
-type WinUserData<State, Message> = Mutex<AppState<State, Message>>;
+type WinUserData<'a, State, Message> = Mutex<AppState<'a, State, Message>>;
 
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
-fn state_mut_from_hwnd<State, Message>(hwnd: HWND) -> Option<MaybeGuard<State, Message>> {
+fn state_mut_from_hwnd<'a, State, Message>(hwnd: HWND) -> Option<MaybeGuard<'a, State, Message>> {
     unsafe {
         let ptr = WAM::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
@@ -227,16 +227,16 @@ fn window_rect(hwnd: HWND) -> Result<RECT> {
     }
 }
 
-struct AppState<State, Message> {
+struct AppState<'a, State, Message: 'static> {
     device_resources: Rc<RefCell<DeviceResources>>, // TODO: This shouldn't really be necessary
 
     clock: f64,
     timing_info: DWM_TIMING_INFO,
-    view_fn: Box<ViewFn<State, Message>>,
+    view_fn: Box<ViewFn<'a, State, Message>>,
     update_fn: Box<UpdateFn<State, Message>>,
     user_state: State,
 
-    ui_tree: OwnedUITree<Message>,
+    ui_tree: OwnedUITree<'a, Message>,
 
     shell: Shell<Message>,
 
@@ -394,9 +394,9 @@ impl DeviceResources {
 
 static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
 
-impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
+impl<'a, State: 'static, Message: 'static + Send> AppState<'a, State, Message> {
     fn new(
-        view_fn: Box<ViewFn<State, Message>>,
+        view_fn: Box<ViewFn<'a, State, Message>>,
         update_fn: Box<UpdateFn<State, Message>>,
         user_state: State,
         hwnd: HWND,
@@ -704,11 +704,11 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
     }
 }
 
-fn create_tree_root<State: 'static, Message>(
+fn create_tree_root<'a, 'b: 'a, State: 'static, Message>(
     state: &State,
-    view_fn: &ViewFn<State, Message>,
+    view_fn: &ViewFn<'a, 'b, State, Message>,
     device_resources: &DeviceResources,
-    ui_tree: &mut OwnedUITree<Message>,
+    ui_tree: &'a mut OwnedUITree<'b, Message>,
 ) {
     let children = view_fn(state, HookManager { ui_tree });
     create_tree(
@@ -1530,7 +1530,7 @@ fn get_modifiers() -> Modifiers {
 }
 
 pub fn run_event_loop<State: 'static, Message: 'static + Send>(
-    view_fn: impl Fn(&State, HookManager<Message>) -> Element<Message> + 'static,
+    view_fn: impl Fn(&State, HookManager<Message>) -> Element<'static, Message> + 'static,
     update_fn: impl Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
     user_state: State,
     boot_fn: impl Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
