@@ -12,6 +12,8 @@ use windows::core::Result;
 use windows_core::{PCWSTR, w};
 
 use crate::gfx::RectDIP;
+use crate::layout::UIArenas;
+use crate::util::str::StableString;
 use crate::widgets::{Bounds, Color, Instance, Widget};
 use crate::{Shell, with_state};
 
@@ -34,17 +36,17 @@ pub enum ParagraphAlignment {
 /// Simple text display widget for showing read-only text
 #[derive(Debug)]
 pub struct Text {
-    pub text: String,
+    pub text: StableString,
     pub font_size: f32,
     pub color: Color,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
-    pub font_family: String,
+    pub font_family: StableString,
     pub word_wrap: bool,
 }
 
 impl Text {
-    pub fn new(text: impl Into<String>) -> Self {
+    pub fn new(text: impl Into<StableString>) -> Self {
         Self {
             text: text.into(),
             font_size: 14.0,
@@ -56,7 +58,7 @@ impl Text {
             },
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
-            font_family: "Segoe UI".to_string(),
+            font_family: "Segoe UI".into(),
             word_wrap: true,
         }
     }
@@ -81,7 +83,7 @@ impl Text {
         self
     }
 
-    pub fn with_font_family(mut self, font_family: impl Into<String>) -> Self {
+    pub fn with_font_family(mut self, font_family: impl Into<StableString>) -> Self {
         self.font_family = font_family.into();
         self
     }
@@ -94,7 +96,7 @@ impl Text {
 
 impl Default for Text {
     fn default() -> Self {
-        Self::new("Text")
+        Self::new(StableString::Static("Text"))
     }
 }
 
@@ -378,10 +380,14 @@ impl TextWidgetState {
 }
 
 impl<Message> Widget<Message> for Text {
-    fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
+    fn state(
+        &self,
+        arenas: &UIArenas,
+        device_resources: &crate::runtime::DeviceResources,
+    ) -> super::State {
         match TextWidgetState::new(
             device_resources.dwrite_factory.clone(),
-            &self.font_family,
+            self.font_family.resolve(arenas).unwrap(),
             self.font_size,
             self.text_alignment,
             self.paragraph_alignment,
@@ -392,10 +398,16 @@ impl<Message> Widget<Message> for Text {
         }
     }
 
-    fn limits_x(&self, instance: &mut Instance) -> super::limit_response::SizingForX {
+    fn limits_x(
+        &self,
+        arenas: &UIArenas,
+        instance: &mut Instance,
+    ) -> super::limit_response::SizingForX {
         let state = with_state!(mut instance as TextWidgetState);
 
-        if let Ok(preferred_width) = state.get_preferred_width(&self.text) {
+        if let Some(text) = self.text.resolve(arenas)
+            && let Ok(preferred_width) = state.get_preferred_width(text)
+        {
             super::limit_response::SizingForX {
                 min_width: preferred_width,
                 preferred_width,
@@ -408,10 +420,17 @@ impl<Message> Widget<Message> for Text {
         }
     }
 
-    fn limits_y(&self, instance: &mut Instance, width: f32) -> super::limit_response::SizingForY {
+    fn limits_y(
+        &self,
+        arenas: &UIArenas,
+        instance: &mut Instance,
+        width: f32,
+    ) -> super::limit_response::SizingForY {
         let state = with_state!(mut instance as TextWidgetState);
 
-        if let Ok(preferred_height) = state.get_preferred_height_for_width(&self.text, width) {
+        if let Some(text) = self.text.resolve(arenas)
+            && let Ok(preferred_height) = state.get_preferred_height_for_width(text, width)
+        {
             super::limit_response::SizingForY {
                 min_height: preferred_height,
                 preferred_height,
@@ -426,6 +445,7 @@ impl<Message> Widget<Message> for Text {
 
     fn update(
         &mut self,
+        _arenas: &mut UIArenas,
         _instance: &mut Instance,
         _hwnd: HWND,
         _shell: &mut Shell<Message>,
@@ -437,6 +457,7 @@ impl<Message> Widget<Message> for Text {
 
     fn paint(
         &mut self,
+        arenas: &UIArenas,
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
@@ -447,14 +468,14 @@ impl<Message> Widget<Message> for Text {
 
         // Rebuild text format if properties changed
         if state.needs_text_format_rebuild(
-            &self.font_family,
+            self.font_family.resolve(arenas).unwrap(),
             self.font_size,
             self.text_alignment,
             self.paragraph_alignment,
             self.word_wrap,
         ) {
             let _ = state.rebuild_text_format(
-                &self.font_family,
+                self.font_family.resolve(arenas).unwrap(),
                 self.font_size,
                 self.text_alignment,
                 self.paragraph_alignment,
@@ -463,7 +484,10 @@ impl<Message> Widget<Message> for Text {
         }
 
         // Build text layout if needed
-        let _ = state.build_text_layout(&self.text, bounds.content_box);
+        let _ = state.build_text_layout(
+            self.text.resolve(arenas).expect("intern string missing"),
+            bounds.content_box,
+        );
 
         // Draw the text
         if let Some(layout) = &state.text_layout {
@@ -473,6 +497,7 @@ impl<Message> Widget<Message> for Text {
 
     fn cursor(
         &self,
+        _arenas: &UIArenas,
         _instance: &Instance,
         _point: crate::gfx::PointDIP,
         _bounds: Bounds,

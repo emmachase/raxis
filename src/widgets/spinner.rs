@@ -4,6 +4,7 @@ use windows_numerics::Vector2;
 
 use crate::{
     Shell,
+    layout::UIArenas,
     math::easing::Easing,
     widgets::{Bounds, Instance, Widget},
     with_state,
@@ -71,18 +72,31 @@ impl Default for WidgetState {
 }
 
 impl<Message> Widget<Message> for Spinner {
-    fn state(&self, _device_resources: &crate::runtime::DeviceResources) -> super::State {
+    fn state(
+        &self,
+        _arenas: &UIArenas,
+        _device_resources: &crate::runtime::DeviceResources,
+    ) -> super::State {
         Some(WidgetState::default().into_any())
     }
 
-    fn limits_x(&self, _instance: &mut Instance) -> super::limit_response::SizingForX {
+    fn limits_x(
+        &self,
+        _arenas: &UIArenas,
+        _instance: &mut Instance,
+    ) -> super::limit_response::SizingForX {
         super::limit_response::SizingForX {
             min_width: self.radius * 2.0,
             preferred_width: self.radius * 2.0,
         }
     }
 
-    fn limits_y(&self, _instance: &mut Instance, _width: f32) -> super::limit_response::SizingForY {
+    fn limits_y(
+        &self,
+        _arenas: &UIArenas,
+        _instance: &mut Instance,
+        _width: f32,
+    ) -> super::limit_response::SizingForY {
         super::limit_response::SizingForY {
             min_height: self.radius * 2.0,
             preferred_height: self.radius * 2.0,
@@ -91,6 +105,7 @@ impl<Message> Widget<Message> for Spinner {
 
     fn paint(
         &mut self,
+        _arenas: &UIArenas,
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
@@ -146,6 +161,7 @@ impl<Message> Widget<Message> for Spinner {
 
     fn update(
         &mut self,
+        _arenas: &mut UIArenas,
         _instance: &mut Instance,
         hwnd: windows::Win32::Foundation::HWND,
         shell: &mut Shell<Message>,

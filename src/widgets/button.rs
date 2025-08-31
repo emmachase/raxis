@@ -5,6 +5,7 @@ use std::time::Instant;
 use windows::Win32::Foundation::HWND;
 
 use crate::gfx::{PointDIP, RectDIP};
+use crate::layout::UIArenas;
 use crate::layout::model::{Border, BorderRadius};
 use crate::widgets::{Bounds, Color};
 use crate::widgets::{Instance, Widget};
@@ -153,7 +154,7 @@ impl Default for ButtonStyleSet {
 /// Button widget with text label and click handling
 pub struct Button {
     pub enabled: bool,
-    pub on_click: Option<Box<dyn Fn()>>,
+    pub on_click: Option<Box<dyn Fn(&mut UIArenas)>>,
     pub styles: ButtonStyleSet,
 }
 
@@ -174,7 +175,7 @@ impl Button {
         }
     }
 
-    pub fn with_click_handler(mut self, handler: impl Fn() + 'static) -> Self {
+    pub fn with_click_handler(mut self, handler: impl Fn(&mut UIArenas) + 'static) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
@@ -314,18 +315,31 @@ impl ButtonWidgetState {
 }
 
 impl<Message> Widget<Message> for Button {
-    fn state(&self, _device_resources: &crate::runtime::DeviceResources) -> super::State {
+    fn state(
+        &self,
+        _arenas: &UIArenas,
+        _device_resources: &crate::runtime::DeviceResources,
+    ) -> super::State {
         Some(ButtonWidgetState::new().into_any())
     }
 
-    fn limits_x(&self, _instance: &mut Instance) -> super::limit_response::SizingForX {
+    fn limits_x(
+        &self,
+        _arenas: &UIArenas,
+        _instance: &mut Instance,
+    ) -> super::limit_response::SizingForX {
         super::limit_response::SizingForX {
             min_width: 0.0,
             preferred_width: 0.0,
         }
     }
 
-    fn limits_y(&self, _instance: &mut Instance, _width: f32) -> super::limit_response::SizingForY {
+    fn limits_y(
+        &self,
+        _arenas: &UIArenas,
+        _instance: &mut Instance,
+        _width: f32,
+    ) -> super::limit_response::SizingForY {
         super::limit_response::SizingForY {
             min_height: 0.0,
             preferred_height: 0.0,
@@ -334,6 +348,7 @@ impl<Message> Widget<Message> for Button {
 
     fn update(
         &mut self,
+        arenas: &mut UIArenas,
         instance: &mut Instance,
         hwnd: HWND,
         shell: &mut Shell<Message>,
@@ -369,7 +384,7 @@ impl<Message> Widget<Message> for Button {
                 // Trigger click if mouse was released over the button
                 if was_pressed && point.within(bounds.border_box) && self.enabled {
                     if let Some(handler) = self.on_click.as_ref() {
-                        handler();
+                        handler(arenas);
                     }
                 }
 
@@ -395,6 +410,7 @@ impl<Message> Widget<Message> for Button {
 
     fn paint(
         &mut self,
+        _arenas: &UIArenas,
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
@@ -415,6 +431,7 @@ impl<Message> Widget<Message> for Button {
 
     fn cursor(
         &self,
+        _arenas: &UIArenas,
         _instance: &Instance,
         point: PointDIP,
         bounds: Bounds,

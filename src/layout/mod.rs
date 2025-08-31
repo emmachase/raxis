@@ -1,6 +1,7 @@
 use std::{collections::HashMap, time::Instant};
 
 use slotmap::SlotMap;
+use string_interner::{StringInterner, backend::StringBackend};
 
 use crate::{
     HookState, Shell,
@@ -25,11 +26,16 @@ mod positioning;
 use fit_along_axis::fit_along_axis;
 use grow_and_shrink_along_axis::grow_and_shrink_along_axis;
 
+pub struct UIArenas {
+    pub strings: StringInterner<StringBackend>,
+}
+
 pub struct OwnedUITree<Message> {
     pub root: UIKey,
     pub slots: SlotMap<UIKey, UIElement<Message>>,
     pub widget_state: HashMap<u64, Instance>,
     pub hook_state: HashMap<u64, HookState>,
+    pub arenas: UIArenas,
 }
 pub type BorrowedUITree<'a, Message> = &'a mut OwnedUITree<Message>;
 
@@ -40,6 +46,9 @@ impl<Message> Default for OwnedUITree<Message> {
             slots: SlotMap::new(),
             widget_state: HashMap::new(),
             hook_state: HashMap::new(),
+            arenas: UIArenas {
+                strings: StringInterner::new(),
+            },
         }
     }
 }
@@ -215,6 +224,7 @@ pub fn generate_paint_commands<Message>(
                         ElementContent::Widget(widget) => {
                             let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
                             widget.paint(
+                                &ui_tree.arenas,
                                 state,
                                 shell,
                                 &mut recorder,

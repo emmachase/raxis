@@ -13,6 +13,7 @@ futures = "0.3.31"
 slotmap = "1.0.7"
 smol = "2.0.2"
 smol_str = "0.3.2"
+string-interner = "0.19.0"
 unicode-segmentation = "1.11"
 windows = { version = "0.61.3", features = [
     "Win32_Foundation",

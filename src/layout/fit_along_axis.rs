@@ -200,7 +200,7 @@ pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey
                     let limit_response::SizingForX {
                         min_width,
                         preferred_width,
-                    } = widget.limits_x(instance);
+                    } = widget.limits_x(&ui_tree.arenas, instance);
 
                     // Apply widget limits as constraints to the computed container size
                     element!().computed_width = element!()
@@ -211,7 +211,7 @@ pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey
                     let limit_response::SizingForY {
                         min_height,
                         preferred_height,
-                    } = widget.limits_y(instance, element!().computed_width);
+                    } = widget.limits_y(&ui_tree.arenas, instance, element!().computed_width);
 
                     // Apply widget limits as constraints to the computed container size
                     element!().computed_height = element!()

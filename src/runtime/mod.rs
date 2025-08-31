@@ -1317,7 +1317,12 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                     if let Some(id) = ui_tree.slots[element].id {
                                         if let Some(instance) = ui_tree.widget_state.get(&id) {
                                             if point.within(bounds.border_box) {
-                                                cursor = widget.cursor(instance, point, bounds);
+                                                cursor = widget.cursor(
+                                                    &ui_tree.arenas,
+                                                    instance,
+                                                    point,
+                                                    bounds,
+                                                );
                                             }
                                         }
                                     }

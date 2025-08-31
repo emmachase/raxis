@@ -9,7 +9,7 @@ use raxis::{
         Direction, Element, ElementContent, ScrollConfig, Sizing, VerticalAlignment,
     },
     runtime::task::Task,
-    util::unique::combine_id,
+    util::{str::StableString, unique::combine_id},
     w_id,
     widgets::{
         Color,
@@ -25,7 +25,7 @@ static ALLOC: dhat::Alloc = dhat::Alloc;
 
 enum Message {}
 
-fn demo_box(label: &str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
+fn demo_box(label: &'static str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
     Element {
         id: Some(combine_id(w_id!(), label)),
         width: Sizing::fixed(160.0),
@@ -187,7 +187,7 @@ fn border_demos() -> Element<Message> {
 #[derive(Debug, Clone)]
 struct TodoItem {
     id: u32,
-    text: String,
+    text: StableString,
     completed: bool,
 }
 
@@ -206,12 +206,12 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                 items: vec![
                     TodoItem {
                         id: 1,
-                        text: "Learn Raxis framework".to_string(),
+                        text: "Learn Raxis framework".into(),
                         completed: false,
                     },
                     TodoItem {
                         id: 2,
-                        text: "Build todo app".to_string(),
+                        text: "Build todo app".into(),
                         completed: true,
                     },
                 ],
@@ -318,14 +318,17 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                                 )
                                 .with_click_handler({
                                     let todo_state = todo_state.clone();
-                                    move || {
+                                    move |arenas| {
                                         let mut state = todo_state.borrow_mut();
                                         if !state.input_text.trim().is_empty() {
                                             let id = state.next_id;
                                             let text = state.input_text.clone();
                                             state.items.push(TodoItem {
                                                 id,
-                                                text: text.trim().to_string(),
+                                                text: StableString::Interned(
+                                                    arenas.strings.get_or_intern(text.trim()),
+                                                ),
+                                                // text.trim().to_string(),
                                                 completed: false,
                                             });
                                             state.next_id += 1;
@@ -454,7 +457,7 @@ fn todo_item(
                         .with_click_handler({
                             let todo_state = todo_state.clone();
                             let item_id = item.id;
-                            move || {
+                            move |_| {
                                 let mut state = todo_state.borrow_mut();
                                 if let Some(todo) = state.items.iter_mut().find(|t| t.id == item_id)
                                 {
@@ -485,7 +488,7 @@ fn todo_item(
                 height: Sizing::fit(),
                 vertical_alignment: VerticalAlignment::Center,
                 content: Some(ElementContent::Widget(Box::new(
-                    Text::new(&item.text).with_font_size(16.0),
+                    Text::new(item.text).with_font_size(16.0),
                 ))),
                 ..Default::default()
             },
@@ -516,7 +519,7 @@ fn todo_item(
                         .with_click_handler({
                             let todo_state = todo_state.clone();
                             let item_id = item.id;
-                            move || {
+                            move |_| {
                                 let mut state = todo_state.borrow_mut();
                                 state.items.retain(|t| t.id != item_id);
                             }

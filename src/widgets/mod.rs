@@ -28,7 +28,7 @@ use crate::{
     Shell,
     gfx::{PointDIP, RectDIP},
     layout::{
-        BorrowedUITree,
+        BorrowedUITree, UIArenas,
         model::{ElementContent, UIElement},
         visitors,
     },
@@ -865,26 +865,33 @@ impl Instance {
     pub fn new<Message>(
         id: u64,
         widget: &dyn Widget<Message>,
+        arenas: &UIArenas,
         device_resources: &DeviceResources,
     ) -> Self {
         Self {
             id,
-            state: widget.state(device_resources),
+            state: widget.state(arenas, device_resources),
         }
     }
 }
 
 #[allow(unused)]
 pub trait Widget<Message>: std::fmt::Debug {
-    fn limits_x(&self, instance: &mut Instance) -> limit_response::SizingForX;
-    fn limits_y(&self, instance: &mut Instance, width: f32) -> limit_response::SizingForY;
+    fn limits_x(&self, arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX;
+    fn limits_y(
+        &self,
+        arenas: &UIArenas,
+        instance: &mut Instance,
+        width: f32,
+    ) -> limit_response::SizingForY;
 
-    fn state(&self, device_resources: &DeviceResources) -> State {
+    fn state(&self, arenas: &UIArenas, device_resources: &DeviceResources) -> State {
         None
     }
 
     fn paint(
         &mut self,
+        arenas: &UIArenas,
         instance: &mut Instance,
         shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
@@ -894,6 +901,7 @@ pub trait Widget<Message>: std::fmt::Debug {
 
     fn update(
         &mut self,
+        arenas: &mut UIArenas,
         instance: &mut Instance,
         hwnd: HWND,
         shell: &mut Shell<Message>,
@@ -901,11 +909,17 @@ pub trait Widget<Message>: std::fmt::Debug {
         bounds: Bounds,
     );
 
-    fn cursor(&self, instance: &Instance, point: PointDIP, bounds: Bounds) -> Option<Cursor> {
+    fn cursor(
+        &self,
+        arenas: &UIArenas,
+        instance: &Instance,
+        point: PointDIP,
+        bounds: Bounds,
+    ) -> Option<Cursor> {
         None
     }
 
-    fn operate(&mut self, instance: &mut Instance, operation: &dyn Operation) {}
+    fn operate(&mut self, arenas: &UIArenas, instance: &mut Instance, operation: &dyn Operation) {}
 
     fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget<Message>> {
         None
@@ -934,7 +948,7 @@ pub fn dispatch_operation<Message>(ui_tree: BorrowedUITree<Message>, operation: 
         if let Some(ElementContent::Widget(widget)) = element.content.as_mut() {
             if let Some(id) = element.id {
                 let instance = ui_tree.widget_state.get_mut(&id).unwrap();
-                widget.operate(instance, operation);
+                widget.operate(&ui_tree.arenas, instance, operation);
             }
         }
     });

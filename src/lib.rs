@@ -189,7 +189,7 @@ impl<Message> Shell<Message> {
             if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content {
                 if let Some(id) = element.id {
                     let instance = ui_tree.widget_state.get_mut(&id).unwrap();
-                    widget.update(instance, hwnd, self, &event, bounds);
+                    widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
                 }
 
                 if self.event_captured {
@@ -221,7 +221,7 @@ impl<Message> Shell<Message> {
                     && target_id == id
                 {
                     let instance = ui_tree.widget_state.get_mut(&id).unwrap();
-                    widget.update(instance, hwnd, self, &event, bounds);
+                    widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
                 }
 
                 if self.event_captured {

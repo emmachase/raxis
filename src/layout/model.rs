@@ -687,9 +687,9 @@ pub fn create_tree<Message>(
         // Initialize widget state if new
         if let Some(ElementContent::Widget(ref widget)) = shell.content {
             if let Some(id) = shell.id {
-                tree.widget_state
-                    .entry(id)
-                    .or_insert_with(|| Instance::new(id, &**widget, device_resources));
+                tree.widget_state.entry(id).or_insert_with(|| {
+                    Instance::new(id, &**widget, &tree.arenas, device_resources)
+                });
             }
         }
 

@@ -19,7 +19,9 @@ use windows::core::Result;
 use windows_core::{PCWSTR, w};
 
 use crate::gfx::{PointDIP, RectDIP};
+use crate::layout::UIArenas;
 use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
+use crate::util::str::StableString;
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
     Bounds, Color, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget,
@@ -66,7 +68,7 @@ pub struct TextInput<Message> {
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_size: f32,
-    pub font_family: String,
+    pub font_family: StableString,
 }
 
 impl<Message> Default for TextInput<Message> {
@@ -77,7 +79,7 @@ impl<Message> Default for TextInput<Message> {
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_size: 14.0,
-            font_family: "Segoe UI".to_string(),
+            font_family: "Segoe UI".into(),
         }
     }
 }
@@ -98,7 +100,7 @@ impl<Message: 'static> TextInput<Message> {
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_size: 14.0,
-            font_family: "Segoe UI".to_string(),
+            font_family: "Segoe UI".into(),
         }
     }
 
@@ -125,13 +127,13 @@ impl<Message: 'static> TextInput<Message> {
         self
     }
 
-    pub fn with_font_family(mut self, font_family: impl Into<String>) -> Self {
+    pub fn with_font_family(mut self, font_family: impl Into<StableString>) -> Self {
         self.font_family = font_family.into();
         self
     }
 
-    pub fn get_text(&self, instance: &Instance) -> String {
-        with_state!(instance as WidgetState<Message>).text.clone()
+    pub fn get_text<'a>(&self, instance: &'a Instance) -> &'a str {
+        &with_state!(instance as WidgetState<Message>).text
     }
 
     pub fn set_text(&self, instance: &mut Instance, text: String) {
@@ -221,10 +223,14 @@ pub enum SelectionMode {
 }
 
 impl<Message: 'static> Widget<Message> for TextInput<Message> {
-    fn state(&self, device_resources: &crate::runtime::DeviceResources) -> super::State {
+    fn state(
+        &self,
+        arenas: &UIArenas,
+        device_resources: &crate::runtime::DeviceResources,
+    ) -> super::State {
         match WidgetState::<Message>::new(
             device_resources.dwrite_factory.clone(),
-            &self.font_family,
+            self.font_family.resolve(arenas).unwrap(),
             self.font_size,
             self.text_alignment,
             self.paragraph_alignment,
@@ -234,7 +240,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         }
     }
 
-    fn limits_x(&self, instance: &mut Instance) -> limit_response::SizingForX {
+    fn limits_x(&self, _arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX {
         let state = with_state!(instance as WidgetState<Message>);
         if let Some(layout) = &state.layout {
             let min_width = unsafe { layout.DetermineMinWidth().unwrap() };
@@ -258,7 +264,12 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         }
     }
 
-    fn limits_y(&self, instance: &mut Instance, width: f32) -> limit_response::SizingForY {
+    fn limits_y(
+        &self,
+        _arenas: &UIArenas,
+        instance: &mut Instance,
+        width: f32,
+    ) -> limit_response::SizingForY {
         let state = with_state!(instance as WidgetState<Message>);
         if let Some(layout) = &state.layout {
             unsafe {
@@ -282,6 +293,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
     fn update(
         &mut self,
+        _arenas: &mut UIArenas,
         instance: &mut Instance,
         hwnd: HWND,
         shell: &mut Shell<Message>,
@@ -546,6 +558,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
     fn paint(
         &mut self,
+        arenas: &UIArenas,
         instance: &mut Instance,
         shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
@@ -556,13 +569,13 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
         // Rebuild text format if needed
         if state.needs_text_format_rebuild(
-            &self.font_family,
+            self.font_family.resolve(arenas).unwrap(),
             self.font_size,
             self.text_alignment,
             self.paragraph_alignment,
         ) {
             let _ = state.rebuild_text_format(
-                &self.font_family,
+                self.font_family.resolve(arenas).unwrap(),
                 self.font_size,
                 self.text_alignment,
                 self.paragraph_alignment,
@@ -580,6 +593,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
     fn cursor(
         &self,
+        _arenas: &UIArenas,
         _instance: &Instance,
         point: PointDIP,
         bounds: Bounds,
@@ -1087,7 +1101,7 @@ impl<Message> WidgetState<Message> {
             if let Ok(idx) = self.hit_test_index(position.x_dip, position.y_dip) {
                 if idx >= sel_start && idx <= sel_end {
                     if let Some(selected_text) = self.selected_text() {
-                        return Some(DragData::Text(selected_text));
+                        return Some(DragData::Text(selected_text.to_owned()));
                     }
                 }
             }
@@ -1616,14 +1630,14 @@ impl<Message> WidgetState<Message> {
     }
 
     /// Return the current selected text, if any.
-    pub fn selected_text(&self) -> Option<String> {
+    pub fn selected_text(&self) -> Option<&str> {
         let (start16, end16) = self.selection_range();
         if start16 == end16 {
             return None;
         }
         let start_byte = self.utf16_index_to_byte(start16);
         let end_byte = self.utf16_index_to_byte(end16);
-        Some(self.text[start_byte..end_byte].to_string())
+        Some(&self.text[start_byte..end_byte])
     }
 
     pub fn insert_str(&mut self, s: &str) -> Result<()> {
