@@ -57,7 +57,7 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
     IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
 };
-use windows::Win32::Graphics::Gdi::ClientToScreen;
+use windows::Win32::Graphics::Gdi::{BeginPaint, ClientToScreen, EndPaint, PAINTSTRUCT};
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
 use windows::Win32::UI::Input::Ime::{
@@ -1373,6 +1373,9 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     let mut device_resources = device_resources.borrow_mut();
                     device_resources.create_device_resources(hwnd).ok();
 
+                    let mut ps = PAINTSTRUCT::default();
+                    let _ = BeginPaint(hwnd, &mut ps);
+
                     if let (rt, Some(brush)) = (
                         &device_resources.d2d_device_context,
                         &device_resources.solid_brush,
@@ -1417,6 +1420,8 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     if let Some(ref swap_chain) = device_resources.dxgi_swapchain {
                         let _ = swap_chain.Present(0, DXGI_PRESENT::default());
                     }
+
+                    let _ = EndPaint(hwnd, &mut ps);
 
                     if matches!(redraw_request, RedrawRequest::Immediate) {
                         let _ = InvalidateRect(Some(hwnd), None, false);
