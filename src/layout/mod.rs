@@ -54,13 +54,6 @@ impl<Message> Default for OwnedUITree<Message> {
 }
 
 #[allow(dead_code)]
-fn set_parent_references<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
-    visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
-        ui_tree.slots[key].parent = parent;
-    });
-}
-
-#[allow(dead_code)]
 fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
         if let Some(parent_key) = parent {
@@ -97,7 +90,6 @@ pub fn layout<Message>(
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
 ) {
-    set_parent_references(ui_tree, root);
     propagate_inherited_properties(ui_tree, root);
 
     fit_along_axis(ui_tree, root, Axis::X);

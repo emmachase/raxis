@@ -471,7 +471,6 @@ pub type UIKey = slotmap::DefaultKey;
 
 #[derive(Debug)]
 pub struct UIElement<Message> {
-    pub parent: Option<UIKey>,
     pub children: Vec<UIKey>,
 
     pub content: Option<ElementContent<Message>>,
@@ -515,7 +514,6 @@ pub struct UIElement<Message> {
 impl<Message> Default for UIElement<Message> {
     fn default() -> Self {
         Self {
-            parent: None,
             children: Vec::new(),
             content: None,
             direction: Direction::LeftToRight,
@@ -681,8 +679,7 @@ pub fn create_tree<Message>(
     tree.slots.clear();
 
     while let Some((element, parent)) = queue.pop() {
-        let (mut shell, children) = to_shell(element);
-        shell.parent = parent;
+        let (shell, children) = to_shell(element);
 
         // Initialize widget state if new
         if let Some(ElementContent::Widget(ref widget)) = shell.content {
