@@ -11,9 +11,10 @@ use crate::{
         positioning::position_elements,
     },
     runtime::scroll::ScrollStateManager,
-    widgets::Instance,
+    widgets::{Color, Instance},
 };
 
+pub mod helpers;
 pub mod model;
 
 mod float;
@@ -205,7 +206,7 @@ pub fn generate_paint_commands<Message>(
                 if let Some(content) = element.content.as_mut() {
                     match content {
                         ElementContent::Text { layout, .. } => {
-                            let color = element.color.unwrap_or(0x000000FF);
+                            let color = element.color.unwrap_or(Color::BLACK);
 
                             recorder.draw_text(
                                 &bounds.content_box,

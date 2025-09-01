@@ -499,8 +499,8 @@ pub struct UIElement<Message> {
     pub floating: Option<FloatingConfig>,
     pub scroll: Option<ScrollConfig>,
 
-    pub background_color: Option<u32>,
-    pub color: Option<u32>,
+    pub background_color: Option<Color>,
+    pub color: Option<Color>,
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
@@ -604,8 +604,8 @@ pub struct Element<Message> {
     pub floating: Option<FloatingConfig>,
     pub scroll: Option<ScrollConfig>,
 
-    pub background_color: Option<u32>,
-    pub color: Option<u32>,
+    pub background_color: Option<Color>,
+    pub color: Option<Color>,
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
@@ -613,6 +613,107 @@ pub struct Element<Message> {
     pub border: Option<Border>,
 
     pub id: Option<u64>,
+}
+
+impl<Message> Element<Message> {
+    pub fn with_id(self, id: u64) -> Self {
+        Self {
+            id: Some(id),
+            ..self
+        }
+    }
+
+    pub fn with_horizontal_alignment(self, align: HorizontalAlignment) -> Self {
+        Self {
+            horizontal_alignment: align,
+            ..self
+        }
+    }
+
+    pub fn with_vertical_alignment(self, align: VerticalAlignment) -> Self {
+        Self {
+            vertical_alignment: align,
+            ..self
+        }
+    }
+
+    pub fn with_width(self, width: Sizing) -> Self {
+        Self { width, ..self }
+    }
+
+    pub fn with_height(self, height: Sizing) -> Self {
+        Self { height, ..self }
+    }
+
+    pub fn with_child_gap(self, gap: f32) -> Self {
+        Self {
+            child_gap: gap,
+            ..self
+        }
+    }
+
+    pub fn with_floating(self, floating: impl Into<FloatingConfig>) -> Self {
+        Self {
+            floating: Some(floating.into()),
+            ..self
+        }
+    }
+
+    pub fn with_scroll(self, scroll: impl Into<ScrollConfig>) -> Self {
+        Self {
+            scroll: Some(scroll.into()),
+            ..self
+        }
+    }
+
+    pub fn with_background_color(self, color: impl Into<Color>) -> Self {
+        Self {
+            background_color: Some(color.into()),
+            ..self
+        }
+    }
+
+    pub fn with_color(self, color: impl Into<Color>) -> Self {
+        Self {
+            color: Some(color.into()),
+            ..self
+        }
+    }
+
+    pub fn with_padding(self, padding: impl Into<BoxAmount>) -> Self {
+        Self {
+            padding: padding.into(),
+            ..self
+        }
+    }
+
+    pub fn with_word_break(self, word_break: WordBreak) -> Self {
+        Self {
+            word_break: Some(word_break),
+            ..self
+        }
+    }
+
+    pub fn with_border_radius(self, border_radius: impl Into<BorderRadius>) -> Self {
+        Self {
+            border_radius: Some(border_radius.into()),
+            ..self
+        }
+    }
+
+    pub fn with_drop_shadow(self, drop_shadow: impl Into<DropShadow>) -> Self {
+        Self {
+            drop_shadow: Some(drop_shadow.into()),
+            ..self
+        }
+    }
+
+    pub fn with_border(self, border: impl Into<Border>) -> Self {
+        Self {
+            border: Some(border.into()),
+            ..self
+        }
+    }
 }
 
 impl<Message> Default for Element<Message> {

@@ -716,7 +716,7 @@ fn create_tree_root<State: 'static, Message>(
         ui_tree,
         Element {
             id: Some(w_id!()),
-            background_color: Some(0xFFFFFFFF),
+            background_color: Some(0xFFFFFFFF.into()),
             direction: Direction::TopToBottom,
             scroll: Some(ScrollConfig {
                 vertical: Some(true),

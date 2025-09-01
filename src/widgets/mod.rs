@@ -29,7 +29,7 @@ use crate::{
     gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree, UIArenas,
-        model::{ElementContent, UIElement},
+        model::{Element, ElementContent, UIElement},
         visitors,
     },
     runtime::DeviceResources,
@@ -930,6 +930,10 @@ pub trait Widget<Message>: std::fmt::Debug {
     //     instance: &mut Instance,
     // ) {
     // }
+}
+
+pub fn widget<Message>(widget: impl Widget<Message> + 'static) -> Option<ElementContent<Message>> {
+    Some(ElementContent::Widget(Box::new(widget)))
 }
 
 // pub trait Focusable {

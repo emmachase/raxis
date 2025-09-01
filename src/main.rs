@@ -6,7 +6,7 @@ use raxis::{
     HookManager,
     layout::model::{
         Border, BorderDashCap, BorderDashStyle, BorderPlacement, BorderRadius, BoxAmount,
-        Direction, Element, ElementContent, ScrollConfig, Sizing, VerticalAlignment,
+        Direction, Element, ScrollConfig, Sizing, VerticalAlignment,
     },
     runtime::task::Task,
     util::{str::StableString, unique::combine_id},
@@ -16,6 +16,7 @@ use raxis::{
         button::Button,
         text::{ParagraphAlignment, Text, TextAlignment},
         text_input::TextInput,
+        widget,
     },
 };
 
@@ -30,14 +31,12 @@ fn demo_box(label: &'static str, border: Border, radius: Option<BorderRadius>) -
         id: Some(combine_id(w_id!(), label)),
         width: Sizing::fixed(160.0),
         height: Sizing::fixed(80.0),
-        background_color: Some(0xFAFAFAFF),
+        background_color: Some(0xFAFAFAFF.into()),
         padding: BoxAmount::all(8.0),
         border: Some(border),
         border_radius: radius,
         vertical_alignment: VerticalAlignment::Center,
-        content: Some(ElementContent::Widget(Box::new(
-            Text::new(label).with_paragraph_alignment(ParagraphAlignment::Center),
-        ))),
+        content: widget(Text::new(label).with_paragraph_alignment(ParagraphAlignment::Center)),
         ..Default::default()
     }
 }
@@ -111,7 +110,7 @@ fn border_demos() -> Element<Message> {
         height: Sizing::fit(),
         child_gap: 10.0,
         padding: BoxAmount::all(12.0),
-        background_color: Some(0xFFFFFFFF),
+        background_color: Some(Color::WHITE),
         border: Some(Border {
             width: 1.0,
             color: Color {
@@ -130,9 +129,7 @@ fn border_demos() -> Element<Message> {
                 id: Some(w_id!()),
                 width: Sizing::grow(),
                 height: Sizing::fit(),
-                content: Some(ElementContent::Widget(Box::new(
-                    Text::new("Border demos").with_font_size(20.0),
-                ))),
+                content: widget(Text::new("Border demos").with_font_size(20.0)),
                 ..Default::default()
             },
             // Placements row
@@ -223,7 +220,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
 
     Element {
         id: Some(w_id!()),
-        background_color: Some(0xF5F5F5FF), // Light gray background
+        background_color: Some(0xF5F5F5FF.into()), // Light gray background
         direction: Direction::TopToBottom,
         width: Sizing::percent(1.0),
         height: Sizing::grow(),
@@ -235,9 +232,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                 id: Some(w_id!()),
                 width: Sizing::grow(),
                 height: Sizing::fit(),
-                content: Some(ElementContent::Widget(Box::new(
-                    Text::new("Todo List").with_font_size(32.0),
-                ))),
+                content: widget(Text::new("Todo List").with_font_size(32.0)),
                 ..Default::default()
             },
             // Border demos
@@ -259,7 +254,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                             sticky_bottom: Some(true),
                             ..Default::default()
                         }),
-                        background_color: Some(0xFFFFFFFF),
+                        background_color: Some(Color::WHITE),
                         border_radius: Some(BorderRadius::all(8.0)),
                         border: Some(Border {
                             width: 1.0,
@@ -277,7 +272,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                             width: Sizing::grow(),
                             height: Sizing::grow(),
                             padding: BoxAmount::new(5.0, 12.0, 5.0, 12.0),
-                            content: Some(ElementContent::Widget(Box::new(
+                            content: widget(
                                 TextInput::new()
                                     .with_text_changed_handler({
                                         let todo_state = todo_state.clone();
@@ -286,7 +281,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                                         }
                                     })
                                     .with_paragraph_alignment(ParagraphAlignment::Center),
-                            ))),
+                            ),
                             ..Default::default()
                         }],
 
@@ -298,7 +293,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                         height: Sizing::fixed(40.0),
                         border_radius: Some(BorderRadius::all(8.0)),
                         // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
-                        content: Some(ElementContent::Widget(Box::new(
+                        content: widget(
                             Button::new()
                                 .with_bg_color(Color {
                                     r: 0.2,
@@ -336,18 +331,18 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                                         }
                                     }
                                 }),
-                        ))),
+                        ),
 
                         children: vec![Element {
                             id: Some(w_id!()),
                             width: Sizing::grow().min(80.0),
                             height: Sizing::grow(),
-                            content: Some(ElementContent::Widget(Box::new(
+                            content: widget(
                                 Text::new("Add")
                                     .with_paragraph_alignment(ParagraphAlignment::Center)
                                     .with_text_alignment(TextAlignment::Center)
                                     .with_color(Color::WHITE),
-                            ))),
+                            ),
                             ..Default::default()
                         }],
 
@@ -389,7 +384,7 @@ fn todo_item(
         direction: Direction::LeftToRight,
         width: Sizing::grow(),
         height: Sizing::fit(),
-        background_color: Some(0xFFFFFFFF),
+        background_color: Some(Color::WHITE),
         border: Some(Border {
             width: 1.0,
             color: Color {
@@ -411,14 +406,14 @@ fn todo_item(
                 width: Sizing::fixed(20.0),
                 height: Sizing::fixed(20.0),
                 background_color: Some(if item.completed {
-                    0x4CAF50FF
+                    Color::from(0x4CAF50FF)
                 } else {
-                    0xFFFFFFFF
+                    Color::WHITE
                 }),
                 vertical_alignment: VerticalAlignment::Center,
                 border_radius: Some(BorderRadius::all(4.0)),
                 // drop_shadow: Some(DropShadow::simple(0.5, 0.5).blur_radius(2.0)),
-                content: Some(ElementContent::Widget(Box::new(
+                content: widget(
                     Button::new()
                         .with_bg_color(if item.completed {
                             Color {
@@ -465,17 +460,17 @@ fn todo_item(
                                 }
                             }
                         }),
-                ))),
+                ),
 
                 children: vec![Element {
                     id: Some(combine_id(w_id!(), item.id)),
                     width: Sizing::grow(),
                     height: Sizing::fit(),
-                    content: Some(ElementContent::Widget(Box::new(
+                    content: widget(
                         Text::new(if item.completed { "✓" } else { "" })
                             .with_paragraph_alignment(ParagraphAlignment::Center)
                             .with_text_alignment(TextAlignment::Center),
-                    ))),
+                    ),
                     ..Default::default()
                 }],
 
@@ -487,9 +482,7 @@ fn todo_item(
                 width: Sizing::grow(),
                 height: Sizing::fit(),
                 vertical_alignment: VerticalAlignment::Center,
-                content: Some(ElementContent::Widget(Box::new(
-                    Text::new(item.text).with_font_size(16.0),
-                ))),
+                content: widget(Text::new(item.text).with_font_size(16.0)),
                 ..Default::default()
             },
             // Delete button
@@ -498,7 +491,7 @@ fn todo_item(
                 width: Sizing::fit(),
                 height: Sizing::fit(),
                 vertical_alignment: VerticalAlignment::Center,
-                content: Some(ElementContent::Widget(Box::new(
+                content: widget(
                     Button::new()
                         .with_bg_color(Color {
                             r: 0.9,
@@ -524,18 +517,18 @@ fn todo_item(
                                 state.items.retain(|t| t.id != item_id);
                             }
                         }),
-                ))),
+                ),
 
                 children: vec![Element {
                     id: Some(combine_id(w_id!(), item.id)),
                     width: Sizing::grow().min(32.0),
                     height: Sizing::grow().min(32.0),
-                    content: Some(ElementContent::Widget(Box::new(
+                    content: widget(
                         Text::new("✕")
                             .with_paragraph_alignment(ParagraphAlignment::Center)
                             .with_text_alignment(TextAlignment::Center)
                             .with_color(Color::WHITE),
-                    ))),
+                    ),
                     ..Default::default()
                 }],
 

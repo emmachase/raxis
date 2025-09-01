@@ -13,6 +13,7 @@ use windows_core::{PCWSTR, w};
 
 use crate::gfx::RectDIP;
 use crate::layout::UIArenas;
+use crate::layout::model::{Element, ElementContent};
 use crate::util::str::StableString;
 use crate::widgets::{Bounds, Color, Instance, Widget};
 use crate::{Shell, with_state};
@@ -91,6 +92,19 @@ impl Text {
     pub fn with_word_wrap(mut self, word_wrap: bool) -> Self {
         self.word_wrap = word_wrap;
         self
+    }
+
+    pub fn as_element<Message>(self) -> Element<Message> {
+        Element {
+            content: Some(ElementContent::Widget(Box::new(self))),
+            ..Default::default()
+        }
+    }
+}
+
+impl<Message> From<Text> for Element<Message> {
+    fn from(text: Text) -> Element<Message> {
+        text.as_element()
     }
 }
 
