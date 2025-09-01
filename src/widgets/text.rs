@@ -1,5 +1,7 @@
 use std::any::Any;
 use std::fmt::Debug;
+use std::hash::{DefaultHasher, Hash, Hasher};
+use std::panic::Location;
 use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
@@ -15,6 +17,7 @@ use crate::gfx::RectDIP;
 use crate::layout::UIArenas;
 use crate::layout::model::{Element, ElementContent};
 use crate::util::str::StableString;
+use crate::util::unique::id_from_location;
 use crate::widgets::{Bounds, Color, Instance, Widget};
 use crate::{Shell, with_state};
 
@@ -44,9 +47,11 @@ pub struct Text {
     pub paragraph_alignment: ParagraphAlignment,
     pub font_family: StableString,
     pub word_wrap: bool,
+    pub caller: &'static Location<'static>,
 }
 
 impl Text {
+    #[track_caller]
     pub fn new(text: impl Into<StableString>) -> Self {
         Self {
             text: text.into(),
@@ -61,6 +66,7 @@ impl Text {
             paragraph_alignment: ParagraphAlignment::Top,
             font_family: "Segoe UI".into(),
             word_wrap: true,
+            caller: Location::caller(),
         }
     }
 
@@ -95,7 +101,9 @@ impl Text {
     }
 
     pub fn as_element<Message>(self) -> Element<Message> {
+        let id = id_from_location(self.caller);
         Element {
+            id: Some(id),
             content: Some(ElementContent::Widget(Box::new(self))),
             ..Default::default()
         }
@@ -423,12 +431,12 @@ impl<Message> Widget<Message> for Text {
             && let Ok(preferred_width) = state.get_preferred_width(text)
         {
             super::limit_response::SizingForX {
-                min_width: preferred_width,
+                min_width: 0.0,
                 preferred_width,
             }
         } else {
             super::limit_response::SizingForX {
-                min_width: self.font_size * 1.2,
+                min_width: 0.0,
                 preferred_width: self.font_size * 1.2,
             }
         }

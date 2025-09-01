@@ -6,6 +6,7 @@ use std::collections::HashMap;
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
 use crate::{
+    impl_numeric,
     layout::OwnedUITree,
     runtime::DeviceResources,
     widgets::{Color, Instance, Widget},
@@ -40,6 +41,12 @@ impl BoxAmount {
         }
     }
 }
+
+impl_numeric!(From<[
+    f32, f64,
+    u8, u16, u32, u64, u128,
+    i8, i16, i32, i64, i128,
+]> for BoxAmount => |value| { Self::all(value as f32) });
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
 pub enum Direction {
@@ -285,6 +292,12 @@ impl BorderRadius {
         }
     }
 }
+
+impl_numeric!(From<[
+    f32, f64,
+    u8, u16, u32, u64, u128,
+    i8, i16, i32, i64, i128,
+]> for BorderRadius => |value| { Self::all(value as f32) });
 
 // ---------- Drop Shadow ----------
 

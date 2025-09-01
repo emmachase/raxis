@@ -2,7 +2,7 @@ use string_interner::backend::{Backend, StringBackend};
 
 use crate::layout::UIArenas;
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Hash)]
 pub enum StableString {
     Static(&'static str),
     Interned(<StringBackend as Backend>::Symbol),

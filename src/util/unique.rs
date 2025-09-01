@@ -1,4 +1,7 @@
-use std::hash::{DefaultHasher, Hash, Hasher};
+use std::{
+    hash::{DefaultHasher, Hash, Hasher},
+    panic::Location,
+};
 
 pub const fn hash(module_path: &'static str, file: &'static str, line: u32, column: u32) -> u64 {
     let mut hash = 0xcbf29ce484222325;
@@ -31,10 +34,17 @@ pub const fn hash(module_path: &'static str, file: &'static str, line: u32, colu
 #[macro_export]
 macro_rules! w_id {
     () => {{
-        $crate::util::unique::hash(module_path!(), file!(), line!(), column!())
-        // const UNIQ: u64 =
-        // const_format::concatcp!("uniq_", UNIQ)
+        $crate::util::unique::hash(
+            core::module_path!(),
+            core::file!(),
+            core::line!(),
+            core::column!(),
+        )
     }};
+}
+
+pub const fn id_from_location(location: &'static Location<'static>) -> u64 {
+    hash("mod", location.file(), location.line(), location.column())
 }
 
 pub fn combine_id(id: u64, child_id: impl Hash) -> u64 {

@@ -6,8 +6,8 @@ use windows::Win32::Foundation::HWND;
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::{Border, BorderRadius};
-use crate::widgets::{Bounds, Color};
+use crate::layout::model::{Border, BorderRadius, Element};
+use crate::widgets::{Bounds, Color, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
 
@@ -235,6 +235,19 @@ impl Button {
         self.styles.pressed.border = None;
         self.styles.disabled.border = None;
         self
+    }
+
+    pub fn as_element<Message>(
+        self,
+        id: u64,
+        children: impl Into<Element<Message>>,
+    ) -> Element<Message> {
+        Element {
+            id: Some(id),
+            children: vec![children.into()],
+            content: widget(self),
+            ..Default::default()
+        }
     }
 }
 
