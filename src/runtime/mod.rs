@@ -1,6 +1,7 @@
 pub mod clipboard;
 pub mod dragdrop;
 pub mod focus;
+pub mod font_manager;
 pub mod scroll;
 pub mod smooth_scroll;
 pub mod task;
@@ -77,7 +78,7 @@ use windows::{
                 D2D1_DEBUG_LEVEL_NONE, D2D1_FACTORY_OPTIONS, D2D1_FACTORY_TYPE_SINGLE_THREADED,
                 D2D1CreateFactory, ID2D1SolidColorBrush,
             },
-            DirectWrite::{DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory},
+            DirectWrite::{DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory6},
             Dwm::DWM_TIMING_INFO,
             Dxgi::Common::DXGI_FORMAT_UNKNOWN,
             Gdi::{InvalidateRect, ScreenToClient, UpdateWindow},
@@ -268,7 +269,7 @@ pub struct DeviceResources {
     pub back_buffer: Option<ID3D11Texture2D>,
     pub dxgi_swapchain: Option<IDXGISwapChain1>,
 
-    pub dwrite_factory: IDWriteFactory,
+    pub dwrite_factory: IDWriteFactory6,
     pub dxgi_factory: IDXGIFactory7,
     pub dxgi_adapter: IDXGIAdapter,
     pub dxgi_device: IDXGIDevice4,
@@ -398,6 +399,7 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
     fn new(
         view_fn: Box<ViewFn<State, Message>>,
         update_fn: Box<UpdateFn<State, Message>>,
+        boot_fn: impl Fn(&State) -> Option<Task<Message>>,
         user_state: State,
         hwnd: HWND,
     ) -> Result<Self> {
@@ -437,7 +439,10 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
             let d2d_factory: ID2D1Factory8 =
                 D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, Some(&options))?;
 
-            let dwrite_factory: IDWriteFactory = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+            let dwrite_factory: IDWriteFactory6 = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+
+            // Initialize global font manager
+            font_manager::GlobalFontManager::initialize(dwrite_factory.clone())?;
 
             let d2d_device = d2d_factory.CreateDevice(&dxgi_device)?;
 
@@ -463,6 +468,9 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
                 dxgi_swapchain: None,
             };
 
+            // Call boot before we touch the tree
+            let boot_task = boot_fn(&user_state);
+
             let mut ui_tree = OwnedUITree::<Message>::default();
 
             create_tree_root(&user_state, &view_fn, &device_resources, &mut ui_tree);
@@ -470,6 +478,9 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
             // Create channels for async task execution
             let (task_sender, task_receiver) = mpsc::channel::<Task<Message>>();
             let (message_sender, message_receiver) = mpsc::channel::<Message>();
+            if let Some(boot_task) = boot_task {
+                task_sender.send(boot_task).unwrap();
+            }
 
             let shell = Shell::new(message_sender.clone());
 
@@ -1516,6 +1527,10 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         let _ = ImmReleaseContext(hwnd, himc);
                     }
                 },
+
+                DeferredControl::SetClipboardText(text) => {
+                    let _ = clipboard::set_clipboard_text(hwnd, &text);
+                }
             }
         }
     }
@@ -1584,7 +1599,14 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
         )?;
 
         // Now create the app state with the hwnd
-        let mut app = AppState::new(Box::new(view_fn), Box::new(update_fn), user_state, hwnd)?;
+        let mut app = AppState::new(
+            Box::new(view_fn),
+            Box::new(update_fn),
+            boot_fn,
+            user_state,
+            hwnd,
+        )?;
+
         let mut dpi_x = 0.0f32;
         let mut dpi_y = 0.0f32;
         app.device_resources
@@ -1623,10 +1645,6 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
         .into();
         let _ = RegisterDragDrop(hwnd, &dt);
         app.drop_target = Some(dt);
-
-        if let Some(task) = boot_fn(&app.user_state) {
-            app.spawn_task(task);
-        }
 
         let app = Mutex::new(app);
         let boxed = Box::new(app);

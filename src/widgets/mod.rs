@@ -882,7 +882,8 @@ pub trait Widget<Message>: std::fmt::Debug {
         &self,
         arenas: &UIArenas,
         instance: &mut Instance,
-        width: f32,
+        border_width: f32,
+        content_width: f32,
     ) -> limit_response::SizingForY;
 
     fn state(&self, arenas: &UIArenas, device_resources: &DeviceResources) -> State {

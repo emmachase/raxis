@@ -28,6 +28,11 @@ pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey
         } else {
             element.padding.top + element.padding.bottom
         };
+        let cross_axis_padding = if x_axis {
+            element.padding.top + element.padding.bottom
+        } else {
+            element.padding.left + element.padding.right
+        };
 
         // Mutable borrow after we compute padding
         // let element = &slots[key];
@@ -211,7 +216,12 @@ pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey
                     let limit_response::SizingForY {
                         min_height,
                         preferred_height,
-                    } = widget.limits_y(&ui_tree.arenas, instance, element!().computed_width);
+                    } = widget.limits_y(
+                        &ui_tree.arenas,
+                        instance,
+                        element!().computed_width,
+                        element!().computed_width - cross_axis_padding,
+                    );
 
                     // Apply widget limits as constraints to the computed container size
                     element!().computed_height = element!()

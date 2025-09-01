@@ -5,16 +5,15 @@ use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_METRICS,
-    IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
+    IDWriteFactory6, IDWriteTextFormat3, IDWriteTextLayout,
 };
 use windows::core::Result;
-use windows_core::{PCWSTR, w};
 
 use crate::gfx::RectDIP;
 use crate::layout::UIArenas;
 use crate::layout::model::{Element, ElementContent};
+use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::util::str::StableString;
 use crate::util::unique::id_from_location;
 use crate::widgets::{Bounds, Color, Instance, Widget};
@@ -41,10 +40,11 @@ pub enum ParagraphAlignment {
 pub struct Text {
     pub text: StableString,
     pub font_size: f32,
+    pub line_spacing: Option<LineSpacing>,
     pub color: Color,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
-    pub font_family: StableString,
+    pub font_id: FontIdentifier,
     pub word_wrap: bool,
     pub caller: &'static Location<'static>,
 }
@@ -55,6 +55,7 @@ impl Text {
         Self {
             text: text.into(),
             font_size: 14.0,
+            line_spacing: None,
             color: Color {
                 r: 0.0,
                 g: 0.0,
@@ -63,7 +64,7 @@ impl Text {
             },
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
-            font_family: "Segoe UI".into(),
+            font_id: FontIdentifier::system("Segoe UI"),
             word_wrap: true,
             caller: Location::caller(),
         }
@@ -71,6 +72,11 @@ impl Text {
 
     pub fn with_font_size(mut self, size: f32) -> Self {
         self.font_size = size;
+        self
+    }
+
+    pub fn with_line_spacing(mut self, line_spacing: LineSpacing) -> Self {
+        self.line_spacing = Some(line_spacing);
         self
     }
 
@@ -89,8 +95,8 @@ impl Text {
         self
     }
 
-    pub fn with_font_family(mut self, font_family: impl Into<StableString>) -> Self {
-        self.font_family = font_family.into();
+    pub fn with_font_family(mut self, font_id: FontIdentifier) -> Self {
+        self.font_id = font_id;
         self
     }
 
@@ -123,12 +129,13 @@ impl Default for Text {
 
 struct TextWidgetState {
     // DirectWrite objects for text rendering
-    dwrite_factory: IDWriteFactory,
-    text_format: IDWriteTextFormat,
+    dwrite_factory: IDWriteFactory6,
+    text_format: IDWriteTextFormat3,
     text_layout: Option<IDWriteTextLayout>,
     cached_text: String,
     cached_font_size: f32,
-    cached_font_family: String,
+    cached_line_spacing: Option<LineSpacing>,
+    cached_font_id: FontIdentifier,
     cached_text_alignment: TextAlignment,
     cached_paragraph_alignment: ParagraphAlignment,
     cached_word_wrap: bool,
@@ -145,25 +152,18 @@ struct TextWidgetState {
 
 impl TextWidgetState {
     pub fn new(
-        dwrite_factory: IDWriteFactory,
-        font_family: &str,
+        dwrite_factory: IDWriteFactory6,
+        font_id: &FontIdentifier,
         font_size: f32,
+        line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
         word_wrap: bool,
     ) -> Result<Self> {
-        let text_format = unsafe {
-            let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
-            let text_format = dwrite_factory.CreateTextFormat(
-                PCWSTR(font_family_wide.as_ptr()),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                font_size,
-                PCWSTR(w!("en-us").as_ptr()),
-            )?;
+        let text_format =
+            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
 
+        let text_format = unsafe {
             // Set text alignment
             let dwrite_text_alignment = match text_alignment {
                 TextAlignment::Leading => DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -205,7 +205,8 @@ impl TextWidgetState {
             text_layout: None,
             cached_text: String::new(),
             cached_font_size: font_size,
-            cached_font_family: font_family.to_string(),
+            cached_line_spacing: line_spacing,
+            cached_font_id: font_id.clone(),
             cached_text_alignment: text_alignment,
             cached_paragraph_alignment: paragraph_alignment,
             cached_word_wrap: word_wrap,
@@ -226,14 +227,16 @@ impl TextWidgetState {
 
     fn needs_text_format_rebuild(
         &self,
-        font_family: &str,
+        font_id: &FontIdentifier,
         font_size: f32,
+        line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
         word_wrap: bool,
     ) -> bool {
-        self.cached_font_family != font_family
+        self.cached_font_id != *font_id
             || self.cached_font_size != font_size
+            || self.cached_line_spacing != line_spacing
             || self.cached_text_alignment != text_alignment
             || self.cached_paragraph_alignment != paragraph_alignment
             || self.cached_word_wrap != word_wrap
@@ -241,25 +244,17 @@ impl TextWidgetState {
 
     fn rebuild_text_format(
         &mut self,
-        font_family: &str,
+        font_id: &FontIdentifier,
         font_size: f32,
+        line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
         word_wrap: bool,
     ) -> Result<()> {
-        let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
+        self.text_format =
+            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
 
         unsafe {
-            self.text_format = self.dwrite_factory.CreateTextFormat(
-                PCWSTR(font_family_wide.as_ptr()),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                font_size,
-                PCWSTR(w!("en-us").as_ptr()),
-            )?;
-
             // Set text alignment
             let dwrite_text_alignment = match text_alignment {
                 TextAlignment::Leading => DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -295,7 +290,7 @@ impl TextWidgetState {
         }
 
         // Update cached values
-        self.cached_font_family = font_family.to_string();
+        self.cached_font_id = font_id.clone();
         self.cached_font_size = font_size;
         self.cached_text_alignment = text_alignment;
         self.cached_paragraph_alignment = paragraph_alignment;
@@ -403,13 +398,14 @@ impl TextWidgetState {
 impl<Message> Widget<Message> for Text {
     fn state(
         &self,
-        arenas: &UIArenas,
+        _arenas: &UIArenas,
         device_resources: &crate::runtime::DeviceResources,
     ) -> super::State {
         match TextWidgetState::new(
             device_resources.dwrite_factory.clone(),
-            self.font_family.resolve(arenas).unwrap(),
+            &self.font_id,
             self.font_size,
+            self.line_spacing,
             self.text_alignment,
             self.paragraph_alignment,
             self.word_wrap,
@@ -445,12 +441,13 @@ impl<Message> Widget<Message> for Text {
         &self,
         arenas: &UIArenas,
         instance: &mut Instance,
-        width: f32,
+        _border_width: f32,
+        content_width: f32,
     ) -> super::limit_response::SizingForY {
         let state = with_state!(mut instance as TextWidgetState);
 
         if let Some(text) = self.text.resolve(arenas)
-            && let Ok(preferred_height) = state.get_preferred_height_for_width(text, width)
+            && let Ok(preferred_height) = state.get_preferred_height_for_width(text, content_width)
         {
             super::limit_response::SizingForY {
                 min_height: preferred_height,
@@ -489,15 +486,17 @@ impl<Message> Widget<Message> for Text {
 
         // Rebuild text format if properties changed
         if state.needs_text_format_rebuild(
-            self.font_family.resolve(arenas).unwrap(),
+            &self.font_id,
             self.font_size,
+            self.line_spacing,
             self.text_alignment,
             self.paragraph_alignment,
             self.word_wrap,
         ) {
             let _ = state.rebuild_text_format(
-                self.font_family.resolve(arenas).unwrap(),
+                &self.font_id,
                 self.font_size,
+                self.line_spacing,
                 self.text_alignment,
                 self.paragraph_alignment,
                 self.word_wrap,

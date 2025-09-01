@@ -8,7 +8,10 @@ use raxis::{
         Border, BorderDashCap, BorderDashStyle, BorderPlacement, BorderRadius, BoxAmount,
         Direction, Element, ScrollConfig, Sizing, VerticalAlignment,
     },
-    runtime::task::Task,
+    runtime::{
+        font_manager::{FontIdentifier, GlobalFontManager},
+        task::Task,
+    },
     util::{str::StableString, unique::combine_id},
     w_id,
     widgets::{
@@ -410,6 +413,7 @@ fn todo_item(
                 } else {
                     Color::WHITE
                 }),
+                direction: Direction::TopToBottom,
                 vertical_alignment: VerticalAlignment::Center,
                 border_radius: Some(BorderRadius::all(4.0)),
                 // drop_shadow: Some(DropShadow::simple(0.5, 0.5).blur_radius(2.0)),
@@ -467,9 +471,11 @@ fn todo_item(
                     width: Sizing::grow(),
                     height: Sizing::fit(),
                     content: widget(
-                        Text::new(if item.completed { "✓" } else { "" })
+                        Text::new(if item.completed { "\u{e392}" } else { "" })
                             .with_paragraph_alignment(ParagraphAlignment::Center)
-                            .with_text_alignment(TextAlignment::Center),
+                            .with_text_alignment(TextAlignment::Center)
+                            .with_font_family(FontIdentifier::custom("lucide"))
+                            .with_font_size(16.0),
                     ),
                     ..Default::default()
                 }],
@@ -551,6 +557,11 @@ fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    raxis::runtime::run_event_loop(view, update, (), |_state| None)
-        .expect("Failed to run event loop");
+    raxis::runtime::run_event_loop(view, update, (), |_state| {
+        GlobalFontManager::load_font_from_memory(include_bytes!("../fonts/lucide.ttf"))
+            .expect("Failed to load font");
+
+        None
+    })
+    .expect("Failed to run event loop");
 }

@@ -351,7 +351,8 @@ impl<Message> Widget<Message> for Button {
         &self,
         _arenas: &UIArenas,
         _instance: &mut Instance,
-        _width: f32,
+        _border_width: f32,
+        _content_width: f32,
     ) -> super::limit_response::SizingForY {
         super::limit_response::SizingForY {
             min_height: 0.0,

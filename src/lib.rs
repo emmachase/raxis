@@ -75,6 +75,8 @@ pub enum DeferredControl {
 
     SetIMEPosition { position: gfx::PointDIP },
     DisableIME,
+
+    SetClipboardText(String),
 }
 
 pub struct Shell<Message> {

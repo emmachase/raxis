@@ -4,9 +4,8 @@ use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::HWND;
 use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_FONT_STRETCH_NORMAL, DWRITE_FONT_STYLE_NORMAL, DWRITE_FONT_WEIGHT_REGULAR,
     DWRITE_HIT_TEST_METRICS, DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING,
-    DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, IDWriteFactory, IDWriteTextFormat, IDWriteTextLayout,
+    DWRITE_TEXT_METRICS, DWRITE_TEXT_RANGE, IDWriteFactory6, IDWriteTextFormat3, IDWriteTextLayout,
 };
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::System::Ole::{DROPEFFECT_COPY, DROPEFFECT_MOVE, DROPEFFECT_NONE};
@@ -16,12 +15,11 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 };
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
-use windows_core::{PCWSTR, w};
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::runtime::clipboard::{get_clipboard_text, set_clipboard_text};
-use crate::util::str::StableString;
+use crate::runtime::clipboard::get_clipboard_text;
+use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
     Bounds, Color, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget,
@@ -68,7 +66,8 @@ pub struct TextInput<Message> {
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_size: f32,
-    pub font_family: StableString,
+    pub line_spacing: Option<LineSpacing>,
+    pub font_id: FontIdentifier,
 }
 
 impl<Message> Default for TextInput<Message> {
@@ -79,7 +78,8 @@ impl<Message> Default for TextInput<Message> {
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_size: 14.0,
-            font_family: "Segoe UI".into(),
+            line_spacing: None,
+            font_id: FontIdentifier::system("Segoe UI"),
         }
     }
 }
@@ -100,7 +100,8 @@ impl<Message: 'static> TextInput<Message> {
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_size: 14.0,
-            font_family: "Segoe UI".into(),
+            line_spacing: None,
+            font_id: FontIdentifier::system("Segoe UI"),
         }
     }
 
@@ -127,8 +128,13 @@ impl<Message: 'static> TextInput<Message> {
         self
     }
 
-    pub fn with_font_family(mut self, font_family: impl Into<StableString>) -> Self {
-        self.font_family = font_family.into();
+    pub fn with_font_family(mut self, font_id: FontIdentifier) -> Self {
+        self.font_id = font_id;
+        self
+    }
+
+    pub fn with_font_id(mut self, font_id: FontIdentifier) -> Self {
+        self.font_id = font_id;
         self
     }
 
@@ -151,14 +157,15 @@ struct WidgetState<Message> {
     _marker: std::marker::PhantomData<Message>,
 
     // DirectWrite objects (shared/cloneable COM interfaces)
-    dwrite_factory: IDWriteFactory,
-    text_format: IDWriteTextFormat,
+    dwrite_factory: IDWriteFactory6,
+    text_format: IDWriteTextFormat3,
     text: String,
     last_emitted_text: String,
 
     // Cached formatting properties
     cached_font_size: f32,
-    cached_font_family: String,
+    cached_line_spacing: Option<LineSpacing>,
+    cached_font_id: FontIdentifier,
     cached_text_alignment: TextAlignment,
     cached_paragraph_alignment: ParagraphAlignment,
 
@@ -225,13 +232,14 @@ pub enum SelectionMode {
 impl<Message: 'static> Widget<Message> for TextInput<Message> {
     fn state(
         &self,
-        arenas: &UIArenas,
+        _arenas: &UIArenas,
         device_resources: &crate::runtime::DeviceResources,
     ) -> super::State {
         match WidgetState::<Message>::new(
             device_resources.dwrite_factory.clone(),
-            self.font_family.resolve(arenas).unwrap(),
+            &self.font_id,
             self.font_size,
+            self.line_spacing,
             self.text_alignment,
             self.paragraph_alignment,
         ) {
@@ -268,12 +276,13 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         &self,
         _arenas: &UIArenas,
         instance: &mut Instance,
-        width: f32,
+        _border_width: f32,
+        content_width: f32,
     ) -> limit_response::SizingForY {
         let state = with_state!(instance as WidgetState<Message>);
         if let Some(layout) = &state.layout {
             unsafe {
-                layout.SetMaxWidth(width).unwrap();
+                layout.SetMaxWidth(content_width).unwrap();
             }
 
             let mut max_metrics = DWRITE_TEXT_METRICS::default();
@@ -438,13 +447,19 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                         }
                         x if x == VK_C.0 as u32 && ctrl_down => {
                             if let Some(s) = state.selected_text() {
-                                let _ = set_clipboard_text(hwnd, &s);
+                                // let _ = set_clipboard_text(hwnd, &s);
+                                shell.queue_deferred_control(DeferredControl::SetClipboardText(
+                                    s.to_string(),
+                                ));
                             }
                             true
                         }
                         x if x == VK_X.0 as u32 && ctrl_down => {
                             if let Some(s) = state.selected_text() {
-                                let _ = set_clipboard_text(hwnd, &s);
+                                // let _ = set_clipboard_text(hwnd, &s);
+                                shell.queue_deferred_control(DeferredControl::SetClipboardText(
+                                    s.to_string(),
+                                ));
                                 let _ = state.insert_str("");
                             }
                             true
@@ -558,7 +573,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
     fn paint(
         &mut self,
-        arenas: &UIArenas,
+        _arenas: &UIArenas,
         instance: &mut Instance,
         shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
@@ -569,14 +584,16 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
         // Rebuild text format if needed
         if state.needs_text_format_rebuild(
-            self.font_family.resolve(arenas).unwrap(),
+            &self.font_id,
             self.font_size,
+            self.line_spacing,
             self.text_alignment,
             self.paragraph_alignment,
         ) {
             let _ = state.rebuild_text_format(
-                self.font_family.resolve(arenas).unwrap(),
+                &self.font_id,
                 self.font_size,
+                self.line_spacing,
                 self.text_alignment,
                 self.paragraph_alignment,
             );
@@ -695,25 +712,17 @@ impl<Message: 'static> WidgetDragDropTarget<Message> for TextInput<Message> {
 
 impl<Message> WidgetState<Message> {
     pub fn new(
-        dwrite_factory: IDWriteFactory,
-        font_family: &str,
+        dwrite_factory: IDWriteFactory6,
+        font_id: &FontIdentifier,
         font_size: f32,
+        line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
     ) -> Result<Self> {
-        let text_format = unsafe {
-            println!("Creating text format for font family: {font_family}");
-            let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
-            let text_format = dwrite_factory.CreateTextFormat(
-                PCWSTR(font_family_wide.as_ptr()),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                font_size,
-                PCWSTR(w!("en-us").as_ptr()),
-            )?;
+        let text_format =
+            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
 
+        let text_format = unsafe {
             // Set text alignment
             let dwrite_text_alignment = match text_alignment {
                 TextAlignment::Leading => DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -747,7 +756,8 @@ impl<Message> WidgetState<Message> {
             text_format,
             text: String::new(),
             cached_font_size: font_size,
-            cached_font_family: font_family.to_string(),
+            cached_line_spacing: line_spacing,
+            cached_font_id: font_id.clone(),
             cached_text_alignment: text_alignment,
             cached_paragraph_alignment: paragraph_alignment,
             bounds: RectDIP::default(),
@@ -781,38 +791,31 @@ impl<Message> WidgetState<Message> {
 
     fn needs_text_format_rebuild(
         &self,
-        font_family: &str,
+        font_id: &FontIdentifier,
         font_size: f32,
+        line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
     ) -> bool {
-        self.cached_font_family != font_family
+        self.cached_font_id != *font_id
             || self.cached_font_size != font_size
+            || self.cached_line_spacing != line_spacing
             || self.cached_text_alignment != text_alignment
             || self.cached_paragraph_alignment != paragraph_alignment
     }
 
     fn rebuild_text_format(
         &mut self,
-        font_family: &str,
+        font_id: &FontIdentifier,
         font_size: f32,
+        line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
     ) -> Result<()> {
-        let font_family_wide: Vec<u16> = font_family.encode_utf16().chain(Some(0)).collect();
+        self.text_format =
+            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
 
         unsafe {
-            println!("Rebuilding text format for font family: {font_family}");
-            self.text_format = self.dwrite_factory.CreateTextFormat(
-                PCWSTR(font_family_wide.as_ptr()),
-                None,
-                DWRITE_FONT_WEIGHT_REGULAR,
-                DWRITE_FONT_STYLE_NORMAL,
-                DWRITE_FONT_STRETCH_NORMAL,
-                font_size,
-                PCWSTR(w!("en-us").as_ptr()),
-            )?;
-
             // Set text alignment
             let dwrite_text_alignment = match text_alignment {
                 TextAlignment::Leading => DWRITE_TEXT_ALIGNMENT_LEADING,
@@ -840,7 +843,7 @@ impl<Message> WidgetState<Message> {
         }
 
         // Update cached values
-        self.cached_font_family = font_family.to_string();
+        self.cached_font_id = font_id.clone();
         self.cached_font_size = font_size;
         self.cached_text_alignment = text_alignment;
         self.cached_paragraph_alignment = paragraph_alignment;
