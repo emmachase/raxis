@@ -400,9 +400,8 @@ impl<Message> Widget<Message> for Button {
 
                 if was_over != state.is_mouse_over {
                     state.update_state(self.enabled);
+                    shell.request_redraw(hwnd, RedrawRequest::Immediate);
                 }
-
-                shell.request_redraw(hwnd, RedrawRequest::Immediate);
             }
             _ => {}
         }
