@@ -29,7 +29,7 @@ use crate::{
     gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree, UIArenas,
-        model::{Element, ElementContent, UIElement},
+        model::{ElementContent, UIElement},
         visitors,
     },
     runtime::DeviceResources,
