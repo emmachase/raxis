@@ -305,7 +305,7 @@ impl SvgPathCommands {
                     commands.push(PathCommand::ClosePath);
                 }
                 _ => {
-                    return Err(format!("Unknown command: {}", command_char));
+                    return Err(format!("Unknown command: {command_char}"));
                 }
             }
         }
@@ -350,7 +350,7 @@ impl SvgPathCommands {
 
         number_str
             .parse::<f32>()
-            .map_err(|_| format!("Invalid number: {}", number_str))
+            .map_err(|_| format!("Invalid number: {number_str}"))
     }
 
     fn parse_flag(chars: &mut std::iter::Peekable<std::str::Chars>) -> Result<bool, String> {
@@ -364,7 +364,7 @@ impl SvgPathCommands {
                 chars.next();
                 Ok(true)
             } else {
-                Err(format!("Invalid flag value: {}", ch))
+                Err(format!("Invalid flag value: {ch}"))
             }
         } else {
             Err("Expected flag value (0 or 1)".to_string())
@@ -398,7 +398,7 @@ pub fn svg_path(input: TokenStream) -> TokenStream {
     let svg_path = match SvgPathCommands::parse(&path_str) {
         Ok(path) => path,
         Err(e) => {
-            return syn::Error::new_spanned(&input, format!("Failed to parse SVG path: {}", e))
+            return syn::Error::new_spanned(&input, format!("Failed to parse SVG path: {e}"))
                 .to_compile_error()
                 .into();
         }

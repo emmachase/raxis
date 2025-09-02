@@ -11,23 +11,19 @@ use raxis::{
             Sizing, StrokeCap, StrokeDashStyle, StrokeLineJoin, VerticalAlignment,
         },
     },
-    runtime::{
-        font_manager::{FontIdentifier, GlobalFontManager},
-        task::Task,
-    },
+    runtime::task::Task,
     util::{str::StableString, unique::combine_id},
     w_id,
     widgets::{
         Color,
         button::Button,
-        svg::{Svg, ViewBox},
+        svg::ViewBox,
         svg_path::SvgPath,
         text::{ParagraphAlignment, Text, TextAlignment},
         text_input::TextInput,
         widget,
     },
 };
-use raxis_core::SvgPathCommands;
 use raxis_proc_macro::svg_path;
 
 #[cfg(feature = "dhat-heap")]

@@ -1,9 +1,12 @@
-use crate::gfx::{
-    RectDIP,
-    draw_commands::{DrawCommand, DrawCommandList},
-};
-use crate::layout::model::{BorderRadius, DropShadow};
+use crate::layout::model::{Border, BorderRadius, DropShadow};
 use crate::widgets::Color;
+use crate::{
+    gfx::{
+        RectDIP,
+        draw_commands::{DrawCommand, DrawCommandList},
+    },
+    layout::model::{StrokeCap, StrokeLineJoin},
+};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1PathGeometry, ID2D1SvgDocument};
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
@@ -174,7 +177,7 @@ impl CommandRecorder {
         &mut self,
         rect: &RectDIP,
         border_radius: Option<&BorderRadius>,
-        border: &crate::layout::model::Border,
+        border: &Border,
     ) {
         self.commands.push(DrawCommand::DrawBorder {
             rect: *rect,
@@ -223,8 +226,8 @@ impl CommandRecorder {
         stroke_width: f32,
         scale_x: f32,
         scale_y: f32,
-        stroke_cap: Option<crate::layout::model::StrokeCap>,
-        stroke_join: Option<crate::layout::model::StrokeLineJoin>,
+        stroke_cap: Option<StrokeCap>,
+        stroke_join: Option<StrokeLineJoin>,
     ) {
         self.commands.push(DrawCommand::StrokePathGeometry {
             rect: *rect,
