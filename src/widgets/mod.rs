@@ -13,7 +13,8 @@ use windows::Win32::{
         D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
         D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_DASH_DOT,
         D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT, D2D1_DASH_STYLE_SOLID,
-        D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_MITER, D2D1_PROPERTY_TYPE_FLOAT,
+        D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER,
+        D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT,
         D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
         D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
         ID2D1DeviceContext7, ID2D1Factory, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
@@ -29,7 +30,10 @@ use crate::{
     gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree, UIArenas,
-        model::{ElementContent, UIElement},
+        model::{
+            Border, BorderPlacement, BorderRadius, DropShadow, ElementContent, StrokeCap,
+            StrokeDashStyle, StrokeLineJoin, UIElement,
+        },
         visitors,
     },
     runtime::DeviceResources,
@@ -41,6 +45,8 @@ pub mod button;
 pub mod dragdrop;
 pub mod drop_target;
 pub mod spinner;
+pub mod svg;
+pub mod svg_path;
 pub mod text;
 pub mod text_input;
 
@@ -171,43 +177,44 @@ impl From<u32> for Color {
 impl Renderer<'_> {
     fn create_stroke_style(
         &self,
-        dash_style: &Option<crate::layout::model::BorderDashStyle>,
-        dash_cap: crate::layout::model::BorderDashCap,
+        dash_style: &Option<StrokeDashStyle>,
+        dash_cap: StrokeCap,
+        stroke_join: StrokeLineJoin,
     ) -> Option<ID2D1StrokeStyle> {
         unsafe {
             let (dash, dashes, dash_offset) = match dash_style {
                 None => (D2D1_DASH_STYLE_SOLID, Vec::new(), 0.0f32),
-                Some(crate::layout::model::BorderDashStyle::Solid) => {
-                    (D2D1_DASH_STYLE_SOLID, Vec::new(), 0.0)
-                }
-                Some(crate::layout::model::BorderDashStyle::Dash) => {
-                    (D2D1_DASH_STYLE_DASH, Vec::new(), 0.0)
-                }
-                Some(crate::layout::model::BorderDashStyle::Dot) => {
-                    (D2D1_DASH_STYLE_DOT, Vec::new(), 0.0)
-                }
-                Some(crate::layout::model::BorderDashStyle::DashDot) => {
-                    (D2D1_DASH_STYLE_DASH_DOT, Vec::new(), 0.0)
-                }
-                Some(crate::layout::model::BorderDashStyle::DashDotDot) => {
+                Some(StrokeDashStyle::Solid) => (D2D1_DASH_STYLE_SOLID, Vec::new(), 0.0),
+                Some(StrokeDashStyle::Dash) => (D2D1_DASH_STYLE_DASH, Vec::new(), 0.0),
+                Some(StrokeDashStyle::Dot) => (D2D1_DASH_STYLE_DOT, Vec::new(), 0.0),
+                Some(StrokeDashStyle::DashDot) => (D2D1_DASH_STYLE_DASH_DOT, Vec::new(), 0.0),
+                Some(StrokeDashStyle::DashDotDot) => {
                     (D2D1_DASH_STYLE_DASH_DOT_DOT, Vec::new(), 0.0)
                 }
-                Some(crate::layout::model::BorderDashStyle::Custom { dashes, offset }) => {
+                Some(StrokeDashStyle::Custom { dashes, offset }) => {
                     (D2D1_DASH_STYLE_CUSTOM, dashes.clone(), *offset)
                 }
             };
 
             let dash_cap_style = match dash_cap {
-                crate::layout::model::BorderDashCap::Round => D2D1_CAP_STYLE_ROUND,
-                crate::layout::model::BorderDashCap::Square => D2D1_CAP_STYLE_SQUARE,
-                crate::layout::model::BorderDashCap::Triangle => D2D1_CAP_STYLE_TRIANGLE,
+                StrokeCap::Flat => D2D1_CAP_STYLE_FLAT,
+                StrokeCap::Round => D2D1_CAP_STYLE_ROUND,
+                StrokeCap::Square => D2D1_CAP_STYLE_SQUARE,
+                StrokeCap::Triangle => D2D1_CAP_STYLE_TRIANGLE,
+            };
+
+            let stroke_join_style = match stroke_join {
+                StrokeLineJoin::Miter => D2D1_LINE_JOIN_MITER,
+                StrokeLineJoin::Bevel => D2D1_LINE_JOIN_BEVEL,
+                StrokeLineJoin::Round => D2D1_LINE_JOIN_ROUND,
+                StrokeLineJoin::MiterOrBevel => D2D1_LINE_JOIN_MITER_OR_BEVEL,
             };
 
             let props = D2D1_STROKE_STYLE_PROPERTIES {
-                startCap: D2D1_CAP_STYLE_FLAT,
-                endCap: D2D1_CAP_STYLE_FLAT,
+                startCap: dash_cap_style,
+                endCap: dash_cap_style,
                 dashCap: dash_cap_style,
-                lineJoin: D2D1_LINE_JOIN_MITER,
+                lineJoin: stroke_join_style,
                 miterLimit: 10.0,
                 dashStyle: dash,
                 dashOffset: dash_offset,
@@ -225,7 +232,7 @@ impl Renderer<'_> {
     pub fn draw_rounded_rectangle_stroked(
         &self,
         rect: &RectDIP,
-        border_radius: &crate::layout::model::BorderRadius,
+        border_radius: &BorderRadius,
         stroke_width: f32,
         stroke: Option<&ID2D1StrokeStyle>,
     ) {
@@ -268,8 +275,8 @@ impl Renderer<'_> {
     pub fn draw_border(
         &self,
         rect: &RectDIP,
-        border_radius: Option<&crate::layout::model::BorderRadius>,
-        border: &crate::layout::model::Border,
+        border_radius: Option<&BorderRadius>,
+        border: &Border,
     ) {
         unsafe {
             // Set brush color
@@ -289,14 +296,14 @@ impl Renderer<'_> {
                 height_dip: rect.height_dip,
             };
             match border.placement {
-                crate::layout::model::BorderPlacement::Center => {}
-                crate::layout::model::BorderPlacement::Inset => {
+                BorderPlacement::Center => {}
+                BorderPlacement::Inset => {
                     adjusted.x_dip += half;
                     adjusted.y_dip += half;
                     adjusted.width_dip = (adjusted.width_dip - border.width).max(0.0);
                     adjusted.height_dip = (adjusted.height_dip - border.width).max(0.0);
                 }
-                crate::layout::model::BorderPlacement::Outset => {
+                BorderPlacement::Outset => {
                     adjusted.x_dip -= half;
                     adjusted.y_dip -= half;
                     adjusted.width_dip += border.width;
@@ -307,14 +314,14 @@ impl Renderer<'_> {
             let adjusted_radius = border_radius.map(|r| {
                 let mut rr = *r;
                 match border.placement {
-                    crate::layout::model::BorderPlacement::Center => {}
-                    crate::layout::model::BorderPlacement::Inset => {
+                    BorderPlacement::Center => {}
+                    BorderPlacement::Inset => {
                         rr.top_left = (rr.top_left - half).max(0.0);
                         rr.top_right = (rr.top_right - half).max(0.0);
                         rr.bottom_right = (rr.bottom_right - half).max(0.0);
                         rr.bottom_left = (rr.bottom_left - half).max(0.0);
                     }
-                    crate::layout::model::BorderPlacement::Outset => {
+                    BorderPlacement::Outset => {
                         rr.top_left += half;
                         rr.top_right += half;
                         rr.bottom_right += half;
@@ -325,7 +332,8 @@ impl Renderer<'_> {
             });
 
             // Create stroke style if needed
-            let stroke_style = self.create_stroke_style(&border.dash_style, border.dash_cap);
+            let stroke_style =
+                self.create_stroke_style(&border.dash_style, border.dash_cap, border.stroke_join);
             let stroke_opt = stroke_style.as_ref();
 
             if let Some(rr) = adjusted_radius.as_ref() {
@@ -348,8 +356,8 @@ impl Renderer<'_> {
     pub fn draw_blurred_shadow(
         &self,
         rect: &RectDIP,
-        shadow: &crate::layout::model::DropShadow,
-        border_radius: Option<&crate::layout::model::BorderRadius>,
+        shadow: &DropShadow,
+        border_radius: Option<&BorderRadius>,
     ) {
         unsafe {
             if shadow.blur_radius <= 0.0 {
@@ -564,7 +572,7 @@ impl Renderer<'_> {
     // fn draw_simple_blurred_shadow(
     //     &self,
     //     rect: &RectDIP,
-    //     shadow: &crate::layout::model::DropShadow,
+    //     shadow: &DropShadow,
     // ) {
     //     // Enhanced blur simulation using multiple layers with gaussian-like falloff
     //     let shadow_color = Color::from(shadow.color);
@@ -644,7 +652,7 @@ impl Renderer<'_> {
     pub fn fill_rounded_rectangle<C: Into<Color>>(
         &self,
         rect: &RectDIP,
-        border_radius: &crate::layout::model::BorderRadius,
+        border_radius: &BorderRadius,
         color: C,
     ) {
         unsafe {
@@ -692,7 +700,7 @@ impl Renderer<'_> {
         &self,
         sink: &ID2D1GeometrySink,
         rect: &RectDIP,
-        border_radius: &crate::layout::model::BorderRadius,
+        border_radius: &BorderRadius,
     ) {
         unsafe {
             let left = rect.x_dip;
@@ -824,6 +832,135 @@ impl Renderer<'_> {
             }
 
             sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        }
+    }
+
+    /// Draw an SVG document at the specified rectangle
+    pub fn draw_svg(
+        &self,
+        rect: &RectDIP,
+        svg_document: &windows::Win32::Graphics::Direct2D::ID2D1SvgDocument,
+    ) {
+        unsafe {
+            use windows::Win32::Graphics::Direct2D::Common::D2D_SIZE_F;
+            use windows_numerics::Matrix3x2;
+
+            // Save current transform
+            let mut current_transform = Matrix3x2::default();
+            self.render_target.GetTransform(&mut current_transform);
+
+            // Set SVG viewport size first
+            let _ = svg_document.SetViewportSize(D2D_SIZE_F {
+                width: rect.width_dip,
+                height: rect.height_dip,
+            });
+
+            // Apply translation to position the SVG at the target rect
+            let translation_transform = Matrix3x2::translation(rect.x_dip, rect.y_dip);
+            let combined_transform = translation_transform * current_transform;
+            self.render_target.SetTransform(&combined_transform);
+
+            // Draw the SVG document
+            self.render_target.DrawSvgDocument(svg_document);
+
+            // Restore original transform
+            self.render_target.SetTransform(&current_transform);
+        }
+    }
+
+    /// Fill a path geometry at the specified rectangle with transform
+    pub fn fill_path_geometry(
+        &self,
+        rect: &RectDIP,
+        path_geometry: &windows::Win32::Graphics::Direct2D::ID2D1PathGeometry,
+        color: Color,
+        scale_x: f32,
+        scale_y: f32,
+    ) {
+        unsafe {
+            use windows_numerics::Matrix3x2;
+
+            // Save current transform
+            let mut current_transform = Matrix3x2::default();
+            self.render_target.GetTransform(&mut current_transform);
+
+            // Apply translation and scale to position and size the geometry at the target rect
+            let translation_transform = Matrix3x2::translation(rect.x_dip, rect.y_dip);
+            let scale_transform = Matrix3x2::scale(scale_x, scale_y);
+            let combined_transform = scale_transform * translation_transform * current_transform;
+            self.render_target.SetTransform(&combined_transform);
+
+            // Set brush color and fill geometry
+            self.brush
+                .SetColor(&windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F {
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    a: color.a,
+                });
+            self.render_target
+                .FillGeometry(path_geometry, self.brush, None);
+
+            // Restore original transform
+            self.render_target.SetTransform(&current_transform);
+        }
+    }
+
+    /// Stroke a path geometry at the specified rectangle with transform
+    pub fn stroke_path_geometry(
+        &self,
+        rect: &RectDIP,
+        path_geometry: &windows::Win32::Graphics::Direct2D::ID2D1PathGeometry,
+        color: Color,
+        stroke_width: f32,
+        scale_x: f32,
+        scale_y: f32,
+        stroke_cap: Option<StrokeCap>,
+        stroke_join: Option<StrokeLineJoin>,
+    ) {
+        unsafe {
+            use windows_numerics::Matrix3x2;
+
+            // Save current transform
+            let mut current_transform = Matrix3x2::default();
+            self.render_target.GetTransform(&mut current_transform);
+
+            // Apply translation and scale to position and size the geometry at the target rect
+            let translation_transform = Matrix3x2::translation(rect.x_dip, rect.y_dip);
+            let scale_transform = Matrix3x2::scale(scale_x, scale_y);
+            let combined_transform = scale_transform * translation_transform * current_transform;
+            self.render_target.SetTransform(&combined_transform);
+
+            // Set brush color
+            self.brush
+                .SetColor(&windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F {
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    a: color.a,
+                });
+
+            // Create stroke style if cap or line join are specified
+            let stroke_style = if stroke_cap.is_some() || stroke_join.is_some() {
+                self.create_stroke_style(
+                    &None, // no dash style for path geometry
+                    stroke_cap.unwrap_or(StrokeCap::Square),
+                    stroke_join.unwrap_or(StrokeLineJoin::Miter),
+                )
+            } else {
+                None
+            };
+
+            // Stroke geometry with optional stroke style
+            self.render_target.DrawGeometry(
+                path_geometry,
+                self.brush,
+                stroke_width,
+                stroke_style.as_ref(),
+            );
+
+            // Restore original transform
+            self.render_target.SetTransform(&current_transform);
         }
     }
 }

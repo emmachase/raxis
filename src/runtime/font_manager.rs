@@ -280,7 +280,7 @@ impl GlobalFontManager {
     {
         if let Some(manager) = FONT_MANAGER.get() {
             let mut guard = manager.lock().unwrap();
-            f(&mut *guard)
+            f(&mut guard)
         } else {
             panic!("FontManager not initialized. Call GlobalFontManager::initialize() first.");
         }

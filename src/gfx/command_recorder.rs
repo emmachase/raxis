@@ -5,6 +5,7 @@ use crate::gfx::{
 use crate::layout::model::{BorderRadius, DropShadow};
 use crate::widgets::Color;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
+use windows::Win32::Graphics::Direct2D::{ID2D1PathGeometry, ID2D1SvgDocument};
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
 /// Records drawing operations as commands instead of executing them immediately
@@ -185,5 +186,55 @@ impl CommandRecorder {
     /// Record setting brush color
     pub fn set_brush_color(&mut self, color: D2D1_COLOR_F) {
         self.commands.push(DrawCommand::SetBrushColor { color });
+    }
+
+    /// Record drawing an SVG document
+    pub fn draw_svg(&mut self, rect: &RectDIP, svg_document: &ID2D1SvgDocument) {
+        self.commands.push(DrawCommand::DrawSvg {
+            rect: *rect,
+            svg_document: svg_document.clone(),
+        });
+    }
+
+    /// Record filling a path geometry
+    pub fn fill_path_geometry(
+        &mut self,
+        rect: &RectDIP,
+        path_geometry: &ID2D1PathGeometry,
+        color: impl Into<Color>,
+        scale_x: f32,
+        scale_y: f32,
+    ) {
+        self.commands.push(DrawCommand::FillPathGeometry {
+            rect: *rect,
+            path_geometry: path_geometry.clone(),
+            color: color.into(),
+            scale_x,
+            scale_y,
+        });
+    }
+
+    /// Record stroking a path geometry
+    pub fn stroke_path_geometry(
+        &mut self,
+        rect: &RectDIP,
+        path_geometry: &ID2D1PathGeometry,
+        color: impl Into<Color>,
+        stroke_width: f32,
+        scale_x: f32,
+        scale_y: f32,
+        stroke_cap: Option<crate::layout::model::StrokeCap>,
+        stroke_join: Option<crate::layout::model::StrokeLineJoin>,
+    ) {
+        self.commands.push(DrawCommand::StrokePathGeometry {
+            rect: *rect,
+            path_geometry: path_geometry.clone(),
+            color: color.into(),
+            stroke_width,
+            scale_x,
+            scale_y,
+            stroke_cap,
+            stroke_join,
+        });
     }
 }

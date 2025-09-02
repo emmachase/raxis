@@ -598,6 +598,8 @@ dependencies = [
  "const_format",
  "dhat",
  "futures",
+ "raxis-core",
+ "raxis-proc-macro",
  "slotmap",
  "smol",
  "smol_str",
@@ -606,6 +608,24 @@ dependencies = [
  "windows",
  "windows-core",
  "windows-numerics",
+]
+
+[[package]]
+name = "raxis-core"
+version = "0.1.0"
+dependencies = [
+ "windows",
+ "windows-core",
+ "windows-numerics",
+]
+
+[[package]]
+name = "raxis-proc-macro"
+version = "0.1.0"
+dependencies = [
+ "quote",
+ "raxis-core",
+ "syn",
 ]
 
 [[package]]
@@ -755,9 +775,9 @@ dependencies = [
 
 [[package]]
 name = "syn"
-version = "2.0.104"
+version = "2.0.106"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "17b6f705963418cdb9927482fa304bc562ece2fdd4f616084c50b7023b435a40"
+checksum = "ede7c438028d4436d71104916910f5bb611972c5cfd7f89b8300a8186e6fada6"
 dependencies = [
  "proc-macro2",
  "quote",

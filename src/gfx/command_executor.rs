@@ -139,6 +139,9 @@ impl CommandExecutor {
                 };
                 Self::rect_intersects_bounds(&circle_rect, bounds)
             }
+            DrawCommand::DrawSvg { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
+            DrawCommand::FillPathGeometry { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
+            DrawCommand::StrokePathGeometry { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
         }
     }
 
@@ -357,6 +360,18 @@ impl CommandExecutor {
                             None,
                         );
                     }
+                }
+
+                DrawCommand::DrawSvg { rect, svg_document } => {
+                    renderer.draw_svg(rect, svg_document);
+                }
+
+                DrawCommand::FillPathGeometry { rect, path_geometry, color, scale_x, scale_y } => {
+                    renderer.fill_path_geometry(rect, path_geometry, *color, *scale_x, *scale_y);
+                }
+
+                DrawCommand::StrokePathGeometry { rect, path_geometry, color, stroke_width, scale_x, scale_y, stroke_cap, stroke_join } => {
+                    renderer.stroke_path_geometry(rect, path_geometry, *color, *stroke_width, *scale_x, *scale_y, *stroke_cap, *stroke_join);
                 }
             }
         }

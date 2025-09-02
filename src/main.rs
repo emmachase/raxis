@@ -4,9 +4,12 @@ use std::{cell::RefCell, rc::Rc};
 
 use raxis::{
     HookManager,
-    layout::model::{
-        Border, BorderDashCap, BorderDashStyle, BorderPlacement, BorderRadius, BoxAmount,
-        Direction, Element, ScrollConfig, Sizing, VerticalAlignment,
+    layout::{
+        helpers::center,
+        model::{
+            Border, BorderPlacement, BorderRadius, BoxAmount, Direction, Element, ScrollConfig,
+            Sizing, StrokeCap, StrokeDashStyle, StrokeLineJoin, VerticalAlignment,
+        },
     },
     runtime::{
         font_manager::{FontIdentifier, GlobalFontManager},
@@ -17,11 +20,15 @@ use raxis::{
     widgets::{
         Color,
         button::Button,
+        svg::{Svg, ViewBox},
+        svg_path::SvgPath,
         text::{ParagraphAlignment, Text, TextAlignment},
         text_input::TextInput,
         widget,
     },
 };
+use raxis_core::SvgPathCommands;
+use raxis_proc_macro::svg_path;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -49,61 +56,63 @@ fn border_demos() -> Element<Message> {
         width: 4.0,
         color: Color::from(0x1976D2FF),
         placement: BorderPlacement::Inset,
-        dash_style: None,
-        dash_cap: BorderDashCap::Square,
+        ..Default::default()
     };
     let center = Border {
         width: 6.0,
         color: Color::from(0xE53935FF),
         placement: BorderPlacement::Center,
-        dash_style: None,
-        dash_cap: BorderDashCap::Square,
+        ..Default::default()
     };
     let outset = Border {
         width: 8.0,
         color: Color::from(0xFB8C00FF),
         placement: BorderPlacement::Outset,
-        dash_style: None,
-        dash_cap: BorderDashCap::Square,
+        ..Default::default()
     };
 
     let dashed = Border {
         width: 3.0,
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
-        dash_style: Some(BorderDashStyle::Dash),
-        dash_cap: BorderDashCap::Round,
+        dash_style: Some(StrokeDashStyle::Dash),
+        dash_cap: StrokeCap::Round,
+        ..Default::default()
     };
     let dotted = Border {
         width: 3.0,
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
-        dash_style: Some(BorderDashStyle::Dot),
-        dash_cap: BorderDashCap::Square,
+        dash_style: Some(StrokeDashStyle::Dot),
+        dash_cap: StrokeCap::Square,
+        ..Default::default()
     };
     let dash_dot = Border {
         width: 3.0,
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
-        dash_style: Some(BorderDashStyle::DashDot),
-        dash_cap: BorderDashCap::Triangle,
+        dash_style: Some(StrokeDashStyle::DashDot),
+        dash_cap: StrokeCap::Triangle,
+        ..Default::default()
     };
     let dash_dot_dot = Border {
         width: 3.0,
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
-        dash_style: Some(BorderDashStyle::DashDotDot),
-        dash_cap: BorderDashCap::Square,
+        dash_style: Some(StrokeDashStyle::DashDotDot),
+        dash_cap: StrokeCap::Square,
+        ..Default::default()
     };
     let custom = Border {
         width: 3.0,
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
-        dash_style: Some(BorderDashStyle::Custom {
+        dash_style: Some(StrokeDashStyle::Custom {
             dashes: vec![6.0, 2.0, 2.0, 2.0],
             offset: 0.0,
         }),
-        dash_cap: BorderDashCap::Round,
+        dash_cap: StrokeCap::Round,
+        ..Default::default()
     };
 
     Element {
@@ -372,6 +381,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                 },
                 ..Default::default()
             },
+            // Svg::new(include_str!("../assets/discord.svg")).as_element(w_id!()),
         ],
         ..Default::default()
     }
@@ -466,20 +476,19 @@ fn todo_item(
                         }),
                 ),
 
-                children: vec![Element {
-                    id: Some(combine_id(w_id!(), item.id)),
-                    width: Sizing::grow(),
-                    height: Sizing::fit(),
-                    content: widget(
-                        Text::new(if item.completed { "\u{e392}" } else { "" })
-                            .with_paragraph_alignment(ParagraphAlignment::Center)
-                            .with_text_alignment(TextAlignment::Center)
-                            .with_font_family(FontIdentifier::custom("lucide"))
-                            .with_font_size(16.0),
-                    ),
-                    ..Default::default()
-                }],
-
+                children: if item.completed {
+                    vec![center(
+                        SvgPath::new(svg_path!("M20 6 9 17l-5-5"), ViewBox::new(24.0, 24.0))
+                            .with_size(16.0, 16.0)
+                            .with_stroke(Color::WHITE)
+                            .with_stroke_width(2.0)
+                            .with_stroke_cap(StrokeCap::Round)
+                            .with_stroke_join(StrokeLineJoin::Round)
+                            .as_element(w_id!()), // Explicitly re-use id to re-use path geometry
+                    )]
+                } else {
+                    vec![]
+                },
                 ..Default::default()
             },
             // Todo text
@@ -557,11 +566,6 @@ fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    raxis::runtime::run_event_loop(view, update, (), |_state| {
-        GlobalFontManager::load_font_from_memory(include_bytes!("../fonts/lucide.ttf"))
-            .expect("Failed to load font");
-
-        None
-    })
-    .expect("Failed to run event loop");
+    raxis::runtime::run_event_loop(view, update, (), |_state| None)
+        .expect("Failed to run event loop");
 }

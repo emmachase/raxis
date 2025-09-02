@@ -378,21 +378,35 @@ pub enum BorderPlacement {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum BorderDashCap {
+pub enum StrokeCap {
+    Flat,
     Round,
     #[default]
     Square,
     Triangle,
 }
 
-#[derive(Clone, Debug, PartialEq)]
-pub enum BorderDashStyle {
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum StrokeLineJoin {
+    #[default]
+    Miter,
+    Bevel,
+    Round,
+    MiterOrBevel,
+}
+
+#[derive(Clone, Debug, PartialEq, Default)]
+pub enum StrokeDashStyle {
+    #[default]
     Solid,
     Dash,
     Dot,
     DashDot,
     DashDotDot,
-    Custom { dashes: Vec<f32>, offset: f32 },
+    Custom {
+        dashes: Vec<f32>,
+        offset: f32,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -400,8 +414,9 @@ pub struct Border {
     pub width: f32,
     pub color: Color,
     pub placement: BorderPlacement,
-    pub dash_style: Option<BorderDashStyle>,
-    pub dash_cap: BorderDashCap,
+    pub dash_style: Option<StrokeDashStyle>,
+    pub dash_cap: StrokeCap,
+    pub stroke_join: StrokeLineJoin,
 }
 
 impl Default for Border {
@@ -411,7 +426,8 @@ impl Default for Border {
             color: Color::default(),
             placement: BorderPlacement::Inset,
             dash_style: None,
-            dash_cap: BorderDashCap::default(),
+            dash_cap: StrokeCap::default(),
+            stroke_join: StrokeLineJoin::default(),
         }
     }
 }

@@ -151,10 +151,12 @@ impl Default for ButtonStyleSet {
     }
 }
 
+pub type OnClickFn = dyn Fn(&mut UIArenas);
+
 /// Button widget with text label and click handling
 pub struct Button {
     pub enabled: bool,
-    pub on_click: Option<Box<dyn Fn(&mut UIArenas)>>,
+    pub on_click: Option<Box<OnClickFn>>,
     pub styles: ButtonStyleSet,
 }
 

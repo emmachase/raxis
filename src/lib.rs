@@ -22,6 +22,7 @@ use crate::{
 pub mod gfx;
 pub mod layout;
 pub mod math;
+pub mod proc;
 pub mod runtime;
 pub mod util;
 pub mod widgets;

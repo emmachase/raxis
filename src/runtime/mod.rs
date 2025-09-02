@@ -494,7 +494,6 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
                             if let Some(stream) = into_stream(task) {
                                 let mut stream = stream;
                                 let message_sender = message_sender.clone();
-                                let hwnd = hwnd;
 
                                 smol::spawn(async move {
                                     let hwnd = hwnd;
@@ -505,9 +504,8 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
                                             let _ = message_sender.send(message);
 
                                             // If the UI thread is not processing messages, notify it
-                                            if PENDING_MESSAGE_PROCESSING
+                                            if !PENDING_MESSAGE_PROCESSING
                                                 .swap(true, Ordering::SeqCst)
-                                                == false
                                             {
                                                 PostMessageW(
                                                     Some(hwnd.0),
@@ -740,8 +738,8 @@ fn create_tree_root<State: 'static, Message>(
     )
 }
 
-static WNDPROC_IMPL: OnceLock<Box<dyn Fn(HWND, u32, WPARAM, LPARAM) -> LRESULT + Send + Sync>> =
-    OnceLock::new();
+type WndProc = dyn Fn(HWND, u32, WPARAM, LPARAM) -> LRESULT + Send + Sync;
+static WNDPROC_IMPL: OnceLock<Box<WndProc>> = OnceLock::new();
 
 extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
     WNDPROC_IMPL.get().unwrap()(hwnd, msg, wparam, lparam)
@@ -1437,7 +1435,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         let _ = swap_chain.Present(0, DXGI_PRESENT::default());
                     }
 
-                    let _ = EndPaint(hwnd, &mut ps);
+                    let _ = EndPaint(hwnd, &ps);
 
                     if matches!(redraw_request, RedrawRequest::Immediate) {
                         let _ = InvalidateRect(Some(hwnd), None, false);

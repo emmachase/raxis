@@ -50,7 +50,7 @@ pub enum Action<T> {
 }
 
 impl<T> Action<T> {
-    /// Creates a new [`Action::Widget`] with the given [`widget::Operation`].
+    // /// Creates a new [`Action::Widget`] with the given [`widget::Operation`].
     // pub fn widget(operation: impl widget::Operation + 'static) -> Self {
     //     Self::Widget(Box::new(operation))
     // }
@@ -406,8 +406,8 @@ impl<T> From<()> for Task<T> {
     }
 }
 
-/// Creates a new [`Task`] that runs the given [`widget::Operation`] and produces
-/// its output.
+// /// Creates a new [`Task`] that runs the given [`widget::Operation`] and produces
+// /// its output.
 // pub fn widget<T>(operation: impl widget::Operation<T> + 'static) -> Task<T>
 // where
 //     T: Send + 'static,
