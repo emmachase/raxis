@@ -32,7 +32,8 @@ pub fn position_elements<Message>(
                     if let Some(found) = root_id_map.get(anchor_id).copied() {
                         anchor = Some(found);
                     } else {
-                        anchor = Some(key);
+                        // anchor = Some(key);
+                        panic!("Floating element with unknown anchor_id {}", anchor_id);
                     }
                 }
             }

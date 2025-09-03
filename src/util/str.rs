@@ -24,3 +24,9 @@ impl From<&'static str> for StableString {
         Self::Static(value)
     }
 }
+
+impl From<String> for StableString {
+    fn from(value: String) -> Self {
+        Self::Heap(value)
+    }
+}

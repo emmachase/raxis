@@ -14,8 +14,9 @@ const_format = "0.2.34"
 dhat = { version = "0.3.3", optional = true }
 futures = "0.3.31"
 slotmap = "1.0.7"
-smol = "2.0.2"
+smol = { version = "2.0.2", optional = true }
 smol_str = "0.3.2"
+tokio = { version = "1.0", features = ["rt-multi-thread", "macros"], optional = true }
 string-interner = "0.19.0"
 unicode-segmentation = "1.11"
 windows = { version = "0.61.3", features = [
@@ -56,4 +57,7 @@ panic = "abort"
 # debug = 1
 
 [features]
+default = ["smol-runtime"]
 dhat-heap = ["dhat"]
+smol-runtime = ["smol"]
+tokio = ["dep:tokio"]

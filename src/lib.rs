@@ -15,7 +15,7 @@ use crate::{
         model::Element,
         visitors::{self, VisitAction},
     },
-    runtime::focus,
+    runtime::{focus, task::Task},
     widgets::{DragData, DragEvent, DropResult, Event, Operation, dispatch_operation},
 };
 
@@ -26,6 +26,9 @@ pub mod proc;
 pub mod runtime;
 pub mod util;
 pub mod widgets;
+
+pub use raxis_core::{PathCommand, SvgPathCommands};
+pub use raxis_proc_macro::svg_path;
 
 #[derive(Default)]
 pub struct HookState {
@@ -99,6 +102,7 @@ pub struct Shell<Message> {
     deferred_controls: Vec<DeferredControl>,
 
     message_sender: mpsc::Sender<Message>,
+    task_dispatcher: mpsc::Sender<Task<Message>>,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -116,7 +120,10 @@ pub enum InputMethod {
 pub const REDRAW_TIMER_ID: usize = 50;
 
 impl<Message> Shell<Message> {
-    pub fn new(message_sender: mpsc::Sender<Message>) -> Self {
+    pub fn new(
+        message_sender: mpsc::Sender<Message>,
+        task_dispatcher: mpsc::Sender<Task<Message>>,
+    ) -> Self {
         Self {
             focus_manager: focus::FocusManager::new(),
             input_method: InputMethod::Disabled,
@@ -127,7 +134,12 @@ impl<Message> Shell<Message> {
             redraw_request: RedrawRequest::Wait,
             deferred_controls: Vec::new(),
             message_sender,
+            task_dispatcher,
         }
+    }
+
+    pub fn dispatch_task(&mut self, task: Task<Message>) {
+        self.task_dispatcher.send(task).unwrap();
     }
 
     pub fn queue_operation(&mut self, operation: Box<dyn Operation>) {

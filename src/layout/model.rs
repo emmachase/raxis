@@ -652,6 +652,14 @@ impl<Message> Element<Message> {
         }
     }
 
+    pub fn with_children(self, children: Vec<Element<Message>>) -> Self {
+        Self { children, ..self }
+    }
+
+    pub fn with_direction(self, direction: Direction) -> Self {
+        Self { direction, ..self }
+    }
+
     pub fn with_horizontal_alignment(self, align: HorizontalAlignment) -> Self {
         Self {
             horizontal_alignment: align,

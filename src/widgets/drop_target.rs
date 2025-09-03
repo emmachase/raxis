@@ -54,7 +54,7 @@ impl DropTarget {
             let to_dip = crate::dips_scale(self.hwnd);
             let x_dip = (p.x as f32) * to_dip;
             let y_dip = (p.y as f32) * to_dip;
-            PointDIP { x_dip, y_dip }
+            PointDIP { x: x_dip, y: y_dip }
         }
     }
 

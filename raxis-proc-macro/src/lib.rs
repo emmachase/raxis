@@ -411,10 +411,10 @@ fn generate_path_geometry(svg_path: &SvgPathCommands) -> TokenStream {
     // Generate path commands as const array
     let command_tokens = svg_path.commands.iter().map(|cmd| match cmd {
         PathCommand::MoveTo { x, y } => {
-            quote! { raxis_core::PathCommand::MoveTo { x: #x, y: #y } }
+            quote! { raxis::PathCommand::MoveTo { x: #x, y: #y } }
         }
         PathCommand::LineTo { x, y } => {
-            quote! { raxis_core::PathCommand::LineTo { x: #x, y: #y } }
+            quote! { raxis::PathCommand::LineTo { x: #x, y: #y } }
         }
         PathCommand::Arc {
             end_x,
@@ -425,7 +425,7 @@ fn generate_path_geometry(svg_path: &SvgPathCommands) -> TokenStream {
             large_arc,
             sweep,
         } => {
-            quote! { raxis_core::PathCommand::Arc {
+            quote! { raxis::PathCommand::Arc {
                 end_x: #end_x, end_y: #end_y,
                 radius_x: #radius_x, radius_y: #radius_y,
                 rotation: #rotation,
@@ -440,7 +440,7 @@ fn generate_path_geometry(svg_path: &SvgPathCommands) -> TokenStream {
             end_x,
             end_y,
         } => {
-            quote! { raxis_core::PathCommand::CubicBezier {
+            quote! { raxis::PathCommand::CubicBezier {
                 cp1_x: #cp1_x, cp1_y: #cp1_y,
                 cp2_x: #cp2_x, cp2_y: #cp2_y,
                 end_x: #end_x, end_y: #end_y
@@ -452,22 +452,22 @@ fn generate_path_geometry(svg_path: &SvgPathCommands) -> TokenStream {
             end_x,
             end_y,
         } => {
-            quote! { raxis_core::PathCommand::QuadraticBezier {
+            quote! { raxis::PathCommand::QuadraticBezier {
                 cp_x: #cp_x, cp_y: #cp_y,
                 end_x: #end_x, end_y: #end_y
             } }
         }
         PathCommand::ClosePath => {
-            quote! { raxis_core::PathCommand::ClosePath }
+            quote! { raxis::PathCommand::ClosePath }
         }
     });
 
     let expanded = quote! {
         {
-            const COMMANDS: &'static [raxis_core::PathCommand] = &[
+            const COMMANDS: &'static [raxis::PathCommand] = &[
                 #(#command_tokens),*
             ];
-            raxis_core::SvgPathCommands { commands: COMMANDS }
+            raxis::SvgPathCommands { commands: COMMANDS }
         }
     };
 

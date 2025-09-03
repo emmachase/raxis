@@ -215,8 +215,8 @@ impl<Message> Widget<Message> for SvgPath {
         let state = with_state!(mut instance as SvgPathWidgetState);
 
         // Calculate scale factors based on viewport vs ViewBox
-        let viewport_width = bounds.content_box.width_dip;
-        let viewport_height = bounds.content_box.height_dip;
+        let viewport_width = bounds.content_box.width;
+        let viewport_height = bounds.content_box.height;
         let scale_x = viewport_width / self.viewbox.width;
         let scale_y = viewport_height / self.viewbox.height;
 

@@ -314,8 +314,8 @@ impl TextWidgetState {
                 self.text_layout = Some(self.dwrite_factory.CreateTextLayout(
                     &wtext,
                     &self.text_format,
-                    bounds.width_dip.max(1.0),  // Ensure minimum width
-                    bounds.height_dip.max(1.0), // Ensure minimum height
+                    bounds.width.max(1.0),  // Ensure minimum width
+                    bounds.height.max(1.0), // Ensure minimum height
                 )?);
             }
             self.cached_text = text.to_string();
@@ -328,8 +328,8 @@ impl TextWidgetState {
         if bounds_changed || needs_layout_rebuild {
             if let Some(layout) = &self.text_layout {
                 unsafe {
-                    layout.SetMaxWidth(bounds.width_dip.max(1.0))?;
-                    layout.SetMaxHeight(bounds.height_dip.max(1.0))?;
+                    layout.SetMaxWidth(bounds.width.max(1.0))?;
+                    layout.SetMaxHeight(bounds.height.max(1.0))?;
 
                     // Get text metrics for sizing calculations
                     let mut metrics = DWRITE_TEXT_METRICS::default();
@@ -357,15 +357,17 @@ impl TextWidgetState {
     }
 
     fn get_preferred_width(&mut self, text: &str) -> Result<f32> {
-        if let Some(width) = self.cached_preferred_width {
+        if let Some(width) = self.cached_preferred_width
+            && text == self.cached_text
+        {
             return Ok(width);
         }
 
         let temp_bounds = RectDIP {
-            x_dip: 0.0,
-            y_dip: 0.0,
-            width_dip: f32::INFINITY,
-            height_dip: f32::INFINITY,
+            x: 0.0,
+            y: 0.0,
+            width: f32::INFINITY,
+            height: f32::INFINITY,
         };
 
         self.build_text_layout(text, temp_bounds)?;
@@ -375,17 +377,19 @@ impl TextWidgetState {
     }
 
     fn get_preferred_height_for_width(&mut self, text: &str, width: f32) -> Result<f32> {
-        if let Some((cached_width, cached_height)) = self.cached_preferred_height_for_width {
+        if let Some((cached_width, cached_height)) = self.cached_preferred_height_for_width
+            && text == self.cached_text
+        {
             if (cached_width - width).abs() < 0.1 {
                 return Ok(cached_height);
             }
         }
 
         let temp_bounds = RectDIP {
-            x_dip: 0.0,
-            y_dip: 0.0,
-            width_dip: width,
-            height_dip: f32::INFINITY,
+            x: 0.0,
+            y: 0.0,
+            width,
+            height: f32::INFINITY,
         };
 
         self.build_text_layout(text, temp_bounds)?;

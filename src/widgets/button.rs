@@ -151,16 +151,16 @@ impl Default for ButtonStyleSet {
     }
 }
 
-pub type OnClickFn = dyn Fn(&mut UIArenas);
+pub type OnClickFn<Message> = dyn Fn(&mut UIArenas, &mut Shell<Message>);
 
 /// Button widget with text label and click handling
-pub struct Button {
+pub struct Button<Message> {
     pub enabled: bool,
-    pub on_click: Option<Box<OnClickFn>>,
+    pub on_click: Option<Box<OnClickFn<Message>>>,
     pub styles: ButtonStyleSet,
 }
 
-impl Debug for Button {
+impl<Message> Debug for Button<Message> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("Button")
             .field("enabled", &self.enabled)
@@ -168,7 +168,7 @@ impl Debug for Button {
     }
 }
 
-impl Button {
+impl<Message: 'static + Send> Button<Message> {
     pub fn new() -> Self {
         Self {
             enabled: true,
@@ -177,7 +177,10 @@ impl Button {
         }
     }
 
-    pub fn with_click_handler(mut self, handler: impl Fn(&mut UIArenas) + 'static) -> Self {
+    pub fn with_click_handler(
+        mut self,
+        handler: impl Fn(&mut UIArenas, &mut Shell<Message>) + 'static,
+    ) -> Self {
         self.on_click = Some(Box::new(handler));
         self
     }
@@ -239,11 +242,7 @@ impl Button {
         self
     }
 
-    pub fn as_element<Message>(
-        self,
-        id: u64,
-        children: impl Into<Element<Message>>,
-    ) -> Element<Message> {
+    pub fn as_element(self, id: u64, children: impl Into<Element<Message>>) -> Element<Message> {
         Element {
             id: Some(id),
             children: vec![children.into()],
@@ -253,7 +252,7 @@ impl Button {
     }
 }
 
-impl Default for Button {
+impl<Message: 'static + Send> Default for Button<Message> {
     fn default() -> Self {
         Self::new()
     }
@@ -329,7 +328,7 @@ impl ButtonWidgetState {
     }
 }
 
-impl<Message> Widget<Message> for Button {
+impl<Message> Widget<Message> for Button<Message> {
     fn state(
         &self,
         _arenas: &UIArenas,
@@ -375,10 +374,7 @@ impl<Message> Widget<Message> for Button {
 
         match event {
             super::Event::MouseButtonDown { x, y, .. } => {
-                let point = PointDIP {
-                    x_dip: *x,
-                    y_dip: *y,
-                };
+                let point = PointDIP { x: *x, y: *y };
                 if point.within(bounds.border_box) && self.enabled {
                     state.is_mouse_down = true;
                     state.is_mouse_over = true;
@@ -387,10 +383,7 @@ impl<Message> Widget<Message> for Button {
                 }
             }
             super::Event::MouseButtonUp { x, y, .. } => {
-                let point = PointDIP {
-                    x_dip: *x,
-                    y_dip: *y,
-                };
+                let point = PointDIP { x: *x, y: *y };
                 let was_pressed = state.is_mouse_down && state.is_mouse_over;
 
                 state.is_mouse_down = false;
@@ -400,17 +393,14 @@ impl<Message> Widget<Message> for Button {
                 // Trigger click if mouse was released over the button
                 if was_pressed && point.within(bounds.border_box) && self.enabled {
                     if let Some(handler) = self.on_click.as_ref() {
-                        handler(arenas);
+                        handler(arenas, shell);
                     }
                 }
 
                 shell.request_redraw(hwnd, RedrawRequest::Immediate);
             }
             super::Event::MouseMove { x, y } => {
-                let point = PointDIP {
-                    x_dip: *x,
-                    y_dip: *y,
-                };
+                let point = PointDIP { x: *x, y: *y };
                 let was_over = state.is_mouse_over;
                 state.is_mouse_over = point.within(bounds.border_box);
 

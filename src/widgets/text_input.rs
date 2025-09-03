@@ -311,7 +311,9 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
     ) {
         let state = with_state!(mut instance as WidgetState<Message>);
 
-        let RectDIP { x_dip, y_dip, .. } = bounds.content_box;
+        let RectDIP {
+            x: x_dip, y: y_dip, ..
+        } = bounds.content_box;
         match event {
             super::Event::MouseButtonDown {
                 x,
@@ -325,19 +327,14 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                     shell.request_input_method(InputMethod::Disabled);
                 }
 
-                if (PointDIP {
-                    x_dip: *x,
-                    y_dip: *y,
-                })
-                .within(bounds.border_box)
-                {
+                if (PointDIP { x: *x, y: *y }).within(bounds.border_box) {
                     if let Ok(idx) = state.hit_test_index(x - x_dip, y - y_dip) {
                         shell.focus_manager.focus(instance.id);
 
                         // Store the drag start position for OLE drag detection
                         state.drag_start_position = Some(PointDIP {
-                            x_dip: x - x_dip,
-                            y_dip: y - y_dip,
+                            x: x - x_dip,
+                            y: y - y_dip,
                         });
 
                         // Selection mode by click count
@@ -505,8 +502,8 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                     if let Ok((c_x_dip, c_y_dip, h)) = state.caret_pos_dip(state.caret_active16()) {
                         shell.request_input_method(InputMethod::Enabled {
                             position: PointDIP {
-                                x_dip: x_dip + c_x_dip,
-                                y_dip: y_dip + c_y_dip + h,
+                                x: x_dip + c_x_dip,
+                                y: y_dip + c_y_dip + h,
                             },
                         });
                     }
@@ -519,8 +516,8 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                     if let Ok((c_x_dip, c_y_dip, h)) = state.caret_pos_dip(state.caret_active16()) {
                         shell.request_input_method(InputMethod::Enabled {
                             position: PointDIP {
-                                x_dip: x_dip + c_x_dip,
-                                y_dip: y_dip + c_y_dip + h,
+                                x: x_dip + c_x_dip,
+                                y: y_dip + c_y_dip + h,
                             },
                         });
                     }
@@ -637,8 +634,8 @@ impl<Message: 'static> WidgetDragDropTarget<Message> for TextInput<Message> {
         let state = with_state!(mut instance as WidgetState<Message>);
         match &drag_info.data {
             DragData::Text(_) => {
-                let widget_x = drag_info.position.x_dip - widget_bounds.content_box.x_dip;
-                let widget_y = drag_info.position.y_dip - widget_bounds.content_box.y_dip;
+                let widget_x = drag_info.position.x - widget_bounds.content_box.x;
+                let widget_y = drag_info.position.y - widget_bounds.content_box.y;
 
                 if let Ok(idx) = state.hit_test_index(widget_x, widget_y) {
                     state.set_ole_drop_preview(Some(idx));
@@ -659,8 +656,8 @@ impl<Message: 'static> WidgetDragDropTarget<Message> for TextInput<Message> {
         let state = with_state!(mut instance as WidgetState<Message>);
         match &drag_info.data {
             DragData::Text(_) => {
-                let widget_x = drag_info.position.x_dip - widget_bounds.content_box.x_dip;
-                let widget_y = drag_info.position.y_dip - widget_bounds.content_box.y_dip;
+                let widget_x = drag_info.position.x - widget_bounds.content_box.x;
+                let widget_y = drag_info.position.y - widget_bounds.content_box.y;
 
                 if let Ok(idx16) = state.hit_test_index(widget_x, widget_y) {
                     state.set_ole_drop_preview(Some(idx16));
@@ -688,11 +685,11 @@ impl<Message: 'static> WidgetDragDropTarget<Message> for TextInput<Message> {
             DragData::Text(text) => {
                 // Convert client coordinates to widget-relative coordinates
                 let widget_pos = PointDIP {
-                    x_dip: drag_info.position.x_dip - widget_bounds.content_box.x_dip,
-                    y_dip: drag_info.position.y_dip - widget_bounds.content_box.y_dip,
+                    x: drag_info.position.x - widget_bounds.content_box.x,
+                    y: drag_info.position.y - widget_bounds.content_box.y,
                 };
 
-                if let Ok(drop_idx) = state.hit_test_index(widget_pos.x_dip, widget_pos.y_dip) {
+                if let Ok(drop_idx) = state.hit_test_index(widget_pos.x, widget_pos.y) {
                     let effect = state.get_drop_effect(&drag_info.allowed_effects);
 
                     if let Some(result) = state.handle_text_drop(text, drop_idx, effect) {
@@ -869,8 +866,8 @@ impl<Message> WidgetState<Message> {
                 let composed_layout = self.dwrite_factory.CreateTextLayout(
                     &composed,
                     &self.text_format,
-                    self.bounds.width_dip,
-                    self.bounds.height_dip,
+                    self.bounds.width,
+                    self.bounds.height,
                 )?;
                 let range = DWRITE_TEXT_RANGE {
                     startPosition: underline_start,
@@ -882,8 +879,8 @@ impl<Message> WidgetState<Message> {
                 self.dwrite_factory.CreateTextLayout(
                     &wtext,
                     &self.text_format,
-                    self.bounds.width_dip,
-                    self.bounds.height_dip,
+                    self.bounds.width,
+                    self.bounds.height,
                 )?
             };
 
@@ -900,16 +897,16 @@ impl<Message> WidgetState<Message> {
 
         unsafe {
             let layout = self.layout.as_ref().expect("layout not built");
-            layout.SetMaxWidth(bounds.width_dip).unwrap();
-            layout.SetMaxHeight(bounds.height_dip).unwrap();
+            layout.SetMaxWidth(bounds.width).unwrap();
+            layout.SetMaxHeight(bounds.height).unwrap();
 
             let mut metrics = DWRITE_TEXT_METRICS::default();
             layout.GetMetrics(&mut metrics).unwrap();
             self.metric_bounds = RectDIP {
-                x_dip: metrics.left,
-                y_dip: metrics.top,
-                width_dip: metrics.width,
-                height_dip: metrics.height,
+                x: metrics.left,
+                y: metrics.top,
+                width: metrics.width,
+                height: metrics.height,
             };
         }
 
@@ -954,10 +951,10 @@ impl<Message> WidgetState<Message> {
                             for m in runs.iter().take(actual as usize) {
                                 recorder.fill_rectangle(
                                     &RectDIP {
-                                        x_dip: bounds.x_dip + m.left,
-                                        y_dip: bounds.y_dip + m.top,
-                                        width_dip: m.width,
-                                        height_dip: m.height,
+                                        x: bounds.x + m.left,
+                                        y: bounds.y + m.top,
+                                        width: m.width,
+                                        height: m.height,
                                     },
                                     crate::widgets::Color {
                                         r: 0.2,
@@ -1015,10 +1012,10 @@ impl<Message> WidgetState<Message> {
                     let mut m = DWRITE_HIT_TEST_METRICS::default();
                     layout.HitTestTextPosition(drop, false, &mut x, &mut y, &mut m)?;
                     let caret_rect = RectDIP {
-                        x_dip: bounds.x_dip + x,
-                        y_dip: bounds.y_dip + m.top,
-                        width_dip: CARET_WIDTH,
-                        height_dip: m.height,
+                        x: bounds.x + x,
+                        y: bounds.y + m.top,
+                        width: CARET_WIDTH,
+                        height: m.height,
                     };
                     recorder.fill_rectangle(&caret_rect, Color::BLACK);
                 }
@@ -1034,10 +1031,10 @@ impl<Message> WidgetState<Message> {
                         let mut m = DWRITE_HIT_TEST_METRICS::default();
                         layout.HitTestTextPosition(ime_caret_pos, false, &mut x, &mut y, &mut m)?;
                         let caret_rect = RectDIP {
-                            x_dip: bounds.x_dip + x,
-                            y_dip: bounds.y_dip + m.top,
-                            width_dip: CARET_WIDTH,
-                            height_dip: m.height,
+                            x: bounds.x + x,
+                            y: bounds.y + m.top,
+                            width: CARET_WIDTH,
+                            height: m.height,
                         };
                         recorder.fill_rectangle(&caret_rect, Color::BLACK);
                     } else if sel_start == sel_end {
@@ -1053,10 +1050,10 @@ impl<Message> WidgetState<Message> {
                             &mut m,
                         )?;
                         let caret_rect = RectDIP {
-                            x_dip: bounds.x_dip + x,
-                            y_dip: bounds.y_dip + m.top,
-                            width_dip: CARET_WIDTH,
-                            height_dip: m.height,
+                            x: bounds.x + x,
+                            y: bounds.y + m.top,
+                            width: CARET_WIDTH,
+                            height: m.height,
                         };
                         recorder.fill_rectangle(&caret_rect, Color::BLACK);
                     }
@@ -1101,7 +1098,7 @@ impl<Message> WidgetState<Message> {
         // Check if we have selected text and the position is within the selection
         let (sel_start, sel_end) = self.selection_range();
         if sel_start != sel_end {
-            if let Ok(idx) = self.hit_test_index(position.x_dip, position.y_dip) {
+            if let Ok(idx) = self.hit_test_index(position.x, position.y) {
                 if idx >= sel_start && idx <= sel_end {
                     if let Some(selected_text) = self.selected_text() {
                         return Some(DragData::Text(selected_text.to_owned()));
@@ -1603,10 +1600,10 @@ impl<Message> WidgetState<Message> {
                 .expect("layout not built")
                 .GetMetrics(&mut metrics)?;
             self.metric_bounds = RectDIP {
-                x_dip: metrics.left,
-                y_dip: metrics.top,
-                width_dip: metrics.width,
-                height_dip: metrics.height,
+                x: metrics.left,
+                y: metrics.top,
+                width: metrics.width,
+                height: metrics.height,
             };
             Ok(())
         }

@@ -482,46 +482,71 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
                 task_sender.send(boot_task).unwrap();
             }
 
-            let shell = Shell::new(message_sender.clone());
+            let shell = Shell::new(message_sender.clone(), task_sender.clone());
 
-            // Spawn executor thread with smol runtime
+            // Spawn executor thread with selected async runtime
             {
                 let message_sender = message_sender.clone();
                 let hwnd = UncheckedHWND(hwnd);
                 thread::spawn(move || {
-                    smol::block_on(async {
-                        while let Ok(task) = task_receiver.recv() {
-                            if let Some(stream) = into_stream(task) {
-                                let mut stream = stream;
-                                let message_sender = message_sender.clone();
+                    async fn process_task_stream<Message: Send + 'static>(
+                        stream: impl futures::Stream<Item = Action<Message>> + Send + Unpin + 'static,
+                        message_sender: mpsc::Sender<Message>,
+                        hwnd: UncheckedHWND,
+                    ) {
+                        use futures::StreamExt;
+                        let mut stream = stream;
+                        while let Some(action) = stream.next().await {
+                            if let Action::Output(message) = action {
+                                // Send message to channel for UI thread processing
+                                let _ = message_sender.send(message);
 
-                                smol::spawn(async move {
-                                    let hwnd = hwnd;
-                                    use futures::StreamExt;
-                                    while let Some(action) = stream.next().await {
-                                        if let Action::Output(message) = action {
-                                            // Send message to channel for UI thread processing
-                                            let _ = message_sender.send(message);
-
-                                            // If the UI thread is not processing messages, notify it
-                                            if !PENDING_MESSAGE_PROCESSING
-                                                .swap(true, Ordering::SeqCst)
-                                            {
-                                                PostMessageW(
-                                                    Some(hwnd.0),
-                                                    WM_ASYNC_MESSAGE,
-                                                    WPARAM(0),
-                                                    LPARAM(0),
-                                                )
-                                                .ok();
-                                            }
-                                        }
+                                // If the UI thread is not processing messages, notify it
+                                if !PENDING_MESSAGE_PROCESSING.swap(true, Ordering::SeqCst) {
+                                    unsafe {
+                                        PostMessageW(
+                                            Some(hwnd.0),
+                                            WM_ASYNC_MESSAGE,
+                                            WPARAM(0),
+                                            LPARAM(0),
+                                        )
+                                        .ok();
                                     }
-                                })
-                                .detach();
+                                }
                             }
                         }
-                    });
+                    }
+
+                    async fn run_task_loop<Message: Send + 'static>(
+                        task_receiver: mpsc::Receiver<Task<Message>>,
+                        message_sender: mpsc::Sender<Message>,
+                        hwnd: UncheckedHWND,
+                    ) {
+                        while let Ok(task) = task_receiver.recv() {
+                            if let Some(stream) = into_stream(task) {
+                                let message_sender = message_sender.clone();
+
+                                #[cfg(all(feature = "smol-runtime", not(feature = "tokio")))]
+                                smol::spawn(process_task_stream(stream, message_sender, hwnd))
+                                    .detach();
+
+                                #[cfg(feature = "tokio")]
+                                tokio::spawn(process_task_stream(stream, message_sender, hwnd));
+                            }
+                        }
+                    }
+
+                    #[cfg(all(feature = "smol-runtime", not(feature = "tokio")))]
+                    smol::block_on(run_task_loop(task_receiver, message_sender, hwnd));
+
+                    #[cfg(feature = "tokio")]
+                    {
+                        let rt = tokio::runtime::Builder::new_multi_thread()
+                            .enable_all()
+                            .build()
+                            .expect("Failed to create tokio runtime");
+                        rt.block_on(run_task_loop(task_receiver, message_sender, hwnd));
+                    }
                 });
             }
 
@@ -565,8 +590,8 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
 
         let rc = client_rect(hwnd)?;
         let rc_dip = RectDIP::from(hwnd, rc);
-        self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width_dip);
-        self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height_dip);
+        self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width);
+        self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height);
 
         layout::layout(&mut self.ui_tree, root, &mut self.scroll_state_manager);
         let commands = layout::paint(
@@ -636,12 +661,8 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
                 compute_scrollbar_geom(element, Axis::Y, &state.scroll_state_manager)
             {
                 let tr = geom.thumb_rect;
-                if x >= tr.x_dip
-                    && x < tr.x_dip + tr.width_dip
-                    && y >= tr.y_dip
-                    && y < tr.y_dip + tr.height_dip
-                {
-                    let grab_offset = y - tr.y_dip;
+                if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
+                    let grab_offset = y - tr.y;
                     *out = Some(ScrollDragState {
                         element_id: element.id.unwrap(),
                         axis: DragAxis::Vertical,
@@ -654,12 +675,8 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
                 compute_scrollbar_geom(element, Axis::X, &state.scroll_state_manager)
             {
                 let tr = geom.thumb_rect;
-                if x >= tr.x_dip
-                    && x < tr.x_dip + tr.width_dip
-                    && y >= tr.y_dip
-                    && y < tr.y_dip + tr.height_dip
-                {
-                    let grab_offset = x - tr.x_dip;
+                if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
+                    let grab_offset = x - tr.x;
                     *out = Some(ScrollDragState {
                         element_id: element.id.unwrap(),
                         axis: DragAxis::Horizontal,
@@ -702,6 +719,10 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
                 unsafe { PostMessageW(Some(hwnd), WM_ASYNC_MESSAGE, WPARAM(0), LPARAM(0)).ok() };
                 break;
             }
+        }
+
+        unsafe {
+            InvalidateRect(Some(hwnd), None, true).unwrap();
         }
 
         PENDING_MESSAGE_PROCESSING.store(false, Ordering::SeqCst);
@@ -1051,7 +1072,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     );
 
                     if state.shell.capture_event() {
-                        let point = PointDIP { x_dip, y_dip };
+                        let point = PointDIP { x: x_dip, y: y_dip };
 
                         let root = state.ui_tree.root;
                         visitors::visit_reverse_bfs(&mut state.ui_tree, root, |ui_tree, key, _| {
@@ -1311,7 +1332,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         let to_dip = dips_scale(hwnd);
                         let x_dip = (pt.x as f32) * to_dip;
                         let y_dip = (pt.y as f32) * to_dip;
-                        let point = PointDIP { x_dip, y_dip };
+                        let point = PointDIP { x: x_dip, y: y_dip };
 
                         let mut cursor = None;
                         let root = state.ui_tree.root;
@@ -1514,8 +1535,8 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         let cf = CANDIDATEFORM {
                             dwStyle: CFS_POINT,
                             ptCurrentPos: POINT {
-                                x: (position.x_dip / to_dip).round() as i32,
-                                y: (position.y_dip / to_dip).round() as i32,
+                                x: (position.x / to_dip).round() as i32,
+                                y: (position.y / to_dip).round() as i32,
                             },
                             rcArea: RECT::default(),
                             dwIndex: 0,
@@ -1624,10 +1645,7 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
                         DragEvent::DragEnter { drag_info }
                         | DragEvent::DragOver { drag_info }
                         | DragEvent::Drop { drag_info } => drag_info.position,
-                        DragEvent::DragLeave => PointDIP {
-                            x_dip: 0.0,
-                            y_dip: 0.0,
-                        }, // Position not needed for DragLeave
+                        DragEvent::DragLeave => PointDIP { x: 0.0, y: 0.0 }, // Position not needed for DragLeave
                     },
                 ) {
                     // We don't get any other events while drag is ongoing, assume we need to redraw

@@ -115,8 +115,8 @@ impl<Message> Widget<Message> for Spinner {
     ) {
         let state = with_state!(mut instance as WidgetState);
         let center = Vector2 {
-            X: bounds.content_box.x_dip + bounds.content_box.width_dip * 0.5,
-            Y: bounds.content_box.y_dip + bounds.content_box.height_dip * 0.5,
+            X: bounds.content_box.x + bounds.content_box.width * 0.5,
+            Y: bounds.content_box.y + bounds.content_box.height * 0.5,
         };
         // let radius = bounds.width_dip.min(bounds.height_dip) * 0.5;
         // self.set_layout(center, radius);

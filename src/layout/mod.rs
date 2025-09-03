@@ -63,6 +63,10 @@ fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>,
             }
         }
 
+        if let Some(id) = ui_tree.slots[key].id {
+            ui_tree.slots[root].id_map.insert(id, key);
+        }
+
         // TODO: propagate Font
     });
 }
@@ -154,10 +158,10 @@ pub fn generate_paint_commands<Message>(
                 // Draw drop shadow first (behind the element)
                 if let Some(shadow) = &element.drop_shadow {
                     let element_rect = RectDIP {
-                        x_dip: x,
-                        y_dip: y,
-                        width_dip: width,
-                        height_dip: height,
+                        x,
+                        y,
+                        width,
+                        height,
                     };
 
                     recorder.draw_blurred_shadow(
@@ -169,10 +173,10 @@ pub fn generate_paint_commands<Message>(
 
                 if let Some(color) = element.background_color {
                     let element_rect = RectDIP {
-                        x_dip: x,
-                        y_dip: y,
-                        width_dip: width,
-                        height_dip: height,
+                        x,
+                        y,
+                        width,
+                        height,
                     };
 
                     if let Some(border_radius) = &element.border_radius {
@@ -186,10 +190,10 @@ pub fn generate_paint_commands<Message>(
 
                 if has_scroll_x || has_scroll_y {
                     let clip_rect = RectDIP {
-                        x_dip: x,
-                        y_dip: y,
-                        width_dip: width,
-                        height_dip: height,
+                        x,
+                        y,
+                        width,
+                        height,
                     };
 
                     if let Some(border_radius) = &element.border_radius {
@@ -285,10 +289,10 @@ pub fn generate_paint_commands<Message>(
                         let width = element.computed_width;
                         let height = element.computed_height;
                         let element_rect = RectDIP {
-                            x_dip: x,
-                            y_dip: y,
-                            width_dip: width,
-                            height_dip: height,
+                            x,
+                            y,
+                            width,
+                            height,
                         };
                         recorder.draw_border(&element_rect, element.border_radius.as_ref(), border);
                     }
@@ -392,16 +396,16 @@ pub fn compute_scrollbar_geom<Message>(
             let x = element.x;
             let y = element.y;
             let track_rect = RectDIP {
-                x_dip: x + width - scrollbar_size,
-                y_dip: y,
-                width_dip: scrollbar_size,
-                height_dip: height,
+                x: x + width - scrollbar_size,
+                y,
+                width: scrollbar_size,
+                height,
             };
             let thumb_rect = RectDIP {
-                x_dip: x + width - scrollbar_size,
-                y_dip: y + range * progress,
-                width_dip: scrollbar_size,
-                height_dip: thumb_len,
+                x: x + width - scrollbar_size,
+                y: y + range * progress,
+                width: scrollbar_size,
+                height: thumb_len,
             };
 
             Some(ScrollbarGeom {
@@ -442,16 +446,16 @@ pub fn compute_scrollbar_geom<Message>(
             let x = element.x;
             let y = element.y;
             let track_rect = RectDIP {
-                x_dip: x,
-                y_dip: y + height - scrollbar_size,
-                width_dip: width,
-                height_dip: scrollbar_size,
+                x,
+                y: y + height - scrollbar_size,
+                width,
+                height: scrollbar_size,
             };
             let thumb_rect = RectDIP {
-                x_dip: x + range * progress,
-                y_dip: y + height - scrollbar_size,
-                width_dip: thumb_len,
-                height_dip: scrollbar_size,
+                x: x + range * progress,
+                y: y + height - scrollbar_size,
+                width: thumb_len,
+                height: scrollbar_size,
             };
 
             Some(ScrollbarGeom {

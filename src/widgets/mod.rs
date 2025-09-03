@@ -44,6 +44,7 @@ pub use dragdrop::{DragData, DragInfo, DropResult, WidgetDragDropTarget};
 pub mod button;
 pub mod dragdrop;
 pub mod drop_target;
+pub mod mouse_area;
 pub mod spinner;
 pub mod svg;
 pub mod svg_path;
@@ -62,6 +63,7 @@ pub mod limit_response {
     }
 }
 
+#[derive(Debug, Clone, Copy)]
 pub struct Modifiers {
     pub shift: bool,
     pub ctrl: bool,
@@ -243,10 +245,10 @@ impl Renderer<'_> {
             {
                 let rounded_rect = D2D1_ROUNDED_RECT {
                     rect: D2D_RECT_F {
-                        left: rect.x_dip,
-                        top: rect.y_dip,
-                        right: rect.x_dip + rect.width_dip,
-                        bottom: rect.y_dip + rect.height_dip,
+                        left: rect.x,
+                        top: rect.y,
+                        right: rect.x + rect.width,
+                        bottom: rect.y + rect.height,
                     },
                     radiusX: border_radius.top_left,
                     radiusY: border_radius.top_left,
@@ -290,24 +292,24 @@ impl Renderer<'_> {
             // Adjust rect and radius for placement
             let half = border.width * 0.5;
             let mut adjusted = RectDIP {
-                x_dip: rect.x_dip,
-                y_dip: rect.y_dip,
-                width_dip: rect.width_dip,
-                height_dip: rect.height_dip,
+                x: rect.x,
+                y: rect.y,
+                width: rect.width,
+                height: rect.height,
             };
             match border.placement {
                 BorderPlacement::Center => {}
                 BorderPlacement::Inset => {
-                    adjusted.x_dip += half;
-                    adjusted.y_dip += half;
-                    adjusted.width_dip = (adjusted.width_dip - border.width).max(0.0);
-                    adjusted.height_dip = (adjusted.height_dip - border.width).max(0.0);
+                    adjusted.x += half;
+                    adjusted.y += half;
+                    adjusted.width = (adjusted.width - border.width).max(0.0);
+                    adjusted.height = (adjusted.height - border.width).max(0.0);
                 }
                 BorderPlacement::Outset => {
-                    adjusted.x_dip -= half;
-                    adjusted.y_dip -= half;
-                    adjusted.width_dip += border.width;
-                    adjusted.height_dip += border.width;
+                    adjusted.x -= half;
+                    adjusted.y -= half;
+                    adjusted.width += border.width;
+                    adjusted.height += border.width;
                 }
             }
 
@@ -341,10 +343,10 @@ impl Renderer<'_> {
             } else {
                 self.render_target.DrawRectangle(
                     &D2D_RECT_F {
-                        left: adjusted.x_dip,
-                        top: adjusted.y_dip,
-                        right: adjusted.x_dip + adjusted.width_dip,
-                        bottom: adjusted.y_dip + adjusted.height_dip,
+                        left: adjusted.x,
+                        top: adjusted.y,
+                        right: adjusted.x + adjusted.width,
+                        bottom: adjusted.y + adjusted.height,
                     },
                     self.brush,
                     border.width,
@@ -363,10 +365,10 @@ impl Renderer<'_> {
             if shadow.blur_radius <= 0.0 {
                 // Simple shadow without blur
                 let shadow_rect = RectDIP {
-                    x_dip: rect.x_dip + shadow.offset_x - shadow.spread_radius,
-                    y_dip: rect.y_dip + shadow.offset_y - shadow.spread_radius,
-                    width_dip: rect.width_dip + shadow.spread_radius * 2.0,
-                    height_dip: rect.height_dip + shadow.spread_radius * 2.0,
+                    x: rect.x + shadow.offset_x - shadow.spread_radius,
+                    y: rect.y + shadow.offset_y - shadow.spread_radius,
+                    width: rect.width + shadow.spread_radius * 2.0,
+                    height: rect.height + shadow.spread_radius * 2.0,
                 };
                 if let Some(border_radius) = border_radius {
                     self.fill_rounded_rectangle(&shadow_rect, border_radius, shadow.color);
@@ -378,8 +380,8 @@ impl Renderer<'_> {
 
             // Create a bitmap render target for the shadow
             let expanded_size = D2D_SIZE_F {
-                width: rect.width_dip + shadow.spread_radius * 2.0,
-                height: rect.height_dip + shadow.spread_radius * 2.0,
+                width: rect.width + shadow.spread_radius * 2.0,
+                height: rect.height + shadow.spread_radius * 2.0,
             };
 
             if let Ok(bitmap_rt) = self.render_target.CreateCompatibleRenderTarget(
@@ -408,10 +410,10 @@ impl Renderer<'_> {
                     None,
                 ) {
                     let shadow_rect_in_bitmap = RectDIP {
-                        x_dip: 0.0,
-                        y_dip: 0.0,
-                        width_dip: rect.width_dip + shadow.spread_radius * 2.0,
-                        height_dip: rect.height_dip + shadow.spread_radius * 2.0,
+                        x: 0.0,
+                        y: 0.0,
+                        width: rect.width + shadow.spread_radius * 2.0,
+                        height: rect.height + shadow.spread_radius * 2.0,
                     };
 
                     if let Some(border_radius) = border_radius {
@@ -424,12 +426,12 @@ impl Renderer<'_> {
                             let rounded_rect =
                                 windows::Win32::Graphics::Direct2D::D2D1_ROUNDED_RECT {
                                     rect: D2D_RECT_F {
-                                        left: shadow_rect_in_bitmap.x_dip,
-                                        top: shadow_rect_in_bitmap.y_dip,
-                                        right: shadow_rect_in_bitmap.x_dip
-                                            + shadow_rect_in_bitmap.width_dip,
-                                        bottom: shadow_rect_in_bitmap.y_dip
-                                            + shadow_rect_in_bitmap.height_dip,
+                                        left: shadow_rect_in_bitmap.x,
+                                        top: shadow_rect_in_bitmap.y,
+                                        right: shadow_rect_in_bitmap.x
+                                            + shadow_rect_in_bitmap.width,
+                                        bottom: shadow_rect_in_bitmap.y
+                                            + shadow_rect_in_bitmap.height,
                                     },
                                     radiusX: border_radius.top_left,
                                     radiusY: border_radius.top_left,
@@ -452,10 +454,10 @@ impl Renderer<'_> {
                     } else {
                         // Draw regular rectangle shadow shape
                         let shadow_rect_d2d = D2D_RECT_F {
-                            left: shadow_rect_in_bitmap.x_dip,
-                            top: shadow_rect_in_bitmap.y_dip,
-                            right: shadow_rect_in_bitmap.x_dip + shadow_rect_in_bitmap.width_dip,
-                            bottom: shadow_rect_in_bitmap.y_dip + shadow_rect_in_bitmap.height_dip,
+                            left: shadow_rect_in_bitmap.x,
+                            top: shadow_rect_in_bitmap.y,
+                            right: shadow_rect_in_bitmap.x + shadow_rect_in_bitmap.width,
+                            bottom: shadow_rect_in_bitmap.y + shadow_rect_in_bitmap.height,
                         };
                         bitmap_rt.FillRectangle(&shadow_rect_d2d, &shadow_brush);
                     }
@@ -496,8 +498,8 @@ impl Renderer<'_> {
                         self.render_target.DrawImage(
                             &IUnknown::from(blur_effect).cast::<ID2D1Image>().unwrap(),
                             Some(&Vector2::new(
-                                rect.x_dip + shadow.offset_x - shadow.spread_radius,
-                                rect.y_dip + shadow.offset_y - shadow.spread_radius,
+                                rect.x + shadow.offset_x - shadow.spread_radius,
+                                rect.y + shadow.offset_y - shadow.spread_radius,
                             )),
                             None,
                             D2D1_INTERPOLATION_MODE_LINEAR,
@@ -616,10 +618,10 @@ impl Renderer<'_> {
             });
             self.render_target.DrawRectangle(
                 &D2D_RECT_F {
-                    left: rect.x_dip,
-                    top: rect.y_dip,
-                    right: rect.x_dip + rect.width_dip,
-                    bottom: rect.y_dip + rect.height_dip,
+                    left: rect.x,
+                    top: rect.y,
+                    right: rect.x + rect.width,
+                    bottom: rect.y + rect.height,
                 },
                 self.brush,
                 stroke_width,
@@ -639,10 +641,10 @@ impl Renderer<'_> {
             });
             self.render_target.FillRectangle(
                 &D2D_RECT_F {
-                    left: rect.x_dip,
-                    top: rect.y_dip,
-                    right: rect.x_dip + rect.width_dip,
-                    bottom: rect.y_dip + rect.height_dip,
+                    left: rect.x,
+                    top: rect.y,
+                    right: rect.x + rect.width,
+                    bottom: rect.y + rect.height,
                 },
                 self.brush,
             );
@@ -672,10 +674,10 @@ impl Renderer<'_> {
                 // Use simple rounded rectangle
                 let rounded_rect = D2D1_ROUNDED_RECT {
                     rect: D2D_RECT_F {
-                        left: rect.x_dip,
-                        top: rect.y_dip,
-                        right: rect.x_dip + rect.width_dip,
-                        bottom: rect.y_dip + rect.height_dip,
+                        left: rect.x,
+                        top: rect.y,
+                        right: rect.x + rect.width,
+                        bottom: rect.y + rect.height,
                     },
                     radiusX: border_radius.top_left,
                     radiusY: border_radius.top_left,
@@ -703,14 +705,14 @@ impl Renderer<'_> {
         border_radius: &BorderRadius,
     ) {
         unsafe {
-            let left = rect.x_dip;
-            let top = rect.y_dip;
-            let right = rect.x_dip + rect.width_dip;
-            let bottom = rect.y_dip + rect.height_dip;
+            let left = rect.x;
+            let top = rect.y;
+            let right = rect.x + rect.width;
+            let bottom = rect.y + rect.height;
 
             // Clamp radii to prevent overlapping
-            let max_radius_x = rect.width_dip / 2.0;
-            let max_radius_y = rect.height_dip / 2.0;
+            let max_radius_x = rect.width / 2.0;
+            let max_radius_y = rect.height / 2.0;
 
             let tl = border_radius.top_left.min(max_radius_x).min(max_radius_y);
             let tr = border_radius.top_right.min(max_radius_x).min(max_radius_y);
@@ -851,12 +853,12 @@ impl Renderer<'_> {
 
             // Set SVG viewport size first
             let _ = svg_document.SetViewportSize(D2D_SIZE_F {
-                width: rect.width_dip,
-                height: rect.height_dip,
+                width: rect.width,
+                height: rect.height,
             });
 
             // Apply translation to position the SVG at the target rect
-            let translation_transform = Matrix3x2::translation(rect.x_dip, rect.y_dip);
+            let translation_transform = Matrix3x2::translation(rect.x, rect.y);
             let combined_transform = translation_transform * current_transform;
             self.render_target.SetTransform(&combined_transform);
 
@@ -885,7 +887,7 @@ impl Renderer<'_> {
             self.render_target.GetTransform(&mut current_transform);
 
             // Apply translation and scale to position and size the geometry at the target rect
-            let translation_transform = Matrix3x2::translation(rect.x_dip, rect.y_dip);
+            let translation_transform = Matrix3x2::translation(rect.x, rect.y);
             let scale_transform = Matrix3x2::scale(scale_x, scale_y);
             let combined_transform = scale_transform * translation_transform * current_transform;
             self.render_target.SetTransform(&combined_transform);
@@ -926,7 +928,7 @@ impl Renderer<'_> {
             self.render_target.GetTransform(&mut current_transform);
 
             // Apply translation and scale to position and size the geometry at the target rect
-            let translation_transform = Matrix3x2::translation(rect.x_dip, rect.y_dip);
+            let translation_transform = Matrix3x2::translation(rect.x, rect.y);
             let scale_transform = Matrix3x2::scale(scale_x, scale_y);
             let combined_transform = scale_transform * translation_transform * current_transform;
             self.render_target.SetTransform(&combined_transform);
@@ -1105,16 +1107,16 @@ impl<Message> UIElement<Message> {
     pub fn bounds(&self) -> Bounds {
         Bounds {
             content_box: RectDIP {
-                x_dip: self.x + self.padding.left,
-                y_dip: self.y + self.padding.top,
-                width_dip: self.computed_width - self.padding.left - self.padding.right,
-                height_dip: self.computed_height - self.padding.top - self.padding.bottom,
+                x: self.x + self.padding.left,
+                y: self.y + self.padding.top,
+                width: self.computed_width - self.padding.left - self.padding.right,
+                height: self.computed_height - self.padding.top - self.padding.bottom,
             },
             border_box: RectDIP {
-                x_dip: self.x,
-                y_dip: self.y,
-                width_dip: self.computed_width,
-                height_dip: self.computed_height,
+                x: self.x,
+                y: self.y,
+                width: self.computed_width,
+                height: self.computed_height,
             },
         }
     }

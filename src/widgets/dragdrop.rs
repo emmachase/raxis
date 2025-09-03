@@ -148,8 +148,8 @@ pub fn screen_to_widget_coords(
         let _ = ScreenToClient(hwnd, &mut p);
         let to_dip = crate::dips_scale(hwnd);
         PointDIP {
-            x_dip: (p.x as f32) * to_dip - widget_bounds.x_dip,
-            y_dip: (p.y as f32) * to_dip - widget_bounds.y_dip,
+            x: (p.x as f32) * to_dip - widget_bounds.x,
+            y: (p.y as f32) * to_dip - widget_bounds.y,
         }
     }
 }

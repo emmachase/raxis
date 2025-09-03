@@ -132,34 +132,38 @@ impl CommandExecutor {
             DrawCommand::DrawCircleArc { center, radius, .. } => {
                 // Check if circle intersects with bounds
                 let circle_rect = RectDIP {
-                    x_dip: center.X - radius,
-                    y_dip: center.Y - radius,
-                    width_dip: radius * 2.0,
-                    height_dip: radius * 2.0,
+                    x: center.X - radius,
+                    y: center.Y - radius,
+                    width: radius * 2.0,
+                    height: radius * 2.0,
                 };
                 Self::rect_intersects_bounds(&circle_rect, bounds)
             }
             DrawCommand::DrawSvg { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
-            DrawCommand::FillPathGeometry { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
-            DrawCommand::StrokePathGeometry { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
+            DrawCommand::FillPathGeometry { rect, .. } => {
+                Self::rect_intersects_bounds(rect, bounds)
+            }
+            DrawCommand::StrokePathGeometry { rect, .. } => {
+                Self::rect_intersects_bounds(rect, bounds)
+            }
         }
     }
 
     /// Check if a rectangle intersects with screen bounds
     fn rect_intersects_bounds(rect: &RectDIP, bounds: &RectDIP) -> bool {
-        !(rect.x_dip >= bounds.x_dip + bounds.width_dip
-            || rect.x_dip + rect.width_dip <= bounds.x_dip
-            || rect.y_dip >= bounds.y_dip + bounds.height_dip
-            || rect.y_dip + rect.height_dip <= bounds.y_dip)
+        !(rect.x >= bounds.x + bounds.width
+            || rect.x + rect.width <= bounds.x
+            || rect.y >= bounds.y + bounds.height
+            || rect.y + rect.height <= bounds.y)
     }
 
     /// Expand rectangle for shadow blur radius
     fn expand_rect_for_shadow(rect: &RectDIP, blur_radius: f32) -> RectDIP {
         RectDIP {
-            x_dip: rect.x_dip - blur_radius,
-            y_dip: rect.y_dip - blur_radius,
-            width_dip: rect.width_dip + blur_radius * 2.0,
-            height_dip: rect.height_dip + blur_radius * 2.0,
+            x: rect.x - blur_radius,
+            y: rect.y - blur_radius,
+            width: rect.width + blur_radius * 2.0,
+            height: rect.height + blur_radius * 2.0,
         }
     }
 
@@ -167,10 +171,10 @@ impl CommandExecutor {
     fn expand_rect_for_stroke(rect: &RectDIP, stroke_width: f32) -> RectDIP {
         let half_stroke = stroke_width * 0.5;
         RectDIP {
-            x_dip: rect.x_dip - half_stroke,
-            y_dip: rect.y_dip - half_stroke,
-            width_dip: rect.width_dip + stroke_width,
-            height_dip: rect.height_dip + stroke_width,
+            x: rect.x - half_stroke,
+            y: rect.y - half_stroke,
+            width: rect.width + stroke_width,
+            height: rect.height + stroke_width,
         }
     }
 
@@ -220,8 +224,8 @@ impl CommandExecutor {
                         a: color.a,
                     });
                     let position = Vector2 {
-                        X: rect.x_dip,
-                        Y: rect.y_dip,
+                        X: rect.x,
+                        Y: rect.y,
                     };
                     renderer.render_target.DrawTextLayout(
                         position,
@@ -235,10 +239,10 @@ impl CommandExecutor {
 
                 DrawCommand::PushAxisAlignedClip { rect } => {
                     let clip_rect = D2D_RECT_F {
-                        left: rect.x_dip,
-                        top: rect.y_dip,
-                        right: rect.x_dip + rect.width_dip,
-                        bottom: rect.y_dip + rect.height_dip,
+                        left: rect.x,
+                        top: rect.y,
+                        right: rect.x + rect.width,
+                        bottom: rect.y + rect.height,
                     };
                     renderer
                         .render_target
@@ -250,10 +254,10 @@ impl CommandExecutor {
                     border_radius,
                 } => {
                     let clip_rect = D2D_RECT_F {
-                        left: rect.x_dip,
-                        top: rect.y_dip,
-                        right: rect.x_dip + rect.width_dip,
-                        bottom: rect.y_dip + rect.height_dip,
+                        left: rect.x,
+                        top: rect.y,
+                        right: rect.x + rect.width,
+                        bottom: rect.y + rect.height,
                     };
 
                     if let Ok(path_geometry) = renderer.factory.CreatePathGeometry() {
@@ -366,12 +370,36 @@ impl CommandExecutor {
                     renderer.draw_svg(rect, svg_document);
                 }
 
-                DrawCommand::FillPathGeometry { rect, path_geometry, color, scale_x, scale_y } => {
+                DrawCommand::FillPathGeometry {
+                    rect,
+                    path_geometry,
+                    color,
+                    scale_x,
+                    scale_y,
+                } => {
                     renderer.fill_path_geometry(rect, path_geometry, *color, *scale_x, *scale_y);
                 }
 
-                DrawCommand::StrokePathGeometry { rect, path_geometry, color, stroke_width, scale_x, scale_y, stroke_cap, stroke_join } => {
-                    renderer.stroke_path_geometry(rect, path_geometry, *color, *stroke_width, *scale_x, *scale_y, *stroke_cap, *stroke_join);
+                DrawCommand::StrokePathGeometry {
+                    rect,
+                    path_geometry,
+                    color,
+                    stroke_width,
+                    scale_x,
+                    scale_y,
+                    stroke_cap,
+                    stroke_join,
+                } => {
+                    renderer.stroke_path_geometry(
+                        rect,
+                        path_geometry,
+                        *color,
+                        *stroke_width,
+                        *scale_x,
+                        *scale_y,
+                        *stroke_cap,
+                        *stroke_join,
+                    );
                 }
             }
         }

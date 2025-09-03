@@ -321,7 +321,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                                 )
                                 .with_click_handler({
                                     let todo_state = todo_state.clone();
-                                    move |arenas| {
+                                    move |arenas, _| {
                                         let mut state = todo_state.borrow_mut();
                                         if !state.input_text.trim().is_empty() {
                                             let id = state.next_id;
@@ -462,7 +462,7 @@ fn todo_item(
                         .with_click_handler({
                             let todo_state = todo_state.clone();
                             let item_id = item.id;
-                            move |_| {
+                            move |_, _| {
                                 let mut state = todo_state.borrow_mut();
                                 if let Some(todo) = state.items.iter_mut().find(|t| t.id == item_id)
                                 {
@@ -523,7 +523,7 @@ fn todo_item(
                         .with_click_handler({
                             let todo_state = todo_state.clone();
                             let item_id = item.id;
-                            move |_| {
+                            move |_, _| {
                                 let mut state = todo_state.borrow_mut();
                                 state.items.retain(|t| t.id != item_id);
                             }
