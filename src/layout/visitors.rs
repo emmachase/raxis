@@ -99,11 +99,11 @@ pub fn visit_deferring_bfs<Message, S, F, R>(
                 deferred.push((current, parent));
             } else if visitor(ui_tree, current, parent).into().is_exit() {
                 break 'exit;
-            }
-
-            // Always enqueue children
-            for &child in ui_tree.slots[current].children.iter().rev() {
-                queue.push_back((child, Some(current)));
+            } else {
+                // Did not defer, enqueue children
+                for &child in ui_tree.slots[current].children.iter().rev() {
+                    queue.push_back((child, Some(current)));
+                }
             }
         }
 
