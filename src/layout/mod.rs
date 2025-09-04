@@ -1,4 +1,4 @@
-use std::{collections::HashMap, time::Instant};
+use std::{cell::RefCell, collections::HashMap, time::Instant};
 
 use slotmap::SlotMap;
 use string_interner::{StringInterner, backend::StringBackend};
@@ -9,6 +9,7 @@ use crate::{
     layout::{
         model::{Axis, ElementContent, UIElement, UIKey},
         positioning::position_elements,
+        visitors::VisitFrame,
     },
     runtime::scroll::ScrollStateManager,
     widgets::{Color, Instance},
@@ -133,15 +134,22 @@ pub fn generate_paint_commands<Message>(
     let now = Instant::now();
 
     // TODO: Modify visitor to allow handing this around
-    // rather than unnecessarily creating a Rc<Refcell<>>
-    let recorder = std::rc::Rc::new(std::cell::RefCell::new(recorder));
+    // rather than unnecessarily creating a RefCell<>
+    let recorder = RefCell::new(recorder);
 
     {
-        let recorder_clone = recorder.clone();
+        // Track current z-index for deferred rendering
+        let current_z_index = RefCell::new(0i32);
 
-        visitors::visit_dfs(
+        visitors::visit_deferring_dfs(
             ui_tree,
             root,
+            |ui_tree, key, _parent| {
+                // Defer if this element's z-index is greater than current z-index
+                let element_z_index = ui_tree.slots[key].z_index.unwrap_or(0);
+                let current = *current_z_index.borrow();
+                element_z_index > current
+            },
             |ui_tree, key, _parent| {
                 let mut recorder = recorder.borrow_mut();
                 let element = &mut ui_tree.slots[key];
@@ -235,7 +243,7 @@ pub fn generate_paint_commands<Message>(
             },
             Some(
                 &mut |OwnedUITree { slots, .. }: BorrowedUITree<'_, Message>, key, _parent| {
-                    let mut recorder = recorder_clone.borrow_mut();
+                    let mut recorder = recorder.borrow_mut();
                     let element = &slots[key];
 
                     let has_scroll_x =
@@ -298,16 +306,27 @@ pub fn generate_paint_commands<Message>(
                     }
                 },
             ),
+            Some(
+                |ui_tree: BorrowedUITree<'_, Message>, deferred_frames: &[VisitFrame]| {
+                    // After each pass, find the next lowest z-index and update current_z_index
+                    if !deferred_frames.is_empty() {
+                        let mut next_z_index = i32::MAX;
+                        for frame in deferred_frames {
+                            let element_z_index = ui_tree.slots[frame.element].z_index.unwrap_or(0);
+                            if element_z_index < next_z_index {
+                                next_z_index = element_z_index;
+                            }
+                        }
+                        *current_z_index.borrow_mut() = next_z_index;
+                    }
+                },
+            ),
         );
     }
 
     // Extract commands from the recorder
 
-    std::rc::Rc::try_unwrap(recorder)
-        .map_err(|_| "Failed to unwrap recorder")
-        .unwrap()
-        .into_inner()
-        .take_commands()
+    recorder.into_inner().take_commands()
 }
 
 // ===== Reusable scrollbar geometry helpers =====

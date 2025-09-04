@@ -116,6 +116,86 @@ pub fn visit_deferring_bfs<Message, S, F, R>(
     }
 }
 
+#[derive(Clone, Copy)]
+pub struct VisitFrame {
+    pub element: UIKey,
+    pub parent: Option<UIKey>,
+    pub exit: bool,
+}
+
+/// Depth-first traversal that defers visiting nodes based on a predicate.
+/// Nodes that are deferred are revisited in subsequent passes until none are deferred.
+pub fn visit_deferring_dfs<Message, S, F, E, A, R>(
+    ui_tree: BorrowedUITree<'_, Message>,
+    element: UIKey,
+    mut should_defer: S,
+    mut visitor: F,
+    mut exit_children_visitor: Option<E>,
+    mut after_pass: Option<A>,
+) where
+    S: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> bool,
+    F: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> R,
+    E: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>),
+    A: FnMut(BorrowedUITree<'_, Message>, &[VisitFrame]),
+    R: Into<VisitAction>,
+{
+    let mut stack: Vec<VisitFrame> = vec![VisitFrame {
+        element,
+        parent: None,
+        exit: false,
+    }];
+    let mut deferred: Vec<VisitFrame> = Vec::new();
+
+    'exit: loop {
+        while let Some(frame) = stack.pop() {
+            if frame.exit {
+                // This is the "exit children" phase, skip deferred check
+                if let Some(f) = exit_children_visitor.as_mut() {
+                    f(ui_tree, frame.element, frame.parent);
+                }
+                continue;
+            }
+
+            if should_defer(ui_tree, frame.element, frame.parent) {
+                deferred.push(frame);
+            } else if visitor(ui_tree, frame.element, frame.parent)
+                .into()
+                .is_exit()
+            {
+                break 'exit;
+            } else {
+                // Schedule exit after children
+                stack.push(VisitFrame {
+                    element: frame.element,
+                    parent: frame.parent,
+                    exit: true,
+                });
+
+                // Push children in reverse so they are processed in original order
+                for &child in ui_tree.slots[frame.element].children.iter().rev() {
+                    stack.push(VisitFrame {
+                        element: child,
+                        parent: Some(frame.element),
+                        exit: false,
+                    });
+                }
+            }
+        }
+
+        if deferred.is_empty() {
+            break;
+        }
+
+        // Call after-pass callback before starting next pass
+        if let Some(f) = after_pass.as_mut() {
+            f(ui_tree, &deferred);
+        }
+
+        // Next pass processes previously deferred items
+        stack = deferred.drain(..).collect();
+    }
+}
+
 /// Depth-first traversal with optional "exit-children" callback.
 pub fn visit_dfs<Message, F, E, R>(
     ui_tree: BorrowedUITree<'_, Message>,
@@ -127,14 +207,7 @@ pub fn visit_dfs<Message, F, E, R>(
     E: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>),
     R: Into<VisitAction>,
 {
-    #[derive(Clone, Copy)]
-    struct Frame {
-        element: UIKey,
-        parent: Option<UIKey>,
-        exit: bool,
-    }
-
-    let mut stack: Vec<Frame> = vec![Frame {
+    let mut stack: Vec<VisitFrame> = vec![VisitFrame {
         element,
         parent: None,
         exit: false,
@@ -155,7 +228,7 @@ pub fn visit_dfs<Message, F, E, R>(
             }
 
             // Schedule exit after children
-            stack.push(Frame {
+            stack.push(VisitFrame {
                 element: frame.element,
                 parent: frame.parent,
                 exit: true,
@@ -164,7 +237,7 @@ pub fn visit_dfs<Message, F, E, R>(
 
         // Push children in reverse so they are processed in original order
         for &child in ui_tree.slots[frame.element].children.iter().rev() {
-            stack.push(Frame {
+            stack.push(VisitFrame {
                 element: child,
                 parent: Some(frame.element),
                 exit: false,

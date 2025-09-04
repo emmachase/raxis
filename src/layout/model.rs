@@ -535,6 +535,7 @@ pub struct UIElement<Message> {
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
     pub border: Option<Border>,
+    pub z_index: Option<i32>,
 
     pub id: Option<u64>,
     pub id_map: HashMap<u64, UIKey>,
@@ -569,6 +570,7 @@ impl<Message> Default for UIElement<Message> {
             border_radius: None,
             drop_shadow: None,
             border: None,
+            z_index: None,
             id: None,
             id_map: HashMap::new(),
         }
@@ -640,6 +642,7 @@ pub struct Element<Message> {
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
     pub border: Option<Border>,
+    pub z_index: Option<i32>,
 
     pub id: Option<u64>,
 }
@@ -751,6 +754,13 @@ impl<Message> Element<Message> {
             ..self
         }
     }
+
+    pub fn with_z_index(self, z_index: i32) -> Self {
+        Self {
+            z_index: Some(z_index),
+            ..self
+        }
+    }
 }
 
 impl<Message> Default for Element<Message> {
@@ -773,6 +783,7 @@ impl<Message> Default for Element<Message> {
             border_radius: None,
             drop_shadow: None,
             border: None,
+            z_index: None,
             id: None,
         }
     }
@@ -799,6 +810,7 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             border_radius: element.border_radius,
             drop_shadow: element.drop_shadow,
             border: element.border,
+            z_index: element.z_index,
             id: element.id,
             ..Default::default()
         },
