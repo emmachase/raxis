@@ -244,6 +244,18 @@ impl<T> Task<T> {
         self.then(|_| Task::none())
     }
 
+    /// Creates a new [`Task`] that consumes the result of the current one and produces no output.
+    pub fn consume<O>(self, f: impl Fn(T) + Send + 'static) -> Task<O>
+    where
+        T: Send + 'static,
+        O: Send + 'static,
+    {
+        self.then(move |t| {
+            (f)(t);
+            Task::none()
+        })
+    }
+
     /// Creates a new [`Task`] that can be aborted with the returned [`Handle`].
     pub fn abortable(self) -> (Self, Handle)
     where
@@ -378,6 +390,19 @@ impl<T> Task<Option<T>> {
     {
         self.then(move |option| option.map_or_else(Task::none, &f))
     }
+
+    /// Creates a new [`Task`] that consumes the result of the current one and produces
+    /// no output, only when it produces a `Some` value.
+    pub fn and_consume<O>(self, f: impl Fn(T) + Send + 'static) -> Task<O>
+    where
+        T: Send + 'static,
+        O: Send + 'static,
+    {
+        self.and_then(move |t| {
+            (f)(t);
+            Task::none()
+        })
+    }
 }
 
 impl<T, E> Task<Result<T, E>> {
@@ -391,6 +416,20 @@ impl<T, E> Task<Result<T, E>> {
         A: Send + 'static,
     {
         self.then(move |option| option.map_or_else(|_| Task::none(), &f))
+    }
+
+    /// Creates a new [`Task`] that consumes the result of the current one and produces
+    /// no output, only when it produces an `Ok` value.
+    pub fn and_consume<O>(self, f: impl Fn(T) + Send + 'static) -> Task<O>
+    where
+        T: Send + 'static,
+        E: Send + 'static,
+        O: Send + 'static,
+    {
+        self.and_then(move |t| {
+            (f)(t);
+            Task::none()
+        })
     }
 }
 
