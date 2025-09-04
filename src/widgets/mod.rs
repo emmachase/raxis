@@ -31,8 +31,8 @@ use crate::{
     layout::{
         BorrowedUITree, UIArenas,
         model::{
-            Border, BorderPlacement, BorderRadius, DropShadow, ElementContent, StrokeCap,
-            StrokeDashStyle, StrokeLineJoin, UIElement,
+            Border, BorderPlacement, BorderRadius, DropShadow, ElementContent, StrokeDashStyle,
+            StrokeLineCap, StrokeLineJoin, UIElement,
         },
         visitors,
     },
@@ -180,7 +180,7 @@ impl Renderer<'_> {
     fn create_stroke_style(
         &self,
         dash_style: &Option<StrokeDashStyle>,
-        dash_cap: StrokeCap,
+        dash_cap: StrokeLineCap,
         stroke_join: StrokeLineJoin,
     ) -> Option<ID2D1StrokeStyle> {
         unsafe {
@@ -199,10 +199,10 @@ impl Renderer<'_> {
             };
 
             let dash_cap_style = match dash_cap {
-                StrokeCap::Flat => D2D1_CAP_STYLE_FLAT,
-                StrokeCap::Round => D2D1_CAP_STYLE_ROUND,
-                StrokeCap::Square => D2D1_CAP_STYLE_SQUARE,
-                StrokeCap::Triangle => D2D1_CAP_STYLE_TRIANGLE,
+                StrokeLineCap::Flat => D2D1_CAP_STYLE_FLAT,
+                StrokeLineCap::Round => D2D1_CAP_STYLE_ROUND,
+                StrokeLineCap::Square => D2D1_CAP_STYLE_SQUARE,
+                StrokeLineCap::Triangle => D2D1_CAP_STYLE_TRIANGLE,
             };
 
             let stroke_join_style = match stroke_join {
@@ -917,7 +917,7 @@ impl Renderer<'_> {
         stroke_width: f32,
         scale_x: f32,
         scale_y: f32,
-        stroke_cap: Option<StrokeCap>,
+        stroke_cap: Option<StrokeLineCap>,
         stroke_join: Option<StrokeLineJoin>,
     ) {
         unsafe {
@@ -946,7 +946,7 @@ impl Renderer<'_> {
             let stroke_style = if stroke_cap.is_some() || stroke_join.is_some() {
                 self.create_stroke_style(
                     &None, // no dash style for path geometry
-                    stroke_cap.unwrap_or(StrokeCap::Square),
+                    stroke_cap.unwrap_or(StrokeLineCap::Square),
                     stroke_join.unwrap_or(StrokeLineJoin::Miter),
                 )
             } else {

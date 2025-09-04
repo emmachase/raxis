@@ -1,5 +1,5 @@
 use crate::gfx::RectDIP;
-use crate::layout::model::{BorderRadius, DropShadow, StrokeCap, StrokeLineJoin};
+use crate::layout::model::{BorderRadius, DropShadow, StrokeLineCap, StrokeLineJoin};
 use crate::widgets::Color;
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1PathGeometry, ID2D1SvgDocument};
@@ -92,7 +92,7 @@ pub enum DrawCommand {
         stroke_width: f32,
         scale_x: f32,
         scale_y: f32,
-        stroke_cap: Option<StrokeCap>,
+        stroke_cap: Option<StrokeLineCap>,
         stroke_join: Option<StrokeLineJoin>,
     },
 }

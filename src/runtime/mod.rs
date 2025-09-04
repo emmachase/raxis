@@ -1487,20 +1487,24 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
         }
     };
 
-    let deferred_controls = if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
-        let state = state.deref_mut();
-        state.shell.dispatch_operations(&mut state.ui_tree);
+    let (deferred_controls, has_pending_messages) =
+        if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+            let state = state.deref_mut();
+            state.shell.dispatch_operations(&mut state.ui_tree);
 
-        // TODO: Maybe move this into a deferred control
-        // Schedule next frame if we have active animations
-        if state.smooth_scroll_manager.has_any_active_animations() {
-            state.shell.request_redraw(hwnd, RedrawRequest::Immediate);
-        }
+            // TODO: Maybe move this into a deferred control
+            // Schedule next frame if we have active animations
+            if state.smooth_scroll_manager.has_any_active_animations() {
+                state.shell.request_redraw(hwnd, RedrawRequest::Immediate);
+            }
 
-        state.shell.drain_deferred_controls()
-    } else {
-        None
-    };
+            let pending_messages = state.shell.pending_messages;
+            state.shell.pending_messages = false;
+
+            (state.shell.drain_deferred_controls(), pending_messages)
+        } else {
+            (None, false)
+        };
 
     if let Some(deferred_controls) = deferred_controls {
         for control in deferred_controls {
@@ -1550,6 +1554,15 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                 DeferredControl::SetClipboardText(text) => {
                     let _ = clipboard::set_clipboard_text(hwnd, &text);
                 }
+            }
+        }
+    }
+
+    if has_pending_messages {
+        // If the UI thread is not processing messages, notify it
+        if !PENDING_MESSAGE_PROCESSING.swap(true, Ordering::SeqCst) {
+            unsafe {
+                PostMessageW(Some(hwnd), WM_ASYNC_MESSAGE, WPARAM(0), LPARAM(0)).ok();
             }
         }
     }

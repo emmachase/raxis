@@ -3,7 +3,7 @@ use crate::{
     gfx::command_recorder::CommandRecorder,
     layout::{
         UIArenas,
-        model::{Element, StrokeCap, StrokeLineJoin},
+        model::{Element, StrokeLineCap, StrokeLineJoin},
     },
     runtime::DeviceResources,
     widgets::{
@@ -32,7 +32,7 @@ pub struct SvgPath {
     /// Stroke width
     stroke_width: f32,
     /// Stroke cap style
-    stroke_cap: Option<StrokeCap>,
+    stroke_cap: Option<StrokeLineCap>,
     /// Stroke Line join style
     stroke_join: Option<StrokeLineJoin>,
     /// Width for layout calculations
@@ -132,7 +132,7 @@ impl SvgPath {
     }
 
     /// Set stroke cap style
-    pub fn with_stroke_cap(mut self, stroke_cap: StrokeCap) -> Self {
+    pub fn with_stroke_cap(mut self, stroke_cap: StrokeLineCap) -> Self {
         self.stroke_cap = Some(stroke_cap);
         self
     }

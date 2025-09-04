@@ -378,7 +378,7 @@ pub enum BorderPlacement {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum StrokeCap {
+pub enum StrokeLineCap {
     Flat,
     Round,
     #[default]
@@ -415,7 +415,7 @@ pub struct Border {
     pub color: Color,
     pub placement: BorderPlacement,
     pub dash_style: Option<StrokeDashStyle>,
-    pub dash_cap: StrokeCap,
+    pub dash_cap: StrokeLineCap,
     pub stroke_join: StrokeLineJoin,
 }
 
@@ -426,7 +426,7 @@ impl Default for Border {
             color: Color::default(),
             placement: BorderPlacement::Inset,
             dash_style: None,
-            dash_cap: StrokeCap::default(),
+            dash_cap: StrokeLineCap::default(),
             stroke_join: StrokeLineJoin::default(),
         }
     }

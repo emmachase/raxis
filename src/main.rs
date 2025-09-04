@@ -8,7 +8,7 @@ use raxis::{
         helpers::center,
         model::{
             Border, BorderPlacement, BorderRadius, BoxAmount, Direction, Element, ScrollConfig,
-            Sizing, StrokeCap, StrokeDashStyle, StrokeLineJoin, VerticalAlignment,
+            Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, VerticalAlignment,
         },
     },
     runtime::task::Task,
@@ -72,7 +72,7 @@ fn border_demos() -> Element<Message> {
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
         dash_style: Some(StrokeDashStyle::Dash),
-        dash_cap: StrokeCap::Round,
+        dash_cap: StrokeLineCap::Round,
         ..Default::default()
     };
     let dotted = Border {
@@ -80,7 +80,7 @@ fn border_demos() -> Element<Message> {
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
         dash_style: Some(StrokeDashStyle::Dot),
-        dash_cap: StrokeCap::Square,
+        dash_cap: StrokeLineCap::Square,
         ..Default::default()
     };
     let dash_dot = Border {
@@ -88,7 +88,7 @@ fn border_demos() -> Element<Message> {
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
         dash_style: Some(StrokeDashStyle::DashDot),
-        dash_cap: StrokeCap::Triangle,
+        dash_cap: StrokeLineCap::Triangle,
         ..Default::default()
     };
     let dash_dot_dot = Border {
@@ -96,7 +96,7 @@ fn border_demos() -> Element<Message> {
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
         dash_style: Some(StrokeDashStyle::DashDotDot),
-        dash_cap: StrokeCap::Square,
+        dash_cap: StrokeLineCap::Square,
         ..Default::default()
     };
     let custom = Border {
@@ -107,7 +107,7 @@ fn border_demos() -> Element<Message> {
             dashes: vec![6.0, 2.0, 2.0, 2.0],
             offset: 0.0,
         }),
-        dash_cap: StrokeCap::Round,
+        dash_cap: StrokeLineCap::Round,
         ..Default::default()
     };
 
@@ -478,7 +478,7 @@ fn todo_item(
                             .with_size(16.0, 16.0)
                             .with_stroke(Color::WHITE)
                             .with_stroke_width(2.0)
-                            .with_stroke_cap(StrokeCap::Round)
+                            .with_stroke_cap(StrokeLineCap::Round)
                             .with_stroke_join(StrokeLineJoin::Round)
                             .as_element(w_id!()), // Explicitly re-use id to re-use path geometry
                     )]

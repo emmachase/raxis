@@ -5,7 +5,7 @@ use crate::{
         RectDIP,
         draw_commands::{DrawCommand, DrawCommandList},
     },
-    layout::model::{StrokeCap, StrokeLineJoin},
+    layout::model::{StrokeLineCap, StrokeLineJoin},
 };
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1PathGeometry, ID2D1SvgDocument};
@@ -226,7 +226,7 @@ impl CommandRecorder {
         stroke_width: f32,
         scale_x: f32,
         scale_y: f32,
-        stroke_cap: Option<StrokeCap>,
+        stroke_cap: Option<StrokeLineCap>,
         stroke_join: Option<StrokeLineJoin>,
     ) {
         self.commands.push(DrawCommand::StrokePathGeometry {

@@ -102,6 +102,8 @@ pub struct Shell<Message> {
     deferred_controls: Vec<DeferredControl>,
 
     message_sender: mpsc::Sender<Message>,
+    pending_messages: bool,
+
     task_dispatcher: mpsc::Sender<Task<Message>>,
 }
 
@@ -134,6 +136,7 @@ impl<Message> Shell<Message> {
             redraw_request: RedrawRequest::Wait,
             deferred_controls: Vec::new(),
             message_sender,
+            pending_messages: false,
             task_dispatcher,
         }
     }
@@ -248,8 +251,9 @@ impl<Message> Shell<Message> {
         });
     }
 
-    pub fn publish(&self, message: Message) {
+    pub fn publish(&mut self, message: Message) {
         self.message_sender.send(message).unwrap();
+        self.pending_messages = true;
     }
 
     pub fn dispatch_operations(&mut self, ui_tree: BorrowedUITree<Message>) {
