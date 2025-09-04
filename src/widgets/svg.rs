@@ -4,15 +4,16 @@ use crate::{
     layout::{UIArenas, model::Element},
     runtime::DeviceResources,
     util::str::StableString,
-    widgets::{Bounds, Cursor, Event, Instance, State, Widget, limit_response, widget},
+    widgets::{Bounds, Color, Cursor, Event, Instance, State, Widget, limit_response, widget},
     with_state,
 };
 use std::{any::Any, time::Instant};
 use windows::Win32::{
     Foundation::HWND,
     Graphics::Direct2D::{
-        D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX, D2D1_SVG_VIEWBOX, ID2D1DeviceContext7,
-        ID2D1SvgDocument,
+        Common::D2D1_COLOR_F, D2D1_SVG_ATTRIBUTE_POD_TYPE_COLOR,
+        D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX, D2D1_SVG_PAINT_TYPE_COLOR, D2D1_SVG_VIEWBOX,
+        ID2D1DeviceContext7, ID2D1SvgDocument, ID2D1SvgElement, ID2D1SvgPaint,
     },
     UI::Shell::SHCreateMemStream,
 };
@@ -26,6 +27,8 @@ pub struct Svg {
     width: Option<f32>,
     /// Height for layout calculations  
     height: Option<f32>,
+    /// Optional recolor for SVG elements (changes non-black fills)
+    recolor: Option<Color>,
 }
 
 /// Parsed viewBox information from SVG
@@ -80,6 +83,8 @@ struct SvgWidgetState {
     cached_svg_content: String,
     /// Parsed viewBox for intrinsic sizing
     viewbox: Option<ViewBox>,
+    /// Cached recolor to detect changes
+    cached_recolor: Option<Color>,
 }
 
 impl SvgWidgetState {
@@ -89,6 +94,7 @@ impl SvgWidgetState {
             svg_document: None,
             cached_svg_content: String::new(),
             viewbox: None,
+            cached_recolor: None,
         }
     }
 
@@ -97,7 +103,11 @@ impl SvgWidgetState {
     }
 
     /// Create or update SVG document if content has changed
-    fn ensure_svg_document(&mut self, svg_content: &str) -> windows::core::Result<()> {
+    fn ensure_svg_document(
+        &mut self,
+        svg_content: &str,
+        recolor: Option<Color>,
+    ) -> windows::core::Result<()> {
         // Only recreate if content changed
         if self.cached_svg_content != svg_content || self.svg_document.is_none() {
             unsafe {
@@ -118,6 +128,110 @@ impl SvgWidgetState {
 
                 self.svg_document = Some(svg_document);
                 self.cached_svg_content = svg_content.to_string();
+                self.cached_recolor = None;
+            }
+        }
+
+        // Apply recoloring if requested and color has changed
+        if let Some(color) = recolor {
+            if self.cached_recolor != Some(color) {
+                let d2d_color = D2D1_COLOR_F {
+                    r: color.r,
+                    g: color.g,
+                    b: color.b,
+                    a: color.a,
+                };
+                self.recolor_svg(d2d_color)?;
+                self.cached_recolor = Some(color);
+            }
+        } else if self.cached_recolor.is_some() {
+            // If recolor was removed, we need to recreate the document
+            // This is a simple approach - could be optimized to restore original colors
+            self.svg_document = None;
+            self.cached_svg_content.clear();
+            self.cached_recolor = None;
+            return self.ensure_svg_document(svg_content, recolor);
+        }
+
+        Ok(())
+    }
+
+    /// Recolor the SVG document by changing fill colors of non-black elements
+    pub fn recolor_svg(&mut self, new_color: D2D1_COLOR_F) -> windows::core::Result<()> {
+        if let Some(ref svg_document) = self.svg_document {
+            unsafe {
+                // Get the root element of the SVG document
+                let root = svg_document.GetRoot()?;
+
+                // Recursively recolor the tree, beginning at the root
+                self.recolor_subtree(&root, new_color)?;
+            }
+        }
+        Ok(())
+    }
+
+    /// Helper method for recolor_svg which recursively recolors the given subtree
+    fn recolor_subtree(
+        &self,
+        element: &ID2D1SvgElement,
+        new_color: D2D1_COLOR_F,
+    ) -> windows::core::Result<()> {
+        unsafe {
+            // Check if this SVG element has a "fill" attribute explicitly specified or inherited
+            if element
+                .IsAttributeSpecified(windows::core::w!("fill"), None)
+                .as_bool()
+            {
+                // Retrieve the value of this element's "fill" attribute, as a paint object
+                let paint: ID2D1SvgPaint = element.GetAttributeValue(windows::core::w!("fill"))?;
+
+                // Check the type of paint object that was set
+                let paint_type = paint.GetPaintType();
+                if paint_type == D2D1_SVG_PAINT_TYPE_COLOR {
+                    paint.SetColor(&new_color)?;
+                }
+
+                // else if is path
+            } else {
+                let length = element.GetTagNameLength();
+                let mut name = vec![0u16; (length + 1) as usize];
+                element.GetTagName(&mut name).unwrap();
+                let name = String::from_utf16_lossy(&name);
+                if name == "path\0" {
+                    element.SetAttributeValue2(
+                        windows::core::w!("fill"),
+                        D2D1_SVG_ATTRIBUTE_POD_TYPE_COLOR,
+                        &new_color as *const _ as *const std::ffi::c_void,
+                        std::mem::size_of::<D2D1_COLOR_F>() as u32,
+                    )?;
+                }
+            }
+
+            // Check if this SVG element has a "stroke" attribute explicitly specified or inherited
+            if element
+                .IsAttributeSpecified(windows::core::w!("stroke"), None)
+                .as_bool()
+            {
+                // Retrieve the value of this element's "stroke" attribute, as a paint object
+                let paint: ID2D1SvgPaint =
+                    element.GetAttributeValue(windows::core::w!("stroke"))?;
+
+                // Check the type of paint object that was set
+                let paint_type = paint.GetPaintType();
+                if paint_type == D2D1_SVG_PAINT_TYPE_COLOR {
+                    paint.SetColor(&new_color)?;
+                }
+            }
+
+            // Now iterate through any child nodes and recursively recolor them
+            let mut child = element.GetFirstChild().ok();
+
+            while let Some(current_child) = child {
+                // Recursively recolor the subtree starting with this child node
+                self.recolor_subtree(&current_child, new_color)?;
+
+                // Move to the next child
+                child = element.GetNextChild(&current_child).ok();
             }
         }
         Ok(())
@@ -131,6 +245,7 @@ impl Svg {
             svg_content: svg_content.into(),
             width: None,
             height: None,
+            recolor: None,
         }
     }
 
@@ -150,6 +265,12 @@ impl Svg {
     pub fn with_size(mut self, width: f32, height: f32) -> Self {
         self.width = Some(width);
         self.height = Some(height);
+        self
+    }
+
+    /// Set recolor for SVG elements
+    pub fn with_recolor(mut self, color: Color) -> Self {
+        self.recolor = Some(color);
         self
     }
 
@@ -249,7 +370,7 @@ impl<Message> Widget<Message> for Svg {
             let state = with_state!(mut instance as SvgWidgetState);
 
             // Ensure SVG document is created/cached in state
-            if state.ensure_svg_document(svg_content).is_ok() {
+            if state.ensure_svg_document(svg_content, self.recolor).is_ok() {
                 if let Some(ref svg_document) = state.svg_document {
                     recorder.draw_svg(&bounds.content_box, svg_document);
                 }

@@ -40,6 +40,24 @@ impl BoxAmount {
             left,
         }
     }
+
+    pub fn horizontal(amount: f32) -> Self {
+        Self {
+            top: 0.0,
+            right: amount,
+            bottom: 0.0,
+            left: amount,
+        }
+    }
+
+    pub fn vertical(amount: f32) -> Self {
+        Self {
+            top: amount,
+            right: 0.0,
+            bottom: amount,
+            left: 0.0,
+        }
+    }
 }
 
 impl_numeric!(From<[
@@ -428,6 +446,15 @@ impl Default for Border {
             dash_style: None,
             dash_cap: StrokeLineCap::default(),
             stroke_join: StrokeLineJoin::default(),
+        }
+    }
+}
+
+impl From<Color> for Border {
+    fn from(color: Color) -> Self {
+        Self {
+            color,
+            ..Default::default()
         }
     }
 }

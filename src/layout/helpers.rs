@@ -68,6 +68,10 @@ impl Rule {
         self.color = color.into();
         self
     }
+
+    pub fn as_element<Message>(self) -> Element<Message> {
+        self.into()
+    }
 }
 
 impl<Message> From<Rule> for Element<Message> {
