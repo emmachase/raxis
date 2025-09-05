@@ -228,7 +228,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
 
     Element {
         id: Some(w_id!()),
-        background_color: Some(0xF5F5F5FF.into()), // Light gray background
+        background_color: Some(0xf1f5edFF.into()), // Light gray background
         direction: Direction::TopToBottom,
         width: Sizing::percent(1.0),
         height: Sizing::grow(),
@@ -274,6 +274,11 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                             },
                             ..Default::default()
                         }),
+                        drop_shadow: Some(
+                            DropShadow::simple(0.0, 1.0)
+                                .blur_radius(2.0)
+                                .color(Color::from(0x0000000D)),
+                        ),
                         // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
                         children: vec![Element {
                             id: Some(w_id!()),
@@ -303,21 +308,13 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                         // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
                         content: widget(
                             Button::new()
-                                .with_bg_color(Color {
-                                    r: 0.2,
-                                    g: 0.6,
-                                    b: 1.0,
-                                    a: 1.0,
-                                })
+                                .with_bg_color(Color::from(0xe91923ff))
                                 .with_border_radius(8.0)
-                                .with_border(
-                                    1.0,
-                                    Color {
-                                        r: 0.1,
-                                        g: 0.4,
-                                        b: 0.8,
-                                        a: 1.0,
-                                    },
+                                .with_no_border()
+                                .with_drop_shadow(
+                                    DropShadow::simple(0.0, 1.0)
+                                        .blur_radius(2.0)
+                                        .color(Color::from(0x0000000D)),
                                 )
                                 .with_click_handler({
                                     let todo_state = todo_state.clone();
@@ -405,6 +402,11 @@ fn todo_item(
             ..Default::default()
         }),
         border_radius: Some(BorderRadius::all(8.0)),
+        drop_shadow: Some(
+            DropShadow::simple(0.0, 1.0)
+                .blur_radius(3.0)
+                .color(Color::from(0x0000001A)),
+        ),
         // drop_shadow: Some(DropShadow::simple(0.0, 2.0).blur_radius(4.0)),
         padding: BoxAmount::all(12.0),
         child_gap: 12.0,
@@ -504,22 +506,23 @@ fn todo_item(
                 vertical_alignment: VerticalAlignment::Center,
                 content: widget(
                     Button::new()
-                        .with_bg_color(Color {
-                            r: 0.9,
-                            g: 0.3,
-                            b: 0.3,
-                            a: 1.0,
-                        })
+                        .with_bg_color(Color::from(0xe91923ff))
                         .with_border_radius(4.0)
-                        .with_border(
-                            1.0,
-                            Color {
-                                r: 0.7,
-                                g: 0.2,
-                                b: 0.2,
-                                a: 1.0,
-                            },
+                        .with_no_border()
+                        .with_drop_shadow(
+                            DropShadow::simple(0.0, 1.0)
+                                .blur_radius(2.0)
+                                .color(Color::from(0x0000000D)),
                         )
+                        // .with_border(
+                        //     1.0,
+                        //     Color {
+                        //         r: 0.7,
+                        //         g: 0.2,
+                        //         b: 0.2,
+                        //         a: 1.0,
+                        //     },
+                        // )
                         .with_click_handler({
                             let todo_state = todo_state.clone();
                             let item_id = item.id;

@@ -6,7 +6,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::{Border, BorderRadius, Color, Element};
+use crate::layout::model::{Border, BorderRadius, Color, DropShadow, Element};
 use crate::widgets::{Bounds, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
@@ -27,6 +27,7 @@ pub struct ButtonStyle {
     pub text_color: Color,
     pub border: Option<Border>,
     pub border_radius: Option<BorderRadius>,
+    pub drop_shadow: Option<DropShadow>,
 }
 
 impl Default for ButtonStyle {
@@ -55,6 +56,7 @@ impl Default for ButtonStyle {
                 ..Default::default()
             }),
             border_radius: None,
+            drop_shadow: None,
         }
     }
 }
@@ -96,6 +98,7 @@ impl Default for ButtonStyleSet {
                     ..Default::default()
                 }),
                 border_radius: None,
+                drop_shadow: None,
             },
             pressed: ButtonStyle {
                 bg_color: Color {
@@ -121,6 +124,7 @@ impl Default for ButtonStyleSet {
                     ..Default::default()
                 }),
                 border_radius: None,
+                drop_shadow: None,
             },
             disabled: ButtonStyle {
                 bg_color: Color {
@@ -146,6 +150,7 @@ impl Default for ButtonStyleSet {
                     ..Default::default()
                 }),
                 border_radius: None,
+                drop_shadow: None,
             },
         }
     }
@@ -242,6 +247,22 @@ impl<Message: 'static + Send> Button<Message> {
         self
     }
 
+    pub fn with_drop_shadow(mut self, shadow: DropShadow) -> Self {
+        self.styles.normal.drop_shadow = Some(shadow.clone());
+        self.styles.hover.drop_shadow = Some(shadow.clone());
+        self.styles.pressed.drop_shadow = Some(shadow.clone());
+        self.styles.disabled.drop_shadow = Some(shadow);
+        self
+    }
+
+    pub fn with_no_drop_shadow(mut self) -> Self {
+        self.styles.normal.drop_shadow = None;
+        self.styles.hover.drop_shadow = None;
+        self.styles.pressed.drop_shadow = None;
+        self.styles.disabled.drop_shadow = None;
+        self
+    }
+
     pub fn as_element(self, id: u64, children: impl Into<Element<Message>>) -> Element<Message> {
         Element {
             id: Some(id),
@@ -305,6 +326,11 @@ impl ButtonWidgetState {
         bounds: RectDIP,
         style: &ButtonStyle,
     ) {
+        // Draw drop shadow first (behind everything)
+        if let Some(drop_shadow) = &style.drop_shadow {
+            recorder.draw_blurred_shadow(&bounds, drop_shadow, style.border_radius.as_ref());
+        }
+
         // Draw button background with border radius support
         if let Some(border_radius) = &style.border_radius {
             recorder.fill_rounded_rectangle(&bounds, border_radius, style.bg_color);

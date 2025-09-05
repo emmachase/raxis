@@ -1319,6 +1319,8 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         .borrow_mut()
                         .discard_device_resources();
 
+                    state.shadow_cache.borrow_mut().clear();
+
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)

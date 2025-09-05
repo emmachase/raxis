@@ -418,9 +418,9 @@ impl DropShadow {
         }
     }
 
-    pub fn color(self, color: u32) -> Self {
+    pub fn color(self, color: impl Into<Color>) -> Self {
         Self {
-            color: Color::from(color),
+            color: color.into(),
             ..self
         }
     }

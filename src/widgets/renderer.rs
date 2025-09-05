@@ -109,6 +109,10 @@ impl ShadowCache {
         }
     }
 
+    pub fn clear(&mut self) {
+        self.cache.clear();
+    }
+
     fn start_frame(&mut self) {
         self.current_frame += 1;
         self.current_frame %= MAX_CACHE_SIZE;
