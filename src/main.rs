@@ -7,8 +7,8 @@ use raxis::{
     layout::{
         helpers::center,
         model::{
-            Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, Element,
-            ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
+            Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
+            Element, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
             VerticalAlignment,
         },
     },
@@ -405,7 +405,7 @@ fn todo_item(
             ..Default::default()
         }),
         border_radius: Some(BorderRadius::all(8.0)),
-        // drop_shadow: Some(DropShadow::simple(1.0, 2.0).blur_radius(4.0)),
+        // drop_shadow: Some(DropShadow::simple(0.0, 2.0).blur_radius(4.0)),
         padding: BoxAmount::all(12.0),
         child_gap: 12.0,
         children: vec![

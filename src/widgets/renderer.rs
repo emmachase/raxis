@@ -1,39 +1,188 @@
-
+use std::collections::HashMap;
+use std::{cell::RefCell, collections::hash_map};
 use windows::Win32::Graphics::Direct2D::{
-        CLSID_D2D1Shadow,
-        Common::{
-            D2D_RECT_F, D2D_SIZE_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
-            D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED,
-        },
-        D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_ROUND,
-        D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-        D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_DASH_DOT,
-        D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT, D2D1_DASH_STYLE_SOLID,
-        D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER,
-        D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT,
-        D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
-        D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-        ID2D1DeviceContext7, ID2D1Factory, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
-        ID2D1StrokeStyle,
-    };
+    CLSID_D2D1Shadow,
+    Common::{
+        D2D_RECT_F, D2D_SIZE_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
+        D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED,
+    },
+    D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_ROUND,
+    D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+    D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_DASH_DOT,
+    D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT, D2D1_DASH_STYLE_SOLID,
+    D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER,
+    D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT,
+    D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
+    D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    ID2D1DeviceContext7, ID2D1Effect, ID2D1Factory, ID2D1GeometrySink, ID2D1Image,
+    ID2D1SolidColorBrush, ID2D1StrokeStyle,
+};
 use windows_core::{IUnknown, Interface};
 use windows_numerics::{Vector2, Vector4};
 
 use crate::{
     gfx::RectDIP,
     layout::model::{
-            Border, BorderPlacement, BorderRadius, Color, DropShadow,
-            StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
-        },
+        Border, BorderPlacement, BorderRadius, Color, DropShadow, StrokeDashStyle, StrokeLineCap,
+        StrokeLineJoin,
+    },
 };
+
+/// Cache key for shadow bitmaps based on shadow parameters
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
+struct ShadowCacheKey {
+    width: u32,
+    height: u32,
+    blur_radius: u32,                // Rounded to avoid precision issues
+    spread_radius: u32,              // Rounded to avoid precision issues
+    color: [u8; 4],                  // RGBA as bytes for exact comparison
+    border_radius: Option<[u32; 4]>, // [tl, tr, br, bl] rounded
+}
+
+impl ShadowCacheKey {
+    fn new(
+        width: f32,
+        height: f32,
+        shadow: &DropShadow,
+        border_radius: Option<&BorderRadius>,
+    ) -> Self {
+        let color_bytes = [
+            (shadow.color.r * 255.0) as u8,
+            (shadow.color.g * 255.0) as u8,
+            (shadow.color.b * 255.0) as u8,
+            (shadow.color.a * 255.0) as u8,
+        ];
+
+        let border_radius_key = border_radius.map(|br| {
+            [
+                (br.top_left * 100.0) as u32,
+                (br.top_right * 100.0) as u32,
+                (br.bottom_right * 100.0) as u32,
+                (br.bottom_left * 100.0) as u32,
+            ]
+        });
+
+        Self {
+            width: width as u32,
+            height: height as u32,
+            blur_radius: (shadow.blur_radius * 100.0) as u32, // Sub-pixel precision
+            spread_radius: (shadow.spread_radius * 100.0) as u32,
+            color: color_bytes,
+            border_radius: border_radius_key,
+        }
+    }
+}
+
+// impl std::hash::Hash for ShadowCacheKey {
+//     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+//         self.width.hash(state);
+//         self.height.hash(state);
+//         self.blur_radius.hash(state);
+//         self.spread_radius.hash(state);
+//         self.color.hash(state);
+//         self.border_radius.hash(state);
+//     }
+// }
+
+impl Eq for ShadowCacheKey {}
+
+/// Cached shadow effect with usage tracking
+struct CachedShadowEffect {
+    effect: ID2D1Effect,
+    last_frame_used: i8,
+}
+
+/// Shadow cache manager with frame-based eviction
+pub struct ShadowCache {
+    cache: HashMap<ShadowCacheKey, CachedShadowEffect>,
+    current_frame: i8,
+}
+
+const MAX_CACHE_AGE: i8 = 10;
+const MAX_CACHE_SIZE: i8 = 100;
+
+impl ShadowCache {
+    pub fn new() -> Self {
+        Self {
+            cache: HashMap::new(),
+            current_frame: 0,
+        }
+    }
+
+    fn start_frame(&mut self) {
+        self.current_frame += 1;
+        self.current_frame %= MAX_CACHE_SIZE;
+    }
+
+    fn get_or_create_shadow(
+        &mut self,
+        key: &ShadowCacheKey,
+        create_fn: impl FnOnce() -> Option<ID2D1Effect>,
+    ) -> Option<&ID2D1Effect> {
+        let entry = self.cache.entry(*key);
+
+        match entry {
+            hash_map::Entry::Occupied(entry) => Some(&entry.into_mut().effect),
+            hash_map::Entry::Vacant(entry) => create_fn().map(|effect| {
+                &entry
+                    .insert(CachedShadowEffect {
+                        effect,
+                        last_frame_used: self.current_frame,
+                    })
+                    .effect
+            }),
+        }
+    }
+
+    fn evict_unused(&mut self) {
+        // Remove entries that weren't used in the current frame
+        self.cache.retain(|_, cached| {
+            let real_dist = self.current_frame - cached.last_frame_used + {
+                if cached.last_frame_used > self.current_frame {
+                    MAX_CACHE_SIZE
+                } else {
+                    0
+                }
+            };
+
+            real_dist < MAX_CACHE_AGE
+        });
+    }
+}
 
 pub struct Renderer<'a> {
     pub factory: &'a ID2D1Factory,
     pub render_target: &'a ID2D1DeviceContext7,
     pub brush: &'a ID2D1SolidColorBrush,
+    shadow_cache: &'a RefCell<ShadowCache>,
 }
 
 impl Renderer<'_> {
+    /// Create a new Renderer with a reference to the shadow cache
+    pub fn new<'a>(
+        factory: &'a ID2D1Factory,
+        render_target: &'a ID2D1DeviceContext7,
+        brush: &'a ID2D1SolidColorBrush,
+        shadow_cache: &'a RefCell<ShadowCache>,
+    ) -> Renderer<'a> {
+        Renderer {
+            factory,
+            render_target,
+            brush,
+            shadow_cache,
+        }
+    }
+
+    /// Mark the start of a new frame for cache management
+    pub fn start_frame(&self) {
+        self.shadow_cache.borrow_mut().start_frame();
+    }
+
+    /// Evict unused cache entries to free memory
+    pub fn evict_unused_cache_entries(&self) {
+        self.shadow_cache.borrow_mut().evict_unused();
+    }
+
     fn create_stroke_style(
         &self,
         dash_style: &Option<StrokeDashStyle>,
@@ -235,10 +384,56 @@ impl Renderer<'_> {
                 return;
             }
 
+            let expanded_width = rect.width + shadow.spread_radius * 2.0;
+            let expanded_height = rect.height + shadow.spread_radius * 2.0;
+
+            // Create cache key for this shadow
+            let cache_key =
+                ShadowCacheKey::new(expanded_width, expanded_height, shadow, border_radius);
+
+            // Try to get cached shadow effect or create new one
+            let mut shadow_cache = self.shadow_cache.borrow_mut();
+            let cached_effect = shadow_cache.get_or_create_shadow(&cache_key, || {
+                // Create the shadow effect if not cached
+                self.create_shadow_effect(
+                    rect,
+                    shadow,
+                    border_radius,
+                    expanded_width,
+                    expanded_height,
+                )
+            });
+
+            // Draw the cached shadow effect
+            if let Some(effect) = cached_effect {
+                self.render_target.DrawImage(
+                    &effect.cast::<ID2D1Image>().unwrap(),
+                    Some(&Vector2::new(
+                        rect.x + shadow.offset_x - shadow.spread_radius,
+                        rect.y + shadow.offset_y - shadow.spread_radius,
+                    )),
+                    None,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    D2D1_COMPOSITE_MODE_SOURCE_OVER,
+                );
+            }
+        }
+    }
+
+    /// Create a shadow effect for caching
+    fn create_shadow_effect(
+        &self,
+        rect: &RectDIP,
+        shadow: &DropShadow,
+        border_radius: Option<&BorderRadius>,
+        expanded_width: f32,
+        expanded_height: f32,
+    ) -> Option<ID2D1Effect> {
+        unsafe {
             // Create a bitmap render target for the shadow
             let expanded_size = D2D_SIZE_F {
-                width: rect.width + shadow.spread_radius * 2.0,
-                height: rect.height + shadow.spread_radius * 2.0,
+                width: expanded_width,
+                height: expanded_height,
             };
 
             if let Ok(bitmap_rt) = self.render_target.CreateCompatibleRenderTarget(
@@ -324,10 +519,10 @@ impl Renderer<'_> {
 
                 // Get the bitmap from the render target
                 if let Ok(bitmap) = bitmap_rt.GetBitmap() {
-                    // Create Gaussian blur effect
-                    if let Ok(blur_effect) = self.render_target.CreateEffect(&CLSID_D2D1Shadow) {
-                        blur_effect.SetInput(0, &bitmap, true);
-                        blur_effect
+                    // Create shadow effect
+                    if let Ok(shadow_effect) = self.render_target.CreateEffect(&CLSID_D2D1Shadow) {
+                        shadow_effect.SetInput(0, &bitmap, true);
+                        shadow_effect
                             .SetValue(
                                 D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                                 D2D1_PROPERTY_TYPE_FLOAT,
@@ -336,7 +531,7 @@ impl Renderer<'_> {
                             )
                             .unwrap();
 
-                        blur_effect
+                        shadow_effect
                             .SetValue(
                                 D2D1_SHADOW_PROP_COLOR.0 as u32,
                                 D2D1_PROPERTY_TYPE_VECTOR4,
@@ -352,117 +547,13 @@ impl Renderer<'_> {
                             )
                             .unwrap();
 
-                        self.render_target.DrawImage(
-                            &IUnknown::from(blur_effect).cast::<ID2D1Image>().unwrap(),
-                            Some(&Vector2::new(
-                                rect.x + shadow.offset_x - shadow.spread_radius,
-                                rect.y + shadow.offset_y - shadow.spread_radius,
-                            )),
-                            None,
-                            D2D1_INTERPOLATION_MODE_LINEAR,
-                            D2D1_COMPOSITE_MODE_SOURCE_OVER,
-                        );
-
-                        // // Set blur radius (standard deviation)
-                        // let blur_std_dev = shadow.blur_radius / 3.0;
-                        // let _ = blur_effect.SetValue(
-                        //     0, // D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION
-                        //     &blur_std_dev as *const f32 as *const _,
-                        //     std::mem::size_of::<f32>() as u32,
-                        // );
-
-                        // // Draw the blurred shadow with proper color
-                        // let dest_point = D2D_POINT_2F {
-                        //     x: rect.x_dip + shadow.offset_x - shadow.blur_radius * 3.0,
-                        //     y: rect.y_dip + shadow.offset_y - shadow.blur_radius * 3.0,
-                        // };
-
-                        // // Set the shadow color by modulating the effect output
-                        // let shadow_color = Color::from(shadow.color);
-                        // device_context.SetPrimitiveBlend(
-                        //     D2D1_PRIMITIVE_BLEND_SOURCE_OVER,
-                        // );
-
-                        // // Create a color matrix effect to apply the shadow color
-                        // if let Ok(color_effect) =
-                        //     device_context.CreateEffect(&CLSID_D2D1ColorMatrix)
-                        // {
-                        //     color_effect.SetInput(0, &blur_effect, true);
-
-                        //     // Color matrix to apply shadow color
-                        //     #[rustfmt::skip]
-                        //     let color_matrix = [
-                        //         0.0, 0.0, 0.0, 0.0,
-                        //         0.0, 0.0, 0.0, 0.0,
-                        //         0.0, 0.0, 0.0, 0.0,
-                        //         shadow_color.r, shadow_color.g, shadow_color.b, shadow_color.a,
-                        //         0.0, 0.0, 0.0, 0.0,
-                        //     ];
-
-                        //     let _ = color_effect.SetValue(
-                        //         0, // D2D1_COLORMATRIX_PROP_COLOR_MATRIX
-                        //         color_matrix.as_ptr() as *const _,
-                        //         std::mem::size_of_val(&color_matrix) as u32,
-                        //     );
-
-                        //     device_context.DrawImage(
-                        //         &color_effect,
-                        //         Some(&dest_point),
-                        //         None,
-                        //         D2D1_INTERPOLATION_MODE_LINEAR,
-                        //         D2D1_COMPOSITE_MODE_SOURCE_OVER,
-                        //     );
-                        // } else {
-                        //     // Fallback: draw without color modulation
-                        //     device_context.DrawImage(
-                        //         &blur_effect,
-                        //         Some(&dest_point),
-                        //         None,
-                        //         D2D1_INTERPOLATION_MODE_LINEAR,
-                        //         D2D1_COMPOSITE_MODE_SOURCE_OVER,
-                        //     );
-                        // }
+                        return Some(shadow_effect);
                     }
                 }
             }
+            None
         }
     }
-
-    // fn draw_simple_blurred_shadow(
-    //     &self,
-    //     rect: &RectDIP,
-    //     shadow: &DropShadow,
-    // ) {
-    //     // Enhanced blur simulation using multiple layers with gaussian-like falloff
-    //     let shadow_color = Color::from(shadow.color);
-    //     let blur_steps = (shadow.blur_radius * 2.0).max(4.0) as i32;
-
-    //     // Draw from outside to inside for proper layering
-    //     for i in (0..blur_steps).rev() {
-    //         let progress = i as f32 / blur_steps as f32;
-    //         let offset = progress * shadow.blur_radius;
-
-    //         // Gaussian-like falloff for more realistic blur
-    //         let gaussian_factor = (-progress * progress * 4.0).exp();
-    //         let alpha = shadow_color.a * gaussian_factor * 0.3; // Reduce overall opacity
-
-    //         let blurred_rect = RectDIP {
-    //             x_dip: rect.x_dip + shadow.offset_x - offset,
-    //             y_dip: rect.y_dip + shadow.offset_y - offset,
-    //             width_dip: rect.width_dip + offset * 2.0,
-    //             height_dip: rect.height_dip + offset * 2.0,
-    //         };
-
-    //         let blurred_color = Color {
-    //             r: shadow_color.r,
-    //             g: shadow_color.g,
-    //             b: shadow_color.b,
-    //             a: alpha,
-    //         };
-
-    //         self.fill_rectangle(&blurred_rect, blurred_color);
-    //     }
-    // }
 
     pub fn draw_rectangle<C: Into<Color>>(&self, rect: &RectDIP, color: C, stroke_width: f32) {
         unsafe {
