@@ -6,8 +6,8 @@ use windows::Win32::Foundation::HWND;
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::{Border, BorderRadius, Element};
-use crate::widgets::{Bounds, Color, widget};
+use crate::layout::model::{Border, BorderRadius, Color, Element};
+use crate::widgets::{Bounds, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
 

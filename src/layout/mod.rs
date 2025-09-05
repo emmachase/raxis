@@ -7,12 +7,12 @@ use crate::{
     HookState, Shell,
     gfx::{RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList},
     layout::{
-        model::{Axis, ElementContent, UIElement, UIKey},
+        model::{Axis, Color, ElementContent, UIElement, UIKey},
         positioning::position_elements,
         visitors::VisitFrame,
     },
     runtime::scroll::ScrollStateManager,
-    widgets::{Color, Instance},
+    widgets::Instance,
 };
 
 pub mod helpers;

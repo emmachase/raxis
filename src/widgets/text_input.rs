@@ -18,12 +18,12 @@ use windows::core::Result;
 
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
+use crate::layout::model::Color;
 use crate::runtime::clipboard::get_clipboard_text;
 use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
-    Bounds, Color, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget,
-    limit_response,
+    Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
 };
 use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
@@ -956,7 +956,7 @@ impl<Message> WidgetState<Message> {
                                         width: m.width,
                                         height: m.height,
                                     },
-                                    crate::widgets::Color {
+                                    crate::layout::model::Color {
                                         r: 0.2,
                                         g: 0.4,
                                         b: 1.0,
@@ -994,7 +994,7 @@ impl<Message> WidgetState<Message> {
             recorder.draw_text(
                 &bounds,
                 layout,
-                crate::widgets::Color {
+                crate::layout::model::Color {
                     r: 0.0,
                     g: 0.0,
                     b: 0.0,

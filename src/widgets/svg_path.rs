@@ -3,11 +3,11 @@ use crate::{
     gfx::command_recorder::CommandRecorder,
     layout::{
         UIArenas,
-        model::{Element, StrokeLineCap, StrokeLineJoin},
+        model::{Color, Element, StrokeLineCap, StrokeLineJoin},
     },
     runtime::DeviceResources,
     widgets::{
-        Bounds, Color, Cursor, Event, Instance, State, Widget, limit_response, svg::ViewBox, widget,
+        Bounds, Cursor, Event, Instance, State, Widget, limit_response, svg::ViewBox, widget,
     },
     with_state,
 };

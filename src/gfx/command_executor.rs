@@ -1,6 +1,6 @@
 use crate::gfx::RectDIP;
 use crate::gfx::draw_commands::{DrawCommand, DrawCommandList};
-use crate::widgets::Renderer;
+use crate::widgets::renderer::Renderer;
 use std::mem::ManuallyDrop;
 use windows::Win32::Graphics::Direct2D::{
     Common::{D2D_RECT_F, D2D1_COLOR_F},

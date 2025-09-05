@@ -33,7 +33,7 @@ pub fn position_elements<Message>(
                         anchor = Some(found);
                     } else {
                         // anchor = Some(key);
-                        panic!("Floating element with unknown anchor_id {}", anchor_id);
+                        panic!("Floating element with unknown anchor_id {anchor_id}");
                     }
                 }
             }

@@ -1,6 +1,5 @@
-use crate::{
-    layout::model::{Direction, Element, HorizontalAlignment, Sizing, VerticalAlignment},
-    widgets::Color,
+use crate::layout::model::{
+    Color, Direction, Element, HorizontalAlignment, Sizing, VerticalAlignment,
 };
 
 pub fn row<Message>(children: Vec<Element<Message>>) -> Element<Message> {

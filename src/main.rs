@@ -7,15 +7,15 @@ use raxis::{
     layout::{
         helpers::center,
         model::{
-            Border, BorderPlacement, BorderRadius, BoxAmount, Direction, Element, ScrollConfig,
-            Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, VerticalAlignment,
+            Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, Element,
+            ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
+            VerticalAlignment,
         },
     },
     runtime::task::Task,
     util::{str::StableString, unique::combine_id},
     w_id,
     widgets::{
-        Color,
         button::Button,
         svg::ViewBox,
         svg_path::SvgPath,

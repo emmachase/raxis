@@ -192,7 +192,7 @@ pub fn visit_deferring_dfs<Message, S, F, E, A, R>(
         }
 
         // Next pass processes previously deferred items
-        stack = deferred.drain(..).collect();
+        stack = std::mem::take(&mut deferred);
     }
 }
 

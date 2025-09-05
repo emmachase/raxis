@@ -151,7 +151,7 @@ impl<Message> Widget<Message> for Spinner {
             begin_deg,
             end_deg,
             self.stroke,
-            crate::widgets::Color {
+            crate::layout::model::Color {
                 r: 0.0,
                 g: 0.0,
                 b: 0.0,

@@ -1,5 +1,4 @@
-use crate::layout::model::{Border, BorderRadius, DropShadow};
-use crate::widgets::Color;
+use crate::layout::model::{Border, BorderRadius, Color, DropShadow};
 use crate::{
     gfx::{
         RectDIP,

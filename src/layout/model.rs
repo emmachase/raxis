@@ -9,10 +9,51 @@ use crate::{
     impl_numeric,
     layout::OwnedUITree,
     runtime::DeviceResources,
-    widgets::{Color, Instance, Widget},
+    widgets::{Instance, Widget},
 };
 
 // ---------- Geometry & basic types ----------
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Color {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
+impl Default for Color {
+    fn default() -> Self {
+        Color::BLACK
+    }
+}
+
+impl Color {
+    pub const BLACK: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+
+    pub const WHITE: Color = Color {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+}
+
+impl From<u32> for Color {
+    fn from(color: u32) -> Self {
+        Color {
+            r: (0xFF & (color >> 24)) as f32 / 255.0,
+            g: (0xFF & (color >> 16)) as f32 / 255.0,
+            b: (0xFF & (color >> 8)) as f32 / 255.0,
+            a: (0xFF & color) as f32 / 255.0,
+        }
+    }
+}
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BoxAmount {

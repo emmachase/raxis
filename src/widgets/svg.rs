@@ -1,10 +1,13 @@
 use crate::{
     Shell,
     gfx::command_recorder::CommandRecorder,
-    layout::{UIArenas, model::Element},
+    layout::{
+        UIArenas,
+        model::{Color, Element},
+    },
     runtime::DeviceResources,
     util::str::StableString,
-    widgets::{Bounds, Color, Cursor, Event, Instance, State, Widget, limit_response, widget},
+    widgets::{Bounds, Cursor, Event, Instance, State, Widget, limit_response, widget},
     with_state,
 };
 use std::{any::Any, time::Instant};
@@ -164,7 +167,7 @@ impl SvgWidgetState {
                 let root = svg_document.GetRoot()?;
 
                 // Recursively recolor the tree, beginning at the root
-                self.recolor_subtree(&root, new_color)?;
+                SvgWidgetState::recolor_subtree(&root, new_color)?;
             }
         }
         Ok(())
@@ -172,7 +175,6 @@ impl SvgWidgetState {
 
     /// Helper method for recolor_svg which recursively recolors the given subtree
     fn recolor_subtree(
-        &self,
         element: &ID2D1SvgElement,
         new_color: D2D1_COLOR_F,
     ) -> windows::core::Result<()> {
@@ -228,7 +230,7 @@ impl SvgWidgetState {
 
             while let Some(current_child) = child {
                 // Recursively recolor the subtree starting with this child node
-                self.recolor_subtree(&current_child, new_color)?;
+                SvgWidgetState::recolor_subtree(&current_child, new_color)?;
 
                 // Move to the next child
                 child = element.GetNextChild(&current_child).ok();

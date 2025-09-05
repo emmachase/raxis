@@ -44,19 +44,12 @@ pub enum MouseAreaEvent {
 
 /// Internal state for MouseArea to track mouse presence
 #[derive(Debug)]
+#[derive(Default)]
 struct MouseAreaState {
     mouse_inside: bool,
     last_mouse_pos: Option<(f32, f32)>,
 }
 
-impl Default for MouseAreaState {
-    fn default() -> Self {
-        Self {
-            mouse_inside: false,
-            last_mouse_pos: None,
-        }
-    }
-}
 
 /// MouseArea widget - invisible container that captures mouse events
 pub struct MouseArea<Message> {
@@ -94,7 +87,7 @@ impl<Message: 'static> MouseArea<Message> {
                         x: *x,
                         y: *y,
                         click_count: *click_count,
-                        modifiers: modifiers.clone(),
+                        modifiers: *modifiers,
                     })
                 } else {
                     None
@@ -112,7 +105,7 @@ impl<Message: 'static> MouseArea<Message> {
                         x: *x,
                         y: *y,
                         click_count: *click_count,
-                        modifiers: modifiers.clone(),
+                        modifiers: *modifiers,
                     })
                 } else {
                     None
@@ -138,7 +131,7 @@ impl<Message: 'static> MouseArea<Message> {
                         x: *x,
                         y: *y,
                         wheel_delta: *wheel_delta,
-                        modifiers: modifiers.clone(),
+                        modifiers: *modifiers,
                     })
                 } else {
                     None
