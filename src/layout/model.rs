@@ -3,8 +3,6 @@
 
 use std::collections::HashMap;
 
-use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
-
 use crate::{
     impl_numeric,
     layout::OwnedUITree,
@@ -524,45 +522,7 @@ pub struct ScrollConfig {
 
 // ---------- Element tree ----------
 
-#[derive(Debug)]
-pub enum ElementContent<Message> {
-    Text {
-        /// Array of text spans that make up the text content
-        // pub spans: Vec<TextSpan>,
-        /// Processed text after wrapping, with spans and line heights together
-        // pub wrapped_lines: Vec<WrappedLine>,
-
-        /// Device layout
-        layout: Option<IDWriteTextLayout>,
-    },
-    Widget(Box<dyn Widget<Message>>),
-}
-
-impl<Message> ElementContent<Message> {
-    pub fn is_text(&self) -> bool {
-        matches!(self, ElementContent::Text { .. })
-    }
-
-    pub fn is_widget(&self) -> bool {
-        matches!(self, ElementContent::Widget { .. })
-    }
-
-    pub fn unwrap_text(&self) -> &Option<IDWriteTextLayout> {
-        if let ElementContent::Text { layout } = self {
-            layout
-        } else {
-            panic!("ElementContent is not a Text");
-        }
-    }
-
-    pub fn unwrap_widget(&mut self) -> &mut Box<dyn Widget<Message>> {
-        if let ElementContent::Widget(widget) = self {
-            widget
-        } else {
-            panic!("ElementContent is not a Widget");
-        }
-    }
-}
+pub type WidgetContent<Message> = Box<dyn Widget<Message>>;
 
 pub type UIKey = slotmap::DefaultKey;
 
@@ -570,7 +530,7 @@ pub type UIKey = slotmap::DefaultKey;
 pub struct UIElement<Message> {
     pub children: Vec<UIKey>,
 
-    pub content: Option<ElementContent<Message>>,
+    pub content: Option<WidgetContent<Message>>,
 
     pub direction: Direction,
 
@@ -693,7 +653,7 @@ impl<Message> Default for UIElement<Message> {
 pub struct Element<Message> {
     pub children: Vec<Element<Message>>,
 
-    pub content: Option<ElementContent<Message>>,
+    pub content: Option<WidgetContent<Message>>,
 
     pub direction: Direction,
 
@@ -916,7 +876,7 @@ pub fn create_tree<Message>(
         let (shell, children) = to_shell(element);
 
         // Initialize widget state if new
-        if let Some(ElementContent::Widget(ref widget)) = shell.content {
+        if let Some(ref widget) = shell.content {
             if let Some(id) = shell.id {
                 tree.widget_state.entry(id).or_insert_with(|| {
                     Instance::new(id, &**widget, &tree.arenas, device_resources)

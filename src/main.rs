@@ -234,7 +234,7 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
 
     Element {
         id: Some(w_id!()),
-        background_color: Some(0xf1f5edFF.into()), // Light gray background
+        background_color: Some(0xF1F5EDFF.into()), // Light gray background
         direction: Direction::TopToBottom,
         width: Sizing::percent(1.0),
         height: Sizing::grow(),

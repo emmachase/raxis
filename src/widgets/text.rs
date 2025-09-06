@@ -12,11 +12,11 @@ use windows::core::Result;
 
 use crate::gfx::RectDIP;
 use crate::layout::UIArenas;
-use crate::layout::model::{Color, Element, ElementContent};
+use crate::layout::model::{Color, Element};
 use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::util::str::StableString;
 use crate::util::unique::id_from_location;
-use crate::widgets::{Bounds, Instance, Widget};
+use crate::widgets::{Bounds, Instance, Widget, widget};
 use crate::{Shell, with_state};
 
 /// Text alignment options
@@ -109,7 +109,7 @@ impl Text {
         let id = id_from_location(self.caller);
         Element {
             id: Some(id),
-            content: Some(ElementContent::Widget(Box::new(self))),
+            content: widget(self),
             ..Default::default()
         }
     }
@@ -379,9 +379,10 @@ impl TextWidgetState {
     fn get_preferred_height_for_width(&mut self, text: &str, width: f32) -> Result<f32> {
         if let Some((cached_width, cached_height)) = self.cached_preferred_height_for_width
             && text == self.cached_text
-            && (cached_width - width).abs() < 0.1 {
-                return Ok(cached_height);
-            }
+            && (cached_width - width).abs() < 0.1
+        {
+            return Ok(cached_height);
+        }
 
         let temp_bounds = RectDIP {
             x: 0.0,

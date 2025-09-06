@@ -1,19 +1,14 @@
 use std::{any::Any, time::Instant};
 
 use smol_str::SmolStr;
-use windows::Win32::{
-    Foundation::HWND,
-    System::Ole::DROPEFFECT,
-};
+use windows::Win32::{Foundation::HWND, System::Ole::DROPEFFECT};
 
 use crate::{
     Shell,
     gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree, UIArenas,
-        model::{
-            ElementContent, UIElement,
-        },
+        model::{UIElement, WidgetContent},
         visitors,
     },
     runtime::DeviceResources,
@@ -215,8 +210,8 @@ pub trait Widget<Message>: std::fmt::Debug {
     // }
 }
 
-pub fn widget<Message>(widget: impl Widget<Message> + 'static) -> Option<ElementContent<Message>> {
-    Some(ElementContent::Widget(Box::new(widget)))
+pub fn widget<Message>(widget: impl Widget<Message> + 'static) -> Option<WidgetContent<Message>> {
+    Some(Box::new(widget))
 }
 
 // pub trait Focusable {
@@ -232,7 +227,7 @@ pub trait Operation {
 pub fn dispatch_operation<Message>(ui_tree: BorrowedUITree<Message>, operation: &dyn Operation) {
     visitors::visit_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
         let element = &mut ui_tree.slots[key];
-        if let Some(ElementContent::Widget(widget)) = element.content.as_mut() {
+        if let Some(widget) = element.content.as_mut() {
             if let Some(id) = element.id {
                 let instance = ui_tree.widget_state.get_mut(&id).unwrap();
                 widget.operate(&ui_tree.arenas, instance, operation);

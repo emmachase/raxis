@@ -260,30 +260,30 @@ impl CommandExecutor {
                         bottom: rect.y + rect.height,
                     };
 
-                    if let Ok(path_geometry) = renderer.factory.CreatePathGeometry() {
-                        if let Ok(sink) = path_geometry.Open() {
-                            renderer.create_rounded_rectangle_path(&sink, rect, border_radius);
-                            let _ = sink.Close();
+                    if let Ok(path_geometry) = renderer.factory.CreatePathGeometry()
+                        && let Ok(sink) = path_geometry.Open()
+                    {
+                        renderer.create_rounded_rectangle_path(&sink, rect, border_radius);
+                        let _ = sink.Close();
 
-                            let layer_params = D2D1_LAYER_PARAMETERS1 {
-                                contentBounds: clip_rect,
-                                geometricMask: ManuallyDrop::new(Some(path_geometry.into())),
-                                maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
-                                maskTransform: Matrix3x2::identity(),
-                                opacity: 1.0,
-                                opacityBrush: ManuallyDrop::new(None),
-                                layerOptions: Default::default(),
-                            };
+                        let layer_params = D2D1_LAYER_PARAMETERS1 {
+                            contentBounds: clip_rect,
+                            geometricMask: ManuallyDrop::new(Some(path_geometry.into())),
+                            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                            maskTransform: Matrix3x2::identity(),
+                            opacity: 1.0,
+                            opacityBrush: ManuallyDrop::new(None),
+                            layerOptions: Default::default(),
+                        };
 
-                            if let Ok(layer) = renderer.render_target.CreateLayer(None) {
-                                renderer.render_target.PushLayer(&layer_params, &layer);
-                            }
-
-                            // Why did they make it ManuallyDrop in the first place??? idk
-                            drop(ManuallyDrop::<Option<ID2D1Geometry>>::into_inner(
-                                layer_params.geometricMask,
-                            ));
+                        if let Ok(layer) = renderer.render_target.CreateLayer(None) {
+                            renderer.render_target.PushLayer(&layer_params, &layer);
                         }
+
+                        // Why did they make it ManuallyDrop in the first place??? idk
+                        drop(ManuallyDrop::<Option<ID2D1Geometry>>::into_inner(
+                            layer_params.geometricMask,
+                        ));
                     }
                 }
 

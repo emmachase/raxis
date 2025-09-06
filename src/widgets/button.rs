@@ -248,9 +248,9 @@ impl<Message: 'static + Send> Button<Message> {
     }
 
     pub fn with_drop_shadow(mut self, shadow: DropShadow) -> Self {
-        self.styles.normal.drop_shadow = Some(shadow.clone());
-        self.styles.hover.drop_shadow = Some(shadow.clone());
-        self.styles.pressed.drop_shadow = Some(shadow.clone());
+        self.styles.normal.drop_shadow = Some(shadow);
+        self.styles.hover.drop_shadow = Some(shadow);
+        self.styles.pressed.drop_shadow = Some(shadow);
         self.styles.disabled.drop_shadow = Some(shadow);
         self
     }

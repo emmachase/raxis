@@ -7,7 +7,7 @@ use crate::{
     HookState, Shell,
     gfx::{RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList},
     layout::{
-        model::{Axis, Color, ElementContent, UIElement, UIKey},
+        model::{Axis, UIElement, UIKey},
         positioning::position_elements,
         visitors::VisitFrame,
     },
@@ -72,25 +72,6 @@ fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>,
     });
 }
 
-fn wrap_text<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
-    visitors::visit_bfs(ui_tree, root, |ui_tree, key, _parent| {
-        if let Some(ElementContent::Text { layout, .. }) = ui_tree.slots[key].content.as_ref() {
-            let element = &ui_tree.slots[key];
-
-            let available_width =
-                element.computed_width - element.padding.left - element.padding.right;
-
-            unsafe {
-                layout
-                    .as_ref()
-                    .unwrap()
-                    .SetMaxWidth(available_width)
-                    .unwrap();
-            }
-        }
-    });
-}
-
 pub fn layout<Message>(
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
@@ -100,8 +81,6 @@ pub fn layout<Message>(
 
     fit_along_axis(ui_tree, root, Axis::X);
     grow_and_shrink_along_axis(ui_tree, root, Axis::X);
-
-    wrap_text(ui_tree, root);
 
     fit_along_axis(ui_tree, root, Axis::Y);
     grow_and_shrink_along_axis(ui_tree, root, Axis::Y);
@@ -213,32 +192,10 @@ pub fn generate_paint_commands<Message>(
                     }
                 }
 
-                // if let Some(layout) = element.content.as_ref().and_then(|c| c.layout.as_ref()) {
                 let bounds = element.bounds();
-                if let Some(content) = element.content.as_mut() {
-                    match content {
-                        ElementContent::Text { layout, .. } => {
-                            let color = element.color.unwrap_or(Color::BLACK);
-
-                            recorder.draw_text(
-                                &bounds.content_box,
-                                layout.as_ref().unwrap(),
-                                color,
-                            );
-                        }
-                        ElementContent::Widget(widget) => {
-                            let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
-                            widget.paint(
-                                &ui_tree.arenas,
-                                state,
-                                shell,
-                                &mut recorder,
-                                bounds,
-                                now,
-                                // 1.0 / 240.0, /* TODO: dt */
-                            );
-                        }
-                    }
+                if let Some(widget) = element.content.as_mut() {
+                    let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
+                    widget.paint(&ui_tree.arenas, state, shell, &mut recorder, bounds, now);
                 }
             },
             Some(

@@ -43,17 +43,18 @@ pub enum MouseAreaEvent {
 }
 
 /// Internal state for MouseArea to track mouse presence
-#[derive(Debug)]
-#[derive(Default)]
+#[derive(Debug, Default)]
 struct MouseAreaState {
     mouse_inside: bool,
     last_mouse_pos: Option<(f32, f32)>,
 }
 
+pub type OnMouseAreaEventFn<Message> =
+    dyn Fn(MouseAreaEvent, &mut Shell<Message>) -> Option<Message>;
 
 /// MouseArea widget - invisible container that captures mouse events
 pub struct MouseArea<Message> {
-    event_handler: Option<Box<dyn Fn(MouseAreaEvent, &mut Shell<Message>) -> Option<Message>>>,
+    event_handler: Option<Box<OnMouseAreaEventFn<Message>>>,
 }
 
 impl<Message> Debug for MouseArea<Message> {

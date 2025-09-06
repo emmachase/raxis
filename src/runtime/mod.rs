@@ -9,9 +9,7 @@ pub mod task;
 use crate::gfx::PointDIP;
 use crate::gfx::command_executor::CommandExecutor;
 use crate::gfx::draw_commands::DrawCommandList;
-use crate::layout::model::{
-    Axis, Direction, Element, ElementContent, ScrollConfig, Sizing, create_tree,
-};
+use crate::layout::model::{Axis, Direction, Element, ScrollConfig, Sizing, create_tree};
 use crate::layout::visitors::VisitAction;
 use crate::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
@@ -1348,9 +1346,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             root,
                             |ui_tree, element, _| {
                                 let bounds = ui_tree.slots[element].bounds();
-                                if let Some(ElementContent::Widget(ref widget)) =
-                                    ui_tree.slots[element].content
-                                {
+                                if let Some(ref widget) = ui_tree.slots[element].content {
                                     if let Some(id) = ui_tree.slots[element].id {
                                         if let Some(instance) = ui_tree.widget_state.get(&id) {
                                             if point.within(bounds.border_box) {

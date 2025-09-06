@@ -93,6 +93,7 @@ struct CachedShadowEffect {
 }
 
 /// Shadow cache manager with frame-based eviction
+#[derive(Default)]
 pub struct ShadowCache {
     cache: HashMap<ShadowCacheKey, CachedShadowEffect>,
     current_frame: i8,

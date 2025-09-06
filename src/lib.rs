@@ -204,7 +204,7 @@ impl<Message> Shell<Message> {
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
             let element = &mut ui_tree.slots[key];
             let bounds = element.bounds();
-            if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content {
+            if let Some(ref mut widget) = element.content {
                 if let Some(id) = element.id {
                     let instance = ui_tree.widget_state.get_mut(&id).unwrap();
                     widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
@@ -234,7 +234,7 @@ impl<Message> Shell<Message> {
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
             let element = &mut ui_tree.slots[key];
             let bounds = element.bounds();
-            if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content {
+            if let Some(ref mut widget) = element.content {
                 if let Some(id) = element.id
                     && target_id == id
                 {
@@ -284,34 +284,27 @@ impl<Message> Shell<Message> {
                 let element = &ui_tree.slots[key];
                 let bounds = element.bounds();
 
-                if position.within(bounds.border_box) {
-                    if let Some(layout::model::ElementContent::Widget(_)) = element.content {
-                        if key != prev_drag_widget.unwrap() {
-                            should_call_drag_leave = true;
-                        }
-                        found_new_widget = true;
-                        return VisitAction::Exit;
+                if position.within(bounds.border_box) && element.content.is_some() {
+                    if key != prev_drag_widget.unwrap() {
+                        should_call_drag_leave = true;
                     }
+                    found_new_widget = true;
+                    return VisitAction::Exit;
                 }
                 VisitAction::Continue
             });
 
             if should_call_drag_leave || !found_new_widget {
                 // Call drag_leave on the previous widget
-                if let Some(prev_key) = prev_drag_widget {
-                    if let Some(prev_element) = ui_tree.slots.get_mut(prev_key) {
-                        let prev_bounds = prev_element.bounds();
-                        if let Some(layout::model::ElementContent::Widget(ref mut prev_widget)) =
-                            prev_element.content
-                        {
-                            if let Some(prev_text_input) = prev_widget.as_drop_target()
-                                && let Some(id) = prev_element.id
-                                && let Some(instance) = ui_tree.widget_state.get_mut(&id)
-                            {
-                                prev_text_input.drag_leave(instance, prev_bounds);
-                            }
-                        }
-                    }
+                if let Some(prev_key) = prev_drag_widget
+                    && let Some(prev_element) = ui_tree.slots.get_mut(prev_key)
+                    && let prev_bounds = prev_element.bounds()
+                    && let Some(ref mut prev_widget) = prev_element.content
+                    && let Some(prev_text_input) = prev_widget.as_drop_target()
+                    && let Some(id) = prev_element.id
+                    && let Some(instance) = ui_tree.widget_state.get_mut(&id)
+                {
+                    prev_text_input.drag_leave(instance, prev_bounds);
                 }
             }
         }
@@ -323,8 +316,7 @@ impl<Message> Shell<Message> {
 
             // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
             if position.within(bounds.border_box) || matches!(event, DragEvent::DragLeave) {
-                if let Some(layout::model::ElementContent::Widget(ref mut widget)) = element.content
-                {
+                if let Some(ref mut widget) = element.content {
                     if let Some(text_input) = widget.as_drop_target()
                         && let Some(id) = element.id
                         && let Some(instance) = ui_tree.widget_state.get_mut(&id)
