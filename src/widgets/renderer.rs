@@ -17,7 +17,7 @@ use windows::Win32::Graphics::Direct2D::{
     ID2D1DeviceContext7, ID2D1Effect, ID2D1Factory, ID2D1GeometrySink, ID2D1Image,
     ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
-use windows_core::{IUnknown, Interface};
+use windows_core::Interface;
 use windows_numerics::{Vector2, Vector4};
 
 use crate::{
