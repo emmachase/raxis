@@ -35,7 +35,7 @@ enum Message {}
 fn demo_box(label: &'static str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
     Element {
         id: Some(combine_id(w_id!(), label)),
-        width: Sizing::fixed(160.0),
+        width: Sizing::grow(), //Sizing::fixed(160.0),
         height: Sizing::fixed(80.0),
         background_color: Some(0xFAFAFAFF.into()),
         padding: BoxAmount::all(8.0),
@@ -145,11 +145,17 @@ fn border_demos() -> Element<Message> {
                 direction: Direction::LeftToRight,
                 width: Sizing::grow(),
                 height: Sizing::fit(),
+                wrap: true,
                 child_gap: 10.0,
                 children: vec![
                     demo_box("Inset 4px", inset, None),
                     demo_box("Center 6px", center, Some(BorderRadius::all(10.0))),
                     demo_box("Outset 8px", outset, Some(BorderRadius::all(12.0))),
+                    demo_box("Dashed", dashed, Some(BorderRadius::tl_br(8.0))),
+                    demo_box("Dotted", dotted, Some(BorderRadius::tr_bl(8.0))),
+                    demo_box("DashDot", dash_dot, Some(BorderRadius::top(8.0))),
+                    demo_box("DashDotDot", dash_dot_dot, Some(BorderRadius::bottom(8.0))),
+                    demo_box("Custom", custom, None),
                     // Element {
                     //     id: Some(w_id!()),
                     //     width: Sizing::fit(),
@@ -161,29 +167,29 @@ fn border_demos() -> Element<Message> {
                 ..Default::default()
             },
             // Dash styles row
-            Element {
-                direction: Direction::LeftToRight,
-                width: Sizing::grow(),
-                height: Sizing::fit(),
-                child_gap: 10.0,
-                children: vec![
-                    demo_box("Dashed", dashed, Some(BorderRadius::tl_br(8.0))),
-                    demo_box("Dotted", dotted, Some(BorderRadius::tr_bl(8.0))),
-                    demo_box("DashDot", dash_dot, Some(BorderRadius::top(8.0))),
-                ],
-                ..Default::default()
-            },
-            Element {
-                direction: Direction::LeftToRight,
-                width: Sizing::grow(),
-                height: Sizing::fit(),
-                child_gap: 10.0,
-                children: vec![
-                    demo_box("DashDotDot", dash_dot_dot, Some(BorderRadius::bottom(8.0))),
-                    demo_box("Custom", custom, None),
-                ],
-                ..Default::default()
-            },
+            // Element {
+            //     direction: Direction::LeftToRight,
+            //     width: Sizing::grow(),
+            //     height: Sizing::fit(),
+            //     child_gap: 10.0,
+            //     children: vec![
+            //         demo_box("Dashed", dashed, Some(BorderRadius::tl_br(8.0))),
+            //         demo_box("Dotted", dotted, Some(BorderRadius::tr_bl(8.0))),
+            //         demo_box("DashDot", dash_dot, Some(BorderRadius::top(8.0))),
+            //     ],
+            //     ..Default::default()
+            // },
+            // Element {
+            //     direction: Direction::LeftToRight,
+            //     width: Sizing::grow(),
+            //     height: Sizing::fit(),
+            //     child_gap: 10.0,
+            //     children: vec![
+            //         demo_box("DashDotDot", dash_dot_dot, Some(BorderRadius::bottom(8.0))),
+            //         demo_box("Custom", custom, None),
+            //     ],
+            //     ..Default::default()
+            // },
         ],
         ..Default::default()
     }

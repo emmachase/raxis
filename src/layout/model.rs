@@ -605,6 +605,10 @@ pub struct UIElement<Message> {
     pub border: Option<Border>,
     pub z_index: Option<i32>,
 
+    // Wrapping support
+    pub wrap: bool,
+    pub wrap_breaks: Vec<usize>, // Indices where rows break (child indices)
+
     pub id: Option<u64>,
     pub id_map: HashMap<u64, UIKey>,
 }
@@ -639,6 +643,8 @@ impl<Message> Default for UIElement<Message> {
             drop_shadow: None,
             border: None,
             z_index: None,
+            wrap: false,
+            wrap_breaks: Vec::new(),
             id: None,
             id_map: HashMap::new(),
         }
@@ -711,6 +717,9 @@ pub struct Element<Message> {
     pub drop_shadow: Option<DropShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
+
+    // Wrapping support
+    pub wrap: bool,
 
     pub id: Option<u64>,
 }
@@ -829,6 +838,10 @@ impl<Message> Element<Message> {
             ..self
         }
     }
+
+    pub fn with_wrap(self, wrap: bool) -> Self {
+        Self { wrap, ..self }
+    }
 }
 
 impl<Message> Default for Element<Message> {
@@ -852,6 +865,7 @@ impl<Message> Default for Element<Message> {
             drop_shadow: None,
             border: None,
             z_index: None,
+            wrap: false,
             id: None,
         }
     }
@@ -879,6 +893,8 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             drop_shadow: element.drop_shadow,
             border: element.border,
             z_index: element.z_index,
+            wrap: element.wrap,
+            wrap_breaks: Vec::new(),
             id: element.id,
             ..Default::default()
         },
