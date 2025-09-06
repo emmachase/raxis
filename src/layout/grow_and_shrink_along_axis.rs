@@ -35,6 +35,181 @@ fn calculate_wrap_breaks<Message>(
     breaks
 }
 
+/// Apply grow algorithm to a set of children
+fn apply_axis_grow_algorithm<Message>(
+    ui_tree: BorrowedUITree<'_, Message>,
+    growable_children: &mut Vec<UIKey>,
+    remaining_size: &mut f32,
+    x_axis: bool,
+) {
+    while remaining_size.gt_eps(&0.01) && !growable_children.is_empty() {
+        // Find smallest group among growable children
+        let mut smallest_size = f32::INFINITY;
+        let mut second_smallest_size = f32::INFINITY;
+        let mut smallest_max_for_group = f32::INFINITY;
+        let mut count_smallest = 0usize;
+
+        for ck in growable_children.iter() {
+            let c = &ui_tree.slots[*ck];
+            let size = if x_axis {
+                c.computed_width
+            } else {
+                c.computed_height
+            };
+            if size.lt_eps(&smallest_size) {
+                second_smallest_size = smallest_size;
+                smallest_size = size;
+                // reset group info
+                let s = if x_axis { c.width } else { c.height };
+                smallest_max_for_group = match s {
+                    Sizing::Grow { max, .. } => max,
+                    _ => f32::INFINITY,
+                };
+                count_smallest = 0;
+            }
+            if size.eq_eps(&smallest_size) {
+                let s = if x_axis { c.width } else { c.height };
+                let max_this = match s {
+                    Sizing::Grow { max, .. } => max,
+                    _ => f32::INFINITY,
+                };
+                smallest_max_for_group = smallest_max_for_group.min(max_this);
+                count_smallest += 1;
+            }
+            if size.gt_eps(&smallest_size) && size.lt_eps(&second_smallest_size) {
+                second_smallest_size = size;
+            }
+        }
+
+        let mut size_to_add =
+            (second_smallest_size - smallest_size).min(smallest_max_for_group - smallest_size);
+        size_to_add = size_to_add.min(*remaining_size / count_smallest as f32);
+
+        // Add to all children in smallest group, remove those that hit max
+        let mut i = 0;
+        while i < growable_children.len() {
+            let ck = growable_children[i];
+            let size = if x_axis {
+                ui_tree.slots[ck].computed_width
+            } else {
+                ui_tree.slots[ck].computed_height
+            };
+            if size.eq_eps(&smallest_size) {
+                if x_axis {
+                    ui_tree.slots[ck].computed_width += size_to_add;
+                } else {
+                    ui_tree.slots[ck].computed_height += size_to_add;
+                }
+                *remaining_size -= size_to_add;
+
+                // Remove if reached max
+                let sizing = if x_axis {
+                    ui_tree.slots[ck].width
+                } else {
+                    ui_tree.slots[ck].height
+                };
+                let max_allowed = match sizing {
+                    Sizing::Grow { max, .. } => max,
+                    _ => f32::INFINITY,
+                };
+                let new_size = if x_axis {
+                    ui_tree.slots[ck].computed_width
+                } else {
+                    ui_tree.slots[ck].computed_height
+                };
+                if new_size.eq_eps(&max_allowed) {
+                    growable_children.remove(i);
+                    continue;
+                }
+            }
+            i += 1;
+            if !remaining_size.gt_eps(&0.0) {
+                break;
+            }
+        }
+    }
+}
+
+/// Apply shrink algorithm to a set of children
+fn apply_axis_shrink_algorithm<Message>(
+    ui_tree: BorrowedUITree<'_, Message>,
+    shrinkable_children: &mut Vec<UIKey>,
+    remaining_size: &mut f32,
+    x_axis: bool,
+) {
+    while remaining_size.lt_eps(&-0.01) && !shrinkable_children.is_empty() {
+        let mut largest_size = -f32::INFINITY;
+        let mut second_largest_size = -f32::INFINITY;
+        let mut largest_min_for_group = -f32::INFINITY;
+        let mut count_largest = 0usize;
+
+        for ck in shrinkable_children.iter() {
+            let c = &ui_tree.slots[*ck];
+            let size = if x_axis {
+                c.computed_width
+            } else {
+                c.computed_height
+            };
+            if size.gt_eps(&largest_size) {
+                second_largest_size = largest_size;
+                largest_size = size;
+                largest_min_for_group = if x_axis { c.min_width } else { c.min_height };
+                count_largest = 0;
+            }
+            if size.eq_eps(&largest_size) {
+                let min_this = if x_axis { c.min_width } else { c.min_height };
+                largest_min_for_group = largest_min_for_group.max(min_this);
+                count_largest += 1;
+            }
+            if size.lt_eps(&largest_size) && size.gt_eps(&second_largest_size) {
+                second_largest_size = size;
+            }
+        }
+
+        let mut size_to_sub =
+            (largest_size - second_largest_size).min(largest_size - largest_min_for_group);
+        size_to_sub = size_to_sub.min((-*remaining_size) / count_largest as f32);
+
+        let mut i = 0;
+        while i < shrinkable_children.len() {
+            let ck = shrinkable_children[i];
+            let size = if x_axis {
+                ui_tree.slots[ck].computed_width
+            } else {
+                ui_tree.slots[ck].computed_height
+            };
+            if size.eq_eps(&largest_size) {
+                if x_axis {
+                    ui_tree.slots[ck].computed_width -= size_to_sub;
+                } else {
+                    ui_tree.slots[ck].computed_height -= size_to_sub;
+                }
+                *remaining_size += size_to_sub;
+
+                // Remove if reached min
+                let min_allowed = if x_axis {
+                    ui_tree.slots[ck].min_width
+                } else {
+                    ui_tree.slots[ck].min_height
+                };
+                let new_size = if x_axis {
+                    ui_tree.slots[ck].computed_width
+                } else {
+                    ui_tree.slots[ck].computed_height
+                };
+                if new_size.eq_eps(&min_allowed) {
+                    shrinkable_children.remove(i);
+                    continue;
+                }
+            }
+            i += 1;
+            if !remaining_size.lt_eps(&0.0) {
+                break;
+            }
+        }
+    }
+}
+
 pub fn grow_and_shrink_along_axis<Message>(
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
@@ -214,70 +389,12 @@ pub fn grow_and_shrink_along_axis<Message>(
                         .collect();
 
                     // Row grow pass
-                    while row_remaining_size.gt_eps(&0.01) && !row_growable.is_empty() {
-                        // Same grow logic but for this row only
-                        let mut smallest_size = f32::INFINITY;
-                        let mut second_smallest_size = f32::INFINITY;
-                        let mut smallest_max_for_group = f32::INFINITY;
-                        let mut count_smallest = 0usize;
-
-                        for ck in &row_growable {
-                            let size = ui_tree.slots[*ck].computed_width;
-                            if size.lt_eps(&smallest_size) {
-                                second_smallest_size = smallest_size;
-                                smallest_size = size;
-                                let s = ui_tree.slots[*ck].width;
-                                smallest_max_for_group = match s {
-                                    Sizing::Grow { max, .. } => max,
-                                    _ => f32::INFINITY,
-                                };
-                                count_smallest = 0;
-                            }
-                            if size.eq_eps(&smallest_size) {
-                                let s = ui_tree.slots[*ck].width;
-                                let max_this = match s {
-                                    Sizing::Grow { max, .. } => max,
-                                    _ => f32::INFINITY,
-                                };
-                                smallest_max_for_group = smallest_max_for_group.min(max_this);
-                                count_smallest += 1;
-                            }
-                            if size.gt_eps(&smallest_size) && size.lt_eps(&second_smallest_size) {
-                                second_smallest_size = size;
-                            }
-                        }
-
-                        let mut size_to_add = (second_smallest_size - smallest_size)
-                            .min(smallest_max_for_group - smallest_size);
-                        size_to_add = size_to_add.min(row_remaining_size / count_smallest as f32);
-
-                        // Add to all children in smallest group, remove those that hit max
-                        let mut i = 0;
-                        while i < row_growable.len() {
-                            let ck = row_growable[i];
-                            let size = ui_tree.slots[ck].computed_width;
-                            if size.eq_eps(&smallest_size) {
-                                ui_tree.slots[ck].computed_width += size_to_add;
-                                row_remaining_size -= size_to_add;
-
-                                // Remove if reached max
-                                let sizing = ui_tree.slots[ck].width;
-                                let max_allowed = match sizing {
-                                    Sizing::Grow { max, .. } => max,
-                                    _ => f32::INFINITY,
-                                };
-                                let new_size = ui_tree.slots[ck].computed_width;
-                                if new_size.eq_eps(&max_allowed) {
-                                    row_growable.remove(i);
-                                    continue;
-                                }
-                            }
-                            i += 1;
-                            if !row_remaining_size.gt_eps(&0.0) {
-                                break;
-                            }
-                        }
-                    }
+                    apply_axis_grow_algorithm(
+                        ui_tree,
+                        &mut row_growable,
+                        &mut row_remaining_size,
+                        true,
+                    );
 
                     // Row shrink pass (if scroll not enabled)
                     let scroll_enabled = element!()
@@ -298,58 +415,13 @@ pub fn grow_and_shrink_along_axis<Message>(
                             })
                             .collect();
 
-                        while row_remaining_size.lt_eps(&-0.01) && !row_shrinkable.is_empty() {
-                            let mut largest_size = -f32::INFINITY;
-                            let mut second_largest_size = -f32::INFINITY;
-                            let mut largest_min_for_group = -f32::INFINITY;
-                            let mut count_largest = 0usize;
-
-                            for ck in &row_shrinkable {
-                                let c = &ui_tree.slots[*ck];
-                                let size = c.computed_width;
-                                if size.gt_eps(&largest_size) {
-                                    second_largest_size = largest_size;
-                                    largest_size = size;
-                                    largest_min_for_group = c.min_width;
-                                    count_largest = 0;
-                                }
-                                if size.eq_eps(&largest_size) {
-                                    let min_this = c.min_width;
-                                    largest_min_for_group = largest_min_for_group.max(min_this);
-                                    count_largest += 1;
-                                }
-                                if size.lt_eps(&largest_size) && size.gt_eps(&second_largest_size) {
-                                    second_largest_size = size;
-                                }
-                            }
-
-                            let mut size_to_sub = (largest_size - second_largest_size)
-                                .min(largest_size - largest_min_for_group);
-                            size_to_sub =
-                                size_to_sub.min((-row_remaining_size) / count_largest as f32);
-
-                            let mut i = 0;
-                            while i < row_shrinkable.len() {
-                                let ck = row_shrinkable[i];
-                                let size = ui_tree.slots[ck].computed_width;
-                                if size.eq_eps(&largest_size) {
-                                    ui_tree.slots[ck].computed_width -= size_to_sub;
-                                    row_remaining_size += size_to_sub;
-
-                                    // Remove if reached min
-                                    let min_allowed = ui_tree.slots[ck].min_width;
-                                    let new_size = ui_tree.slots[ck].computed_width;
-                                    if new_size.eq_eps(&min_allowed) {
-                                        row_shrinkable.remove(i);
-                                        continue;
-                                    }
-                                }
-                                i += 1;
-                                if !row_remaining_size.lt_eps(&0.0) {
-                                    break;
-                                }
-                            }
-                        }
+                        // Row shrink pass
+                        apply_axis_shrink_algorithm(
+                            ui_tree,
+                            &mut row_shrinkable,
+                            &mut row_remaining_size,
+                            true,
+                        );
                     }
 
                     start_idx = break_idx;
@@ -367,92 +439,12 @@ pub fn grow_and_shrink_along_axis<Message>(
                 });
 
                 // Grow pass
-                while remaining_size.gt_eps(&0.01) && !growable_children.is_empty() {
-                    // Find smallest group among growable children
-                    let mut smallest_size = f32::INFINITY;
-                    let mut second_smallest_size = f32::INFINITY;
-                    let mut smallest_max_for_group = f32::INFINITY;
-                    let mut count_smallest = 0usize;
-
-                    for ck in &growable_children {
-                        let c = &ui_tree.slots[*ck];
-                        let size = if x_axis {
-                            c.computed_width
-                        } else {
-                            c.computed_height
-                        };
-                        if size.lt_eps(&smallest_size) {
-                            second_smallest_size = smallest_size;
-                            smallest_size = size;
-                            // reset group info
-                            let s = if x_axis { c.width } else { c.height };
-                            smallest_max_for_group = match s {
-                                Sizing::Grow { max, .. } => max,
-                                _ => f32::INFINITY,
-                            };
-                            count_smallest = 0;
-                        }
-                        if size.eq_eps(&smallest_size) {
-                            let s = if x_axis { c.width } else { c.height };
-                            let max_this = match s {
-                                Sizing::Grow { max, .. } => max,
-                                _ => f32::INFINITY,
-                            };
-                            smallest_max_for_group = smallest_max_for_group.min(max_this);
-                            count_smallest += 1;
-                        }
-                        if size.gt_eps(&smallest_size) && size.lt_eps(&second_smallest_size) {
-                            second_smallest_size = size;
-                        }
-                    }
-
-                    let mut size_to_add = (second_smallest_size - smallest_size)
-                        .min(smallest_max_for_group - smallest_size);
-                    size_to_add = size_to_add.min(remaining_size / count_smallest as f32);
-
-                    // Add to all children in smallest group, remove those that hit max
-                    let mut i = 0;
-                    while i < growable_children.len() {
-                        let ck = growable_children[i];
-                        let size = if x_axis {
-                            ui_tree.slots[ck].computed_width
-                        } else {
-                            ui_tree.slots[ck].computed_height
-                        };
-                        if size.eq_eps(&smallest_size) {
-                            if x_axis {
-                                ui_tree.slots[ck].computed_width += size_to_add;
-                            } else {
-                                ui_tree.slots[ck].computed_height += size_to_add;
-                            }
-                            remaining_size -= size_to_add;
-
-                            // Remove if reached max
-                            let sizing = if x_axis {
-                                ui_tree.slots[ck].width
-                            } else {
-                                ui_tree.slots[ck].height
-                            };
-                            let max_allowed = match sizing {
-                                Sizing::Grow { max, .. } => max,
-                                _ => f32::INFINITY,
-                            };
-                            let new_size = if x_axis {
-                                ui_tree.slots[ck].computed_width
-                            } else {
-                                ui_tree.slots[ck].computed_height
-                            };
-                            if new_size.eq_eps(&max_allowed) {
-                                growable_children.remove(i);
-                                continue;
-                            }
-                        }
-                        i += 1;
-                        if !remaining_size.gt_eps(&0.0) {
-                            break;
-                        }
-                    }
-                }
+                apply_axis_grow_algorithm(
+                    ui_tree,
+                    &mut growable_children,
+                    &mut remaining_size,
+                    x_axis,
+                );
 
                 // If scroll enabled along axis, skip shrink
                 let scroll_enabled = element!()
@@ -486,77 +478,12 @@ pub fn grow_and_shrink_along_axis<Message>(
                     })
                     .collect();
 
-                while remaining_size.lt_eps(&-0.01) && !shrinkable_children.is_empty() {
-                    let mut largest_size = -f32::INFINITY;
-                    let mut second_largest_size = -f32::INFINITY;
-                    let mut largest_min_for_group = -f32::INFINITY;
-                    let mut count_largest = 0usize;
-
-                    for ck in &shrinkable_children {
-                        let c = &ui_tree.slots[*ck];
-                        let size = if x_axis {
-                            c.computed_width
-                        } else {
-                            c.computed_height
-                        };
-                        if size.gt_eps(&largest_size) {
-                            second_largest_size = largest_size;
-                            largest_size = size;
-                            largest_min_for_group = if x_axis { c.min_width } else { c.min_height };
-                            count_largest = 0;
-                        }
-                        if size.eq_eps(&largest_size) {
-                            let min_this = if x_axis { c.min_width } else { c.min_height };
-                            largest_min_for_group = largest_min_for_group.max(min_this);
-                            count_largest += 1;
-                        }
-                        if size.lt_eps(&largest_size) && size.gt_eps(&second_largest_size) {
-                            second_largest_size = size;
-                        }
-                    }
-
-                    let mut size_to_sub = (largest_size - second_largest_size)
-                        .min(largest_size - largest_min_for_group);
-                    size_to_sub = size_to_sub.min((-remaining_size) / count_largest as f32);
-
-                    let mut i = 0;
-                    while i < shrinkable_children.len() {
-                        let ck = shrinkable_children[i];
-                        let size = if x_axis {
-                            ui_tree.slots[ck].computed_width
-                        } else {
-                            ui_tree.slots[ck].computed_height
-                        };
-                        if size.eq_eps(&largest_size) {
-                            if x_axis {
-                                ui_tree.slots[ck].computed_width -= size_to_sub;
-                            } else {
-                                ui_tree.slots[ck].computed_height -= size_to_sub;
-                            }
-                            remaining_size += size_to_sub;
-
-                            // Remove if reached min
-                            let min_allowed = if x_axis {
-                                ui_tree.slots[ck].min_width
-                            } else {
-                                ui_tree.slots[ck].min_height
-                            };
-                            let new_size = if x_axis {
-                                ui_tree.slots[ck].computed_width
-                            } else {
-                                ui_tree.slots[ck].computed_height
-                            };
-                            if new_size.eq_eps(&min_allowed) {
-                                shrinkable_children.remove(i);
-                                continue;
-                            }
-                        }
-                        i += 1;
-                        if !remaining_size.lt_eps(&0.0) {
-                            break;
-                        }
-                    }
-                }
+                apply_axis_shrink_algorithm(
+                    ui_tree,
+                    &mut shrinkable_children,
+                    &mut remaining_size,
+                    x_axis,
+                );
             }
         } else {
             // Cross-axis behavior
