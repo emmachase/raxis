@@ -142,14 +142,14 @@ struct ScrollDragState {
 
 struct MaybeGuard<State: 'static, Message: 'static> {
     #[cfg(debug_assertions)]
-    guard: std::sync::MutexGuard<'static, AppState<State, Message>>,
+    guard: std::sync::MutexGuard<'static, Application<State, Message>>,
 
     #[cfg(not(debug_assertions))]
-    guard: &'static mut AppState<State, Message>,
+    guard: &'static mut Application<State, Message>,
 }
 
 impl<State: 'static, Message> Deref for MaybeGuard<State, Message> {
-    type Target = AppState<State, Message>;
+    type Target = Application<State, Message>;
 
     fn deref(&self) -> &Self::Target {
         #[cfg(debug_assertions)]
@@ -170,7 +170,7 @@ impl<State: 'static, Message> DerefMut for MaybeGuard<State, Message> {
     }
 }
 
-type WinUserData<State, Message> = Mutex<AppState<State, Message>>;
+type WinUserData<State, Message> = Mutex<Application<State, Message>>;
 
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
 fn state_mut_from_hwnd<State, Message>(hwnd: HWND) -> Option<MaybeGuard<State, Message>> {
@@ -227,7 +227,7 @@ fn window_rect(hwnd: HWND) -> Result<RECT> {
     }
 }
 
-struct AppState<State, Message> {
+struct Application<State, Message> {
     device_resources: Rc<RefCell<DeviceResources>>, // TODO: This shouldn't really be necessary
 
     clock: f64,
@@ -397,7 +397,7 @@ impl DeviceResources {
 
 static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
 
-impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
+impl<State: 'static, Message: 'static + Send> Application<State, Message> {
     fn new(
         view_fn: Box<ViewFn<State, Message>>,
         update_fn: Box<UpdateFn<State, Message>>,
@@ -642,7 +642,7 @@ impl<State: 'static, Message: 'static + Send> AppState<State, Message> {
     // then compute scrollbar thumb rects for hit-testing and return the last (topmost) hit.
     fn hit_test_scrollbar_thumb(&self, x: f32, y: f32) -> Option<ScrollDragState> {
         fn dfs<State, Message>(
-            state: &AppState<State, Message>,
+            state: &Application<State, Message>,
             key: DefaultKey,
             x: f32,
             y: f32,
@@ -1632,7 +1632,7 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
         )?;
 
         // Now create the app state with the hwnd
-        let mut app = AppState::new(
+        let mut app = Application::new(
             Box::new(view_fn),
             Box::new(update_fn),
             boot_fn,
@@ -1680,7 +1680,7 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
         let boxed = Box::new(app);
         let ptr = Box::into_raw(boxed) as isize;
 
-        // Set the window's user data to point to our AppState
+        // Set the window's user data to point to our Application
         SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr);
 
         // Resize window based on DPI
