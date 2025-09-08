@@ -209,7 +209,7 @@ struct TodoState {
     input_text: String,
 }
 
-fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
+fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
     let todo_state = instance
         .use_hook(|| {
@@ -367,21 +367,114 @@ fn todo_app(mut hook: HookManager<Message>) -> Element<Message> {
                 id: Some(w_id!()),
                 direction: Direction::TopToBottom,
                 width: Sizing::grow(),
-                height: Sizing::grow(),
+                height: Sizing::fit(),
                 child_gap: 8.0,
-                scroll: Some(ScrollConfig::default()),
                 children: {
                     let state = todo_state.borrow();
                     state
                         .items
                         .iter()
-                        .map(|item| todo_item(&mut hook, item.clone(), todo_state.clone()))
+                        .map(|item| todo_item(hook, item.clone(), todo_state.clone()))
                         .collect()
                 },
                 ..Default::default()
             },
+            virtual_scroll(hook),
             // Svg::new(include_str!("../assets/discord.svg")).as_element(w_id!()),
         ],
+        ..Default::default()
+    }
+}
+
+fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
+    let container_id = w_id!();
+
+    let total_items = 1000000usize;
+    let line_height_no_gap = 16.0;
+    let gap = 8.0;
+    let padding = BoxAmount::all(8.0);
+    let buffer_items_per_side = 2usize;
+
+    let line_height = line_height_no_gap + gap;
+
+    let container_dims = hook
+        .scroll_state_manager
+        .get_container_dimensions(container_id);
+
+    let visible_items =
+        (container_dims.1 / line_height).ceil() as usize + buffer_items_per_side * 2;
+    if container_dims.1 == 0.0 {
+        // Need to run layout to get container dimensions
+        hook.invalidate_layout();
+    }
+
+    let scroll_y = hook
+        .scroll_state_manager
+        .get_scroll_position(container_id)
+        .y;
+
+    let pre_scroll_items = (((scroll_y + gap - padding.top) / line_height).floor() as usize)
+        .saturating_sub(buffer_items_per_side);
+    let post_scroll_items = total_items
+        .saturating_sub(pre_scroll_items)
+        .saturating_sub(visible_items)
+        .max(0);
+
+    Element {
+        id: Some(container_id),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::Fit {
+            min: 0.0,
+            max: 300.0,
+        },
+        scroll: Some(ScrollConfig {
+            vertical: Some(true),
+            ..Default::default()
+        }),
+        border: Some(Border {
+            width: 1.0,
+            color: Color::from(0x000000FF),
+            ..Default::default()
+        }),
+        child_gap: gap,
+        padding: padding,
+        children: {
+            let mut children = vec![];
+            if pre_scroll_items > 0 {
+                children.push(Element {
+                    id: Some(w_id!()),
+                    width: Sizing::fixed(0.0),
+                    height: Sizing::fixed(line_height * pre_scroll_items as f32 - gap),
+                    ..Default::default()
+                });
+            }
+
+            children.append(
+                &mut (pre_scroll_items..(pre_scroll_items + visible_items).min(total_items))
+                    .map(|i| {
+                        Text::new(format!("Item {} (real: {})", i, i % visible_items))
+                            .as_element()
+                            .with_id(combine_id(w_id!(), i % visible_items))
+                            .with_height(Sizing::fixed(line_height_no_gap))
+                            .with_border(Border {
+                                width: 1.0,
+                                color: Color::from(0xFF00FFFF),
+                                ..Default::default()
+                            })
+                    })
+                    .collect(),
+            );
+            if post_scroll_items > 0 {
+                children.push(Element {
+                    id: Some(w_id!()),
+                    width: Sizing::fixed(0.0),
+                    height: Sizing::fixed(line_height * post_scroll_items as f32 - gap),
+                    ..Default::default()
+                });
+            }
+            children
+        },
         ..Default::default()
     }
 }
@@ -559,7 +652,7 @@ fn todo_item(
     }
 }
 
-fn view(_state: &(), hook: HookManager<Message>) -> Element<Message> {
+fn view(_state: &(), hook: &mut HookManager<Message>) -> Element<Message> {
     todo_app(hook)
 }
 

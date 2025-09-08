@@ -97,17 +97,15 @@ pub fn paint<Message>(
     shell: &Shell<Message>,
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
-    scroll_state_manager: &mut ScrollStateManager,
 ) -> DrawCommandList {
     // Generate commands first
-    generate_paint_commands(shell, ui_tree, root, scroll_state_manager)
+    generate_paint_commands(shell, ui_tree, root)
 }
 
 pub fn generate_paint_commands<Message>(
     shell: &Shell<Message>,
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
-    scroll_state_manager: &mut ScrollStateManager,
 ) -> DrawCommandList {
     let recorder = CommandRecorder::new();
     let now = Instant::now();
@@ -221,7 +219,8 @@ pub fn generate_paint_commands<Message>(
                             track_rect,
                             thumb_rect,
                             ..
-                        }) = compute_scrollbar_geom(element, Axis::X, scroll_state_manager)
+                        }) =
+                            compute_scrollbar_geom(element, Axis::X, &shell.scroll_state_manager)
                         {
                             recorder.fill_rectangle(&track_rect, scrollbar_track_color);
                             recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
@@ -231,7 +230,8 @@ pub fn generate_paint_commands<Message>(
                             track_rect,
                             thumb_rect,
                             ..
-                        }) = compute_scrollbar_geom(element, Axis::Y, scroll_state_manager)
+                        }) =
+                            compute_scrollbar_geom(element, Axis::Y, &shell.scroll_state_manager)
                         {
                             recorder.fill_rectangle(&track_rect, scrollbar_track_color);
                             recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);

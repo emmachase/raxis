@@ -15,7 +15,7 @@ use crate::{
         model::Element,
         visitors::{self, VisitAction},
     },
-    runtime::{focus, task::Task},
+    runtime::{focus::FocusManager, scroll::ScrollStateManager, task::Task},
     widgets::{DragData, DragEvent, DropResult, Event, Operation, dispatch_operation},
 };
 
@@ -38,6 +38,11 @@ pub struct HookState {
 
 pub struct HookManager<'a, Message> {
     ui_tree: BorrowedUITree<'a, Message>,
+
+    pub scroll_state_manager: &'a ScrollStateManager,
+    pub focus_manager: &'a FocusManager,
+
+    layout_invalidated: bool,
 }
 
 pub struct HookInstance<'a> {
@@ -68,9 +73,13 @@ impl<Message> HookManager<'_, Message> {
 
         HookInstance { state, position: 0 }
     }
+
+    pub fn invalidate_layout(&mut self) {
+        self.layout_invalidated = true;
+    }
 }
 
-pub type ViewFn<State, Message> = dyn Fn(&State, HookManager<Message>) -> Element<Message>;
+pub type ViewFn<State, Message> = dyn Fn(&State, &mut HookManager<Message>) -> Element<Message>;
 pub type UpdateFn<State, Message> =
     dyn Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
 
@@ -84,7 +93,8 @@ pub enum DeferredControl {
 }
 
 pub struct Shell<Message> {
-    focus_manager: focus::FocusManager,
+    focus_manager: FocusManager,
+    scroll_state_manager: ScrollStateManager,
     input_method: InputMethod,
 
     event_captured: bool,
@@ -125,9 +135,12 @@ impl<Message> Shell<Message> {
     pub fn new(
         message_sender: mpsc::Sender<Message>,
         task_dispatcher: mpsc::Sender<Task<Message>>,
+        scroll_state_manager: ScrollStateManager,
+        focus_manager: FocusManager,
     ) -> Self {
         Self {
-            focus_manager: focus::FocusManager::new(),
+            focus_manager,
+            scroll_state_manager,
             input_method: InputMethod::Disabled,
 
             event_captured: false,

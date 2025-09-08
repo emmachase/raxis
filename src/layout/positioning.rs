@@ -129,6 +129,8 @@ pub fn position_elements<Message>(
                     max_scroll_y,
                     slots[key].computed_content_width,
                     slots[key].computed_content_height,
+                    slots[key].computed_width,
+                    slots[key].computed_height,
                 );
             }
 
@@ -241,26 +243,29 @@ pub fn position_elements<Message>(
                         let breaks = slots[key].wrap_breaks.clone();
                         let mut start_idx = 0;
                         let mut current_y = content_start_y;
-                        
-                        for &break_idx in breaks.iter().chain(std::iter::once(&non_floating.len())) {
-                            let row_children: Vec<UIKey> = non_floating[start_idx..break_idx].to_vec();
+
+                        for &break_idx in breaks.iter().chain(std::iter::once(&non_floating.len()))
+                        {
+                            let row_children: Vec<UIKey> =
+                                non_floating[start_idx..break_idx].to_vec();
                             if row_children.is_empty() {
                                 start_idx = break_idx;
                                 continue;
                             }
-                            
+
                             // Calculate total width for this row
                             let mut total_row_width = 0.0;
                             for &c in &row_children {
                                 total_row_width += slots[c].computed_width;
                             }
-                            total_row_width += slots[key].child_gap * (row_children.len() as f32 - 1.0);
-                            
+                            total_row_width +=
+                                slots[key].child_gap * (row_children.len() as f32 - 1.0);
+
                             // Calculate row height (max of children in this row)
-                            let row_height = row_children.iter().fold(0.0_f32, |acc, &c| {
-                                acc.max(slots[c].computed_height)
-                            });
-                            
+                            let row_height = row_children
+                                .iter()
+                                .fold(0.0_f32, |acc, &c| acc.max(slots[c].computed_height));
+
                             // Calculate starting X position for this row based on alignment
                             let remaining_width = available_width - total_row_width;
                             let mut start_x = content_start_x;
@@ -271,34 +276,37 @@ pub fn position_elements<Message>(
                                     HorizontalAlignment::Right => start_x += remaining_width,
                                 }
                             }
-                            
+
                             // Position children in this row
                             let mut current_x = start_x;
                             for &c in &row_children {
                                 slots[c].x = current_x;
-                                
+
                                 // Vertical alignment within the row
                                 match slots[c].vertical_alignment {
                                     VerticalAlignment::Top => {
                                         slots[c].y = current_y;
                                     }
                                     VerticalAlignment::Center => {
-                                        slots[c].y = current_y + (row_height - slots[c].computed_height).max(0.0) / 2.0;
+                                        slots[c].y = current_y
+                                            + (row_height - slots[c].computed_height).max(0.0)
+                                                / 2.0;
                                     }
                                     VerticalAlignment::Bottom => {
-                                        slots[c].y = current_y + (row_height - slots[c].computed_height).max(0.0);
+                                        slots[c].y = current_y
+                                            + (row_height - slots[c].computed_height).max(0.0);
                                     }
                                 }
-                                
+
                                 current_x += slots[c].computed_width + slots[key].child_gap;
                             }
-                            
+
                             // Move to next row
                             current_y += row_height;
                             if break_idx < non_floating.len() {
                                 current_y += slots[key].child_gap; // Row gap
                             }
-                            
+
                             start_idx = break_idx;
                         }
                     } else {
@@ -331,7 +339,8 @@ pub fn position_elements<Message>(
                                 }
                                 VerticalAlignment::Center => {
                                     slots[c].y = content_start_y
-                                        + (available_height - slots[c].computed_height).max(0.0) / 2.0;
+                                        + (available_height - slots[c].computed_height).max(0.0)
+                                            / 2.0;
                                 }
                                 VerticalAlignment::Bottom => {
                                     slots[c].y = content_start_y

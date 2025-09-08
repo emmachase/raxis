@@ -9,9 +9,11 @@ pub struct ScrollPosition {
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct ScrollMetadata {
     position: ScrollPosition,
+    max_scroll: ScrollPosition,
     was_at_bottom: bool,
     was_at_right: bool,
     previous_content_dimensions: (f32, f32),
+    container_dimensions: (f32, f32),
 }
 
 #[derive(Clone, Default)]
@@ -34,7 +36,10 @@ impl ScrollStateManager {
     pub fn set_scroll_position(&mut self, element_id: u64, position: ScrollPosition) {
         self.scroll_metadata
             .entry(element_id)
-            .and_modify(|metadata| metadata.position = position)
+            .and_modify(|metadata| {
+                metadata.position.x = position.x.clamp(0.0, metadata.max_scroll.x);
+                metadata.position.y = position.y.clamp(0.0, metadata.max_scroll.y);
+            })
             .or_insert(ScrollMetadata {
                 position,
 
@@ -89,6 +94,8 @@ impl ScrollStateManager {
         max_scroll_y: f32,
         content_width: f32,
         content_height: f32,
+        container_width: f32,
+        container_height: f32,
     ) {
         let was_at_bottom = (current_position.y - max_scroll_y).abs() <= SCROLL_SNAP_THRESHOLD;
         let was_at_right = (current_position.x - max_scroll_x).abs() <= SCROLL_SNAP_THRESHOLD;
@@ -103,9 +110,14 @@ impl ScrollStateManager {
             })
             .or_insert(ScrollMetadata {
                 position: current_position,
+                max_scroll: ScrollPosition {
+                    x: max_scroll_x,
+                    y: max_scroll_y,
+                },
                 was_at_bottom,
                 was_at_right,
                 previous_content_dimensions: (content_width, content_height),
+                container_dimensions: (container_width, container_height),
             });
     }
 
@@ -127,6 +139,13 @@ impl ScrollStateManager {
         self.scroll_metadata
             .get(&element_id)
             .map(|metadata| metadata.previous_content_dimensions)
+            .unwrap_or((0.0, 0.0))
+    }
+
+    pub fn get_container_dimensions(&self, element_id: u64) -> (f32, f32) {
+        self.scroll_metadata
+            .get(&element_id)
+            .map(|metadata| metadata.container_dimensions)
             .unwrap_or((0.0, 0.0))
     }
 }

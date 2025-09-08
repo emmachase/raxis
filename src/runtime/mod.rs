@@ -15,6 +15,7 @@ use crate::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
 };
 use crate::runtime::dragdrop::start_text_drag;
+use crate::runtime::focus::FocusManager;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::runtime::task::{Action, Task, into_stream};
@@ -240,7 +241,6 @@ struct Application<State, Message> {
 
     shell: Shell<Message>,
 
-    scroll_state_manager: ScrollStateManager,
     smooth_scroll_manager: SmoothScrollManager,
 
     // Shadow bitmap cache for performance optimization
@@ -474,8 +474,20 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
             let boot_task = boot_fn(&user_state);
 
             let mut ui_tree = OwnedUITree::<Message>::default();
+            let mut scroll_state_manager = ScrollStateManager::default();
+            let mut focus_manager = FocusManager::default();
 
-            create_tree_root(&user_state, &view_fn, &device_resources, &mut ui_tree);
+            create_tree_root(
+                &user_state,
+                &view_fn,
+                &device_resources,
+                &mut HookManager {
+                    ui_tree: &mut ui_tree,
+                    scroll_state_manager: &mut scroll_state_manager,
+                    focus_manager: &mut focus_manager,
+                    layout_invalidated: false,
+                },
+            );
 
             // Create channels for async task execution
             let (task_sender, task_receiver) = mpsc::channel::<Task<Message>>();
@@ -484,7 +496,12 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
                 task_sender.send(boot_task).unwrap();
             }
 
-            let shell = Shell::new(message_sender.clone(), task_sender.clone());
+            let shell = Shell::new(
+                message_sender.clone(),
+                task_sender.clone(),
+                scroll_state_manager,
+                focus_manager,
+            );
 
             // Spawn executor thread with selected async runtime
             {
@@ -561,7 +578,6 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
                 update_fn,
                 user_state,
                 shell,
-                scroll_state_manager: ScrollStateManager::default(),
                 smooth_scroll_manager: SmoothScrollManager::new(),
                 shadow_cache: RefCell::new(ShadowCache::new()),
                 drop_target: None,
@@ -583,26 +599,43 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
         // Update smooth scroll animations and apply positions to scroll state manager
         self.update_smooth_scroll_animations();
 
-        create_tree_root(
-            &self.user_state,
-            &self.view_fn,
-            &self.device_resources.borrow(),
-            &mut self.ui_tree,
-        );
+        // Allow at most 5 layout passes, otherwise assume infinite loop
+        for _ in 0..5 {
+            let mut hook = HookManager {
+                ui_tree: &mut self.ui_tree,
+                scroll_state_manager: &mut self.shell.scroll_state_manager,
+                focus_manager: &mut self.shell.focus_manager,
+                layout_invalidated: false,
+            };
+
+            create_tree_root(
+                &self.user_state,
+                &self.view_fn,
+                &self.device_resources.borrow(),
+                &mut hook,
+            );
+            let invalidated = hook.layout_invalidated;
+
+            let root = self.ui_tree.root;
+
+            let rc = client_rect(hwnd)?;
+            let rc_dip = RectDIP::from(hwnd, rc);
+            self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width);
+            self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height);
+
+            layout::layout(
+                &mut self.ui_tree,
+                root,
+                &mut self.shell.scroll_state_manager,
+            );
+
+            if !invalidated {
+                break;
+            }
+        }
+
         let root = self.ui_tree.root;
-
-        let rc = client_rect(hwnd)?;
-        let rc_dip = RectDIP::from(hwnd, rc);
-        self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width);
-        self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height);
-
-        layout::layout(&mut self.ui_tree, root, &mut self.scroll_state_manager);
-        let commands = layout::paint(
-            &self.shell,
-            &mut self.ui_tree,
-            root,
-            &mut self.scroll_state_manager,
-        );
+        let commands = layout::paint(&self.shell, &mut self.ui_tree, root);
 
         self.clock += dt;
 
@@ -661,7 +694,7 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
 
             // Use centralized geometry helpers for hit-testing
             if let Some(geom) =
-                compute_scrollbar_geom(element, Axis::Y, &state.scroll_state_manager)
+                compute_scrollbar_geom(element, Axis::Y, &state.shell.scroll_state_manager)
             {
                 let tr = geom.thumb_rect;
                 if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
@@ -675,7 +708,7 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
             }
 
             if let Some(geom) =
-                compute_scrollbar_geom(element, Axis::X, &state.scroll_state_manager)
+                compute_scrollbar_geom(element, Axis::X, &state.shell.scroll_state_manager)
             {
                 let tr = geom.thumb_rect;
                 if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
@@ -702,7 +735,8 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
         // Apply current animated positions to the scroll state manager
         for (&element_id, animation) in self.smooth_scroll_manager.get_active_animations() {
             let current_pos = animation.current_position(std::time::Instant::now());
-            self.scroll_state_manager
+            self.shell
+                .scroll_state_manager
                 .set_scroll_position(element_id, current_pos);
         }
     }
@@ -741,12 +775,12 @@ fn create_tree_root<State: 'static, Message>(
     state: &State,
     view_fn: &ViewFn<State, Message>,
     device_resources: &DeviceResources,
-    ui_tree: &mut OwnedUITree<Message>,
+    hook_manager: &mut HookManager<Message>,
 ) {
-    let children = view_fn(state, HookManager { ui_tree });
+    let children = view_fn(state, hook_manager);
     create_tree(
         device_resources,
-        ui_tree,
+        hook_manager.ui_tree,
         Element {
             id: Some(w_id!()),
             background_color: Some(0xFFFFFFFF.into()),
@@ -987,7 +1021,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                 DragAxis::Horizontal => Axis::X,
                             };
                             if let Some(geom) =
-                                compute_scrollbar_geom(el, axis, &state.scroll_state_manager)
+                                compute_scrollbar_geom(el, axis, &state.shell.scroll_state_manager)
                             {
                                 let pos_along = match drag.axis {
                                     DragAxis::Vertical => y,
@@ -1002,11 +1036,12 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                 };
                                 let new_scroll = progress * geom.max_scroll;
                                 let cur = state
+                                    .shell
                                     .scroll_state_manager
                                     .get_scroll_position(drag.element_id);
                                 match drag.axis {
                                     DragAxis::Vertical => {
-                                        state.scroll_state_manager.set_scroll_position(
+                                        state.shell.scroll_state_manager.set_scroll_position(
                                             drag.element_id,
                                             ScrollPosition {
                                                 x: cur.x,
@@ -1015,7 +1050,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                         );
                                     }
                                     DragAxis::Horizontal => {
-                                        state.scroll_state_manager.set_scroll_position(
+                                        state.shell.scroll_state_manager.set_scroll_position(
                                             drag.element_id,
                                             ScrollPosition {
                                                 x: new_scroll,
@@ -1094,7 +1129,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                     } else {
                                         ScrollDirection::Negative
                                     },
-                                    &state.scroll_state_manager,
+                                    &state.shell.scroll_state_manager,
                                 ) {
                                     let mut scroll_lines = 3;
                                     SystemParametersInfoW(
@@ -1115,8 +1150,10 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                     };
 
                                     // Get current scroll position (either from active animation or actual position)
-                                    let current_pos =
-                                        state.scroll_state_manager.get_scroll_position(element_id);
+                                    let current_pos = state
+                                        .shell
+                                        .scroll_state_manager
+                                        .get_scroll_position(element_id);
                                     let current_animated_pos = state
                                         .smooth_scroll_manager
                                         .get_current_position(element_id, current_pos);
@@ -1583,7 +1620,7 @@ fn get_modifiers() -> Modifiers {
 }
 
 pub fn run_event_loop<State: 'static, Message: 'static + Send>(
-    view_fn: impl Fn(&State, HookManager<Message>) -> Element<Message> + 'static,
+    view_fn: impl Fn(&State, &mut HookManager<Message>) -> Element<Message> + 'static,
     update_fn: impl Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
     user_state: State,
     boot_fn: impl Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
