@@ -46,32 +46,33 @@ pub fn set_clipboard_text(hwnd: HWND, s: &str) -> Result<()> {
 pub fn get_clipboard_text(hwnd: HWND) -> Option<String> {
     unsafe {
         if IsClipboardFormatAvailable(CF_UNICODETEXT.0.into()).is_ok()
-            && OpenClipboard(Some(hwnd)).is_ok() {
-                let h = GetClipboardData(CF_UNICODETEXT.0.into());
-                if let Ok(h) = h {
-                    let hg = HGLOBAL(h.0);
-                    let ptr = GlobalLock(hg) as *const u16;
-                    if !ptr.is_null() {
-                        // Read until NUL terminator
-                        let mut out: Vec<u16> = Vec::new();
-                        let mut i = 0isize;
-                        loop {
-                            let v = *ptr.offset(i);
-                            if v == 0 {
-                                break;
-                            }
-                            out.push(v);
-                            i += 1;
+            && OpenClipboard(Some(hwnd)).is_ok()
+        {
+            let h = GetClipboardData(CF_UNICODETEXT.0.into());
+            if let Ok(h) = h {
+                let hg = HGLOBAL(h.0);
+                let ptr = GlobalLock(hg) as *const u16;
+                if !ptr.is_null() {
+                    // Read until NUL terminator
+                    let mut out: Vec<u16> = Vec::new();
+                    let mut i = 0isize;
+                    loop {
+                        let v = *ptr.offset(i);
+                        if v == 0 {
+                            break;
                         }
-                        let _ = GlobalUnlock(hg);
-                        let _ = CloseClipboard();
-                        let s = String::from_utf16_lossy(&out);
-                        // Normalize CRLF to LF for internal text
-                        return Some(s.replace("\r\n", "\n"));
+                        out.push(v);
+                        i += 1;
                     }
+                    let _ = GlobalUnlock(hg);
+                    let _ = CloseClipboard();
+                    let s = String::from_utf16_lossy(&out);
+                    // Normalize CRLF to LF for internal text
+                    return Some(s.replace("\r\n", "\n"));
                 }
-                let _ = CloseClipboard();
             }
+            let _ = CloseClipboard();
+        }
         None
     }
 }

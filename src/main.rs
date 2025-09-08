@@ -395,7 +395,7 @@ lazy_static! {
 fn short_size(size: usize) -> String {
     let size_f = size as f64;
     if size < 1024 {
-        format!("{} B", size)
+        format!("{size} B")
     } else if size < 1024 * 1024 {
         format!("{:.2} KB", size_f / 1024.0)
     } else {
@@ -442,7 +442,7 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
     }
 
     let ScrollPosition {
-        x: scroll_x,
+        x: _scroll_x,
         y: scroll_y,
     } = hook.scroll_state_manager.get_scroll_position(container_id);
 
@@ -472,7 +472,7 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
             ..Default::default()
         }),
         child_gap: gap,
-        padding: padding,
+        padding,
         children: {
             // DWrite runs into precision issues with really long text (it only uses f32)
             // So we have to calculate the width manually with a f64
