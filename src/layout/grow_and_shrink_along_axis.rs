@@ -290,9 +290,9 @@ pub fn grow_and_shrink_along_axis<Message>(
                     inner_content_size += c.computed_height;
                 }
             } else if x_axis {
-                inner_content_size = inner_content_size.max(c.computed_width);
+                inner_content_size = inner_content_size.max(c.computed_width + total_padding);
             } else {
-                inner_content_size = inner_content_size.max(c.computed_height);
+                inner_content_size = inner_content_size.max(c.computed_height + total_padding);
             }
         }
 

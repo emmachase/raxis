@@ -48,6 +48,7 @@ windows-core = "0.61.2"
 windows-numerics = "0.2.0"
 raxis-core = { path = "raxis-core" }
 raxis-proc-macro = { path = "raxis-proc-macro" }
+lazy_static = "1.5.0"
 
 [profile.release]
 strip = true    # Automatically strip symbols from the binary.

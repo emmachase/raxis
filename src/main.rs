@@ -1,7 +1,8 @@
 // #![windows_subsystem = "windows"]
 
-use std::{cell::RefCell, rc::Rc};
+use std::{cell::RefCell, collections::HashSet, rc::Rc};
 
+use lazy_static::lazy_static;
 use raxis::{
     HookManager,
     layout::{
@@ -12,7 +13,7 @@ use raxis::{
             VerticalAlignment,
         },
     },
-    runtime::task::Task,
+    runtime::{font_manager::FontIdentifier, scroll::ScrollPosition, task::Task},
     util::{str::StableString, unique::combine_id},
     w_id,
     widgets::{
@@ -386,20 +387,52 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
     }
 }
 
+const FILE_CONTENTS: &str = include_str!("../ipsum.txt");
+lazy_static! {
+    static ref LINES: Vec<String> = FILE_CONTENTS.lines().map(|s| s.to_string()).collect();
+}
+
+fn short_size(size: usize) -> String {
+    let size_f = size as f64;
+    if size < 1024 {
+        format!("{} B", size)
+    } else if size < 1024 * 1024 {
+        format!("{:.2} KB", size_f / 1024.0)
+    } else {
+        format!("{:.2} MB", size_f / 1024.0 / 1024.0)
+    }
+}
+
 fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
     let container_id = w_id!();
 
-    let total_items = 1000000usize;
-    let line_height_no_gap = 16.0;
-    let gap = 8.0;
+    let mut state = hook.instance(container_id);
+    let max_content_width = state.use_hook(|| Rc::new(RefCell::new(0.0f32))).clone();
+    let max_line_length = state.use_hook(|| Rc::new(RefCell::new(0usize))).clone();
+    let show_more = state
+        .use_hook(|| Rc::new(RefCell::new(HashSet::<usize>::new())))
+        .clone();
+
+    let total_items = LINES.len();
+    let line_height_no_gap = 10.0;
+    let gap = 2.0;
     let padding = BoxAmount::all(8.0);
     let buffer_items_per_side = 2usize;
+
+    let truncate_threshold = 3000;
 
     let line_height = line_height_no_gap + gap;
 
     let container_dims = hook
         .scroll_state_manager
         .get_container_dimensions(container_id);
+
+    let content_dims = hook
+        .scroll_state_manager
+        .get_previous_content_dimensions(container_id);
+
+    let mut max_content_width = max_content_width.borrow_mut();
+    *max_content_width = max_content_width.max(content_dims.0);
 
     let visible_items =
         (container_dims.1 / line_height).ceil() as usize + buffer_items_per_side * 2;
@@ -408,10 +441,10 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
         hook.invalidate_layout();
     }
 
-    let scroll_y = hook
-        .scroll_state_manager
-        .get_scroll_position(container_id)
-        .y;
+    let ScrollPosition {
+        x: scroll_x,
+        y: scroll_y,
+    } = hook.scroll_state_manager.get_scroll_position(container_id);
 
     let pre_scroll_items = (((scroll_y + gap - padding.top) / line_height).floor() as usize)
         .saturating_sub(buffer_items_per_side);
@@ -429,6 +462,7 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
             max: 300.0,
         },
         scroll: Some(ScrollConfig {
+            horizontal: Some(true),
             vertical: Some(true),
             ..Default::default()
         }),
@@ -440,35 +474,88 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
         child_gap: gap,
         padding: padding,
         children: {
+            // DWrite runs into precision issues with really long text (it only uses f32)
+            // So we have to calculate the width manually with a f64
+            // Obviously won't work with special glyphs but what are you gonna do? /shrug
+            const MONO_CHAR_WIDTH: f64 = 6.02411;
+
+            let mut max_line_length = max_line_length.borrow_mut();
+
+            let mut text_children = (pre_scroll_items
+                ..(pre_scroll_items + visible_items).min(total_items))
+                .map(|i| {
+                    if LINES[i].len() > truncate_threshold && !show_more.borrow().contains(&i) {
+                        *max_line_length = max_line_length.max(truncate_threshold);
+
+                        Element {
+                            id: Some(combine_id(w_id!(), i % visible_items)),
+                            height: Sizing::fixed(line_height_no_gap),
+                            children: vec![
+                                Text::new(StableString::Static(&LINES[i][0..truncate_threshold]))
+                                    .with_word_wrap(false)
+                                    .with_font_family(FontIdentifier::System(
+                                        "Lucida Console".to_string(),
+                                    ))
+                                    .with_assisted_width(
+                                        (MONO_CHAR_WIDTH * truncate_threshold as f64) as f32,
+                                    )
+                                    .with_font_size(10.0)
+                                    .as_element()
+                                    .with_id(combine_id(w_id!(), i % visible_items))
+                                    .with_height(Sizing::fixed(line_height_no_gap)),
+                                Button::new()
+                                    .with_click_handler({
+                                        let show_more = show_more.clone();
+                                        move |_, _| {
+                                            show_more.borrow_mut().insert(i);
+                                        }
+                                    })
+                                    .as_element(
+                                        combine_id(w_id!(), i % visible_items),
+                                        Text::new(format!(
+                                            "Show more ({})",
+                                            short_size(LINES[i].len())
+                                        ))
+                                        .with_font_size(8.0),
+                                    ),
+                            ],
+
+                            ..Default::default()
+                        }
+                    } else {
+                        *max_line_length = max_line_length.max(LINES[i].len());
+
+                        Text::new(StableString::Static(&LINES[i]))
+                            .with_word_wrap(false)
+                            .with_font_family(FontIdentifier::System("Lucida Console".to_string()))
+                            .with_font_size(10.0)
+                            .with_assisted_width((MONO_CHAR_WIDTH * LINES[i].len() as f64) as f32)
+                            .as_element()
+                            .with_id(combine_id(w_id!(), i % visible_items))
+                            .with_height(Sizing::fixed(line_height_no_gap))
+                    }
+                })
+                .collect();
+
+            let keep_width = ((*max_line_length as f64 * MONO_CHAR_WIDTH) as f32)
+                .max(*max_content_width - padding.left - padding.right);
+
             let mut children = vec![];
             if pre_scroll_items > 0 {
                 children.push(Element {
                     id: Some(w_id!()),
-                    width: Sizing::fixed(0.0),
+                    width: Sizing::fixed(keep_width),
                     height: Sizing::fixed(line_height * pre_scroll_items as f32 - gap),
                     ..Default::default()
                 });
             }
 
-            children.append(
-                &mut (pre_scroll_items..(pre_scroll_items + visible_items).min(total_items))
-                    .map(|i| {
-                        Text::new(format!("Item {} (real: {})", i, i % visible_items))
-                            .as_element()
-                            .with_id(combine_id(w_id!(), i % visible_items))
-                            .with_height(Sizing::fixed(line_height_no_gap))
-                            .with_border(Border {
-                                width: 1.0,
-                                color: Color::from(0xFF00FFFF),
-                                ..Default::default()
-                            })
-                    })
-                    .collect(),
-            );
+            children.append(&mut text_children);
+
             if post_scroll_items > 0 {
                 children.push(Element {
                     id: Some(w_id!()),
-                    width: Sizing::fixed(0.0),
+                    width: Sizing::fixed(keep_width),
                     height: Sizing::fixed(line_height * post_scroll_items as f32 - gap),
                     ..Default::default()
                 });

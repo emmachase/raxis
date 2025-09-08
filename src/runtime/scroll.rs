@@ -104,6 +104,10 @@ impl ScrollStateManager {
             .entry(element_id)
             .and_modify(|metadata| {
                 metadata.position = current_position;
+                metadata.max_scroll = ScrollPosition {
+                    x: max_scroll_x,
+                    y: max_scroll_y,
+                };
                 metadata.was_at_bottom = was_at_bottom;
                 metadata.was_at_right = was_at_right;
                 metadata.previous_content_dimensions = (content_width, content_height);

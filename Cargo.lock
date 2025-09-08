@@ -620,6 +620,7 @@ dependencies = [
  "const_format",
  "dhat",
  "futures",
+ "lazy_static",
  "raxis-core",
  "raxis-proc-macro",
  "slotmap",

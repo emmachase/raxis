@@ -47,6 +47,8 @@ pub struct Text {
     pub font_id: FontIdentifier,
     pub word_wrap: bool,
     pub caller: &'static Location<'static>,
+
+    pub assisted_width: Option<f32>,
 }
 
 impl Text {
@@ -67,6 +69,8 @@ impl Text {
             font_id: FontIdentifier::system("Segoe UI"),
             word_wrap: true,
             caller: Location::caller(),
+
+            assisted_width: None,
         }
     }
 
@@ -102,6 +106,11 @@ impl Text {
 
     pub fn with_word_wrap(mut self, word_wrap: bool) -> Self {
         self.word_wrap = word_wrap;
+        self
+    }
+
+    pub fn with_assisted_width(mut self, width: f32) -> Self {
+        self.assisted_width = Some(width);
         self
     }
 
@@ -430,7 +439,10 @@ impl<Message> Widget<Message> for Text {
         {
             super::limit_response::SizingForX {
                 min_width: 0.0,
-                preferred_width,
+                preferred_width: self
+                    .assisted_width
+                    .unwrap_or(preferred_width)
+                    .max(preferred_width),
             }
         } else {
             super::limit_response::SizingForX {
