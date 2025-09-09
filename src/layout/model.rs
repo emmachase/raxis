@@ -586,6 +586,7 @@ pub struct UIElement<Message> {
     pub drop_shadow: Option<DropShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
+    pub snap: bool,
 
     // Wrapping support
     pub wrap: bool,
@@ -625,6 +626,7 @@ impl<Message> Default for UIElement<Message> {
             drop_shadow: None,
             border: None,
             z_index: None,
+            snap: false,
             wrap: false,
             wrap_breaks: Vec::new(),
             id: None,
@@ -699,6 +701,7 @@ pub struct Element<Message> {
     pub drop_shadow: Option<DropShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
+    pub snap: bool,
 
     // Wrapping support
     pub wrap: bool,
@@ -821,6 +824,10 @@ impl<Message> Element<Message> {
         }
     }
 
+    pub fn with_snap(self, snap: bool) -> Self {
+        Self { snap, ..self }
+    }
+
     pub fn with_wrap(self, wrap: bool) -> Self {
         Self { wrap, ..self }
     }
@@ -854,6 +861,7 @@ impl<Message> Default for Element<Message> {
             drop_shadow: None,
             border: None,
             z_index: None,
+            snap: false,
             wrap: false,
             id: None,
         }
@@ -882,6 +890,7 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             drop_shadow: element.drop_shadow,
             border: element.border,
             z_index: element.z_index,
+            snap: element.snap,
             wrap: element.wrap,
             wrap_breaks: Vec::new(),
             id: element.id,

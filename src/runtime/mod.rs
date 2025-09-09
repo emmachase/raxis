@@ -36,7 +36,9 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
 use windows::Win32::Foundation::HMODULE;
-use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_IGNORE;
+use windows::Win32::Graphics::Direct2D::Common::{
+    D2D1_ALPHA_MODE_IGNORE, D2D1_ALPHA_MODE_PREMULTIPLIED,
+};
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
     D2D1_DEVICE_CONTEXT_OPTIONS_NONE, ID2D1Bitmap1, ID2D1Device7, ID2D1DeviceContext7,
@@ -50,17 +52,26 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
     ID3D11DeviceContext, ID3D11Texture2D,
 };
+use windows::Win32::Graphics::Dwm::{
+    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DwmEnableBlurBehindWindow,
+    DwmExtendFrameIntoClientArea,
+};
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_ALPHA_MODE_IGNORE, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
+    DXGI_ALPHA_MODE_IGNORE, DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_ALPHA_MODE_STRAIGHT,
+    DXGI_ALPHA_MODE_UNSPECIFIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
+    DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
     DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
     DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
     IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
 };
-use windows::Win32::Graphics::Gdi::{BeginPaint, ClientToScreen, EndPaint, PAINTSTRUCT};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, ClientToScreen, CreateRectRgn, EndPaint, PAINTSTRUCT,
+};
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
+use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
@@ -68,6 +79,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
     PostMessageW, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     SystemParametersInfoW, WM_DPICHANGED, WM_KEYUP, WM_MOUSEWHEEL, WM_TIMER, WM_USER,
+    WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TRANSPARENT,
 };
 use windows::{
     Win32::{
@@ -303,14 +315,16 @@ impl DeviceResources {
                         ..Default::default()
                     };
 
-                    let dxgi_swapchain: IDXGISwapChain1 =
-                        self.dxgi_factory.CreateSwapChainForHwnd(
+                    let dxgi_swapchain: IDXGISwapChain1 = self
+                        .dxgi_factory
+                        .CreateSwapChainForHwnd(
                             &self.d3d_device.cast::<IUnknown>()?,
                             hwnd,
                             &swapchain_desc,
                             None,
                             None as Option<&IDXGIOutput>,
-                        )?;
+                        )
+                        .expect("Failed to create DXGI swapchain");
 
                     self.dxgi_swapchain = Some(dxgi_swapchain);
                     self.dxgi_swapchain.as_ref().unwrap()
@@ -334,7 +348,7 @@ impl DeviceResources {
                 let bitmap_properties = D2D1_BITMAP_PROPERTIES1 {
                     pixelFormat: D2D1_PIXEL_FORMAT {
                         format: DXGI_FORMAT_B8G8R8A8_UNORM,
-                        alphaMode: D2D1_ALPHA_MODE_IGNORE,
+                        alphaMode: D2D1_ALPHA_MODE_PREMULTIPLIED,
                     },
                     dpiX: dpi,
                     dpiY: dpi,
@@ -623,10 +637,13 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
             self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width);
             self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height);
 
+            let dip_scale = dips_scale(hwnd);
+
             layout::layout(
                 &mut self.ui_tree,
                 root,
                 &mut self.shell.scroll_state_manager,
+                dip_scale,
             );
 
             if !invalidated {
@@ -783,7 +800,7 @@ fn create_tree_root<State: 'static, Message>(
         hook_manager.ui_tree,
         Element {
             id: Some(w_id!()),
-            background_color: Some(0xFFFFFFFF.into()),
+            // background_color: Some(0xFFFFFFFF.into()),
             direction: Direction::TopToBottom,
             scroll: Some(ScrollConfig {
                 vertical: Some(true),
@@ -1456,10 +1473,10 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     ) {
                         rt.BeginDraw();
                         let white = D2D1_COLOR_F {
-                            r: 1.0,
-                            g: 1.0,
-                            b: 1.0,
-                            a: 1.0,
+                            r: 0.0,
+                            g: 0.0,
+                            b: 0.0,
+                            a: 0.0,
                         };
                         rt.Clear(Some(&white));
 
@@ -1673,6 +1690,24 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
             Some(hinstance.into()),
             None, // No user data yet
         )?;
+
+        // Enable composition and transparency on the window
+        let bb = DWM_BLURBEHIND {
+            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+            fEnable: true.into(),
+            hRgnBlur: CreateRectRgn(0, 0, -1, -1),
+            ..Default::default()
+        };
+        DwmEnableBlurBehindWindow(hwnd, &bb).unwrap();
+
+        // For Mica effect (Windows 11)
+        let margins = MARGINS {
+            cxLeftWidth: -1,
+            cxRightWidth: -1,
+            cyTopHeight: -1,
+            cyBottomHeight: -1,
+        };
+        DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
 
         // Now create the app state with the hwnd
         let mut app = Application::new(

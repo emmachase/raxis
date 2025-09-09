@@ -76,6 +76,7 @@ pub fn layout<Message>(
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
+    dip_scale: f32,
 ) {
     propagate_inherited_properties(ui_tree, root);
 
@@ -85,7 +86,7 @@ pub fn layout<Message>(
     fit_along_axis(ui_tree, root, Axis::Y);
     grow_and_shrink_along_axis(ui_tree, root, Axis::Y);
 
-    position_elements(ui_tree, root, scroll_state_manager);
+    position_elements(ui_tree, root, scroll_state_manager, dip_scale);
 }
 
 pub const DEFAULT_SCROLLBAR_TRACK_COLOR: u32 = 0x00000033;

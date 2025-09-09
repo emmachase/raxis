@@ -16,7 +16,10 @@ futures = "0.3.31"
 slotmap = "1.0.7"
 smol = { version = "2.0.2", optional = true }
 smol_str = "0.3.2"
-tokio = { version = "1.0", features = ["rt-multi-thread", "macros"], optional = true }
+tokio = { version = "1.0", features = [
+    "rt-multi-thread",
+    "macros",
+], optional = true }
 string-interner = "0.19.0"
 unicode-segmentation = "1.11"
 windows = { version = "0.61.3", features = [
@@ -39,6 +42,7 @@ windows = { version = "0.61.3", features = [
     "Win32_System_Com",
     "Win32_System_SystemServices",
     "Win32_System_Com_StructuredStorage",
+    "Win32_UI_Controls",
     "Win32_UI_Input_KeyboardAndMouse",
     "Win32_UI_Input_Ime",
     "Win32_UI_HiDpi",

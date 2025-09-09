@@ -11,6 +11,7 @@ pub fn position_elements<Message>(
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
     scroll_state_manager: &mut ScrollStateManager,
+    dip_scale: f32,
 ) {
     // Clone root id_map to allow easy lookup while mutably borrowing slots in closures
     let root_id_map = ui_tree.slots[root].id_map.clone();
@@ -47,6 +48,93 @@ pub fn position_elements<Message>(
         },
         |ui_tree, key, parent| {
             let slots = &mut ui_tree.slots;
+
+            // Floating anchoring
+            if let Some(floating) = slots[key].floating.clone() {
+                // Determine anchor element (default to parent)
+                let mut anchor = parent;
+                if let Some(anchor_id) = floating.anchor_id.as_ref() {
+                    if let Some(found) = root_id_map.get(anchor_id).copied() {
+                        anchor = Some(found);
+                    } else {
+                        anchor = Some(key);
+                    }
+                }
+
+                if let Some(anchor_key) = anchor {
+                    let anchor_x = slots[anchor_key].x;
+                    let anchor_y = slots[anchor_key].y;
+                    let anchor_w = slots[anchor_key].computed_width;
+                    let anchor_h = slots[anchor_key].computed_height;
+
+                    let mut anchor_point_x = anchor_x;
+                    let mut anchor_point_y = anchor_y;
+
+                    if let Some(anchor_align) = floating.anchor.as_ref() {
+                        if let Some(ax) = anchor_align.x {
+                            match ax {
+                                HorizontalAlignment::Left => {}
+                                HorizontalAlignment::Center => {
+                                    anchor_point_x = anchor_x + anchor_w / 2.0
+                                }
+                                HorizontalAlignment::Right => anchor_point_x = anchor_x + anchor_w,
+                            }
+                        }
+                        if let Some(ay) = anchor_align.y {
+                            match ay {
+                                VerticalAlignment::Top => {}
+                                VerticalAlignment::Center => {
+                                    anchor_point_y = anchor_y + anchor_h / 2.0
+                                }
+                                VerticalAlignment::Bottom => anchor_point_y = anchor_y + anchor_h,
+                            }
+                        }
+                    }
+
+                    let element_w = slots[key].computed_width;
+                    let element_h = slots[key].computed_height;
+
+                    let mut align_offset_x = 0.0;
+                    let mut align_offset_y = 0.0;
+
+                    if let Some(align) = floating.align.as_ref() {
+                        if let Some(ax) = align.x {
+                            match ax {
+                                HorizontalAlignment::Left => {}
+                                HorizontalAlignment::Center => align_offset_x = -element_w / 2.0,
+                                HorizontalAlignment::Right => align_offset_x = -element_w,
+                            }
+                        }
+                        if let Some(ay) = align.y {
+                            match ay {
+                                VerticalAlignment::Top => {}
+                                VerticalAlignment::Center => align_offset_y = -element_h / 2.0,
+                                VerticalAlignment::Bottom => align_offset_y = -element_h,
+                            }
+                        }
+                    }
+
+                    let offset_x = floating.offset.as_ref().and_then(|o| o.x).unwrap_or(0.0);
+                    let offset_y = floating.offset.as_ref().and_then(|o| o.y).unwrap_or(0.0);
+
+                    slots[key].x = anchor_point_x + align_offset_x + offset_x;
+                    slots[key].y = anchor_point_y + align_offset_y + offset_y;
+                } else {
+                    // No anchor present; nothing to do
+                }
+            }
+
+            // First, snap if snap is enabled
+            if slots[key].snap {
+                // Round to nearest dip_scale
+
+                slots[key].x = (slots[key].x / dip_scale).round() * dip_scale;
+                slots[key].y = (slots[key].y / dip_scale).round() * dip_scale;
+                slots[key].computed_width =
+                    (slots[key].computed_width / dip_scale).round() * dip_scale;
+                slots[key].computed_height =
+                    (slots[key].computed_height / dip_scale).round() * dip_scale;
+            }
 
             // Scroll handling
             let mut scroll_x: f32 = 0.0;
@@ -132,81 +220,6 @@ pub fn position_elements<Message>(
                     slots[key].computed_width,
                     slots[key].computed_height,
                 );
-            }
-
-            // Floating anchoring
-            if let Some(floating) = slots[key].floating.clone() {
-                // Determine anchor element (default to parent)
-                let mut anchor = parent;
-                if let Some(anchor_id) = floating.anchor_id.as_ref() {
-                    if let Some(found) = root_id_map.get(anchor_id).copied() {
-                        anchor = Some(found);
-                    } else {
-                        anchor = Some(key);
-                    }
-                }
-
-                if let Some(anchor_key) = anchor {
-                    let anchor_x = slots[anchor_key].x;
-                    let anchor_y = slots[anchor_key].y;
-                    let anchor_w = slots[anchor_key].computed_width;
-                    let anchor_h = slots[anchor_key].computed_height;
-
-                    let mut anchor_point_x = anchor_x;
-                    let mut anchor_point_y = anchor_y;
-
-                    if let Some(anchor_align) = floating.anchor.as_ref() {
-                        if let Some(ax) = anchor_align.x {
-                            match ax {
-                                HorizontalAlignment::Left => {}
-                                HorizontalAlignment::Center => {
-                                    anchor_point_x = anchor_x + anchor_w / 2.0
-                                }
-                                HorizontalAlignment::Right => anchor_point_x = anchor_x + anchor_w,
-                            }
-                        }
-                        if let Some(ay) = anchor_align.y {
-                            match ay {
-                                VerticalAlignment::Top => {}
-                                VerticalAlignment::Center => {
-                                    anchor_point_y = anchor_y + anchor_h / 2.0
-                                }
-                                VerticalAlignment::Bottom => anchor_point_y = anchor_y + anchor_h,
-                            }
-                        }
-                    }
-
-                    let element_w = slots[key].computed_width;
-                    let element_h = slots[key].computed_height;
-
-                    let mut align_offset_x = 0.0;
-                    let mut align_offset_y = 0.0;
-
-                    if let Some(align) = floating.align.as_ref() {
-                        if let Some(ax) = align.x {
-                            match ax {
-                                HorizontalAlignment::Left => {}
-                                HorizontalAlignment::Center => align_offset_x = -element_w / 2.0,
-                                HorizontalAlignment::Right => align_offset_x = -element_w,
-                            }
-                        }
-                        if let Some(ay) = align.y {
-                            match ay {
-                                VerticalAlignment::Top => {}
-                                VerticalAlignment::Center => align_offset_y = -element_h / 2.0,
-                                VerticalAlignment::Bottom => align_offset_y = -element_h,
-                            }
-                        }
-                    }
-
-                    let offset_x = floating.offset.as_ref().and_then(|o| o.x).unwrap_or(0.0);
-                    let offset_y = floating.offset.as_ref().and_then(|o| o.y).unwrap_or(0.0);
-
-                    slots[key].x = anchor_point_x + align_offset_x + offset_x;
-                    slots[key].y = anchor_point_y + align_offset_y + offset_y;
-                } else {
-                    // No anchor present; nothing to do
-                }
             }
 
             // Position non-floating children according to direction and alignment

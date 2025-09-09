@@ -207,7 +207,7 @@ impl<Message> Widget<Message> for Rule {
         match self.orientation {
             RuleOrientation::Horizontal => {
                 // Draw a horizontal line across the center of the available area
-                let y = (rect.y + rect.height / 2.0 + 0.5).round_ties_even() - 0.5;
+                let y = (rect.y + rect.height / 2.0 + 0.5).round() - 0.5;
                 recorder.draw_line(
                     rect.x,
                     y,
@@ -221,7 +221,7 @@ impl<Message> Widget<Message> for Rule {
             }
             RuleOrientation::Vertical => {
                 // Draw a vertical line down the center of the available area
-                let x = (rect.x + rect.width / 2.0).round_ties_even();
+                let x = (rect.x + rect.width / 2.0 + 0.5).round() - 0.5;
                 recorder.draw_line(
                     x,
                     rect.y,
