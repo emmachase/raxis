@@ -3,6 +3,8 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FONT_FAMILY_MODEL_TYPOGRAPHIC, DWRITE_LINE_SPACING,
     DWRITE_LINE_SPACING_METHOD_PROPORTIONAL, IDWriteFactory6, IDWriteFontCollection,
     IDWriteFontSetBuilder1, IDWriteInMemoryFontFileLoader, IDWriteTextFormat3,
+    DWRITE_FONT_AXIS_VALUE, DWRITE_FONT_AXIS_TAG_WEIGHT, DWRITE_FONT_AXIS_TAG_WIDTH,
+    DWRITE_FONT_AXIS_TAG_ITALIC, DWRITE_FONT_AXIS_TAG_SLANT,
 };
 use windows::core::{PCWSTR, Result};
 
@@ -53,6 +55,153 @@ pub struct FontManager {
     custom_font_collection: Option<IDWriteFontCollection>,
     font_set_builder: Option<IDWriteFontSetBuilder1>,
     memory_font_loader: Option<IDWriteInMemoryFontFileLoader>,
+}
+
+/// Font weight values (100-900, where 400 is normal, 700 is bold)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FontWeight {
+    Thin,        // 100
+    ExtraLight,  // 200
+    Light,       // 300
+    Normal,      // 400
+    Medium,      // 500
+    SemiBold,    // 600
+    Bold,        // 700
+    ExtraBold,   // 800
+    Black,       // 900
+    Custom(f32), // Custom weight value
+}
+
+impl FontWeight {
+    pub fn value(&self) -> f32 {
+        match self {
+            FontWeight::Thin => 100.0,
+            FontWeight::ExtraLight => 200.0,
+            FontWeight::Light => 300.0,
+            FontWeight::Normal => 400.0,
+            FontWeight::Medium => 500.0,
+            FontWeight::SemiBold => 600.0,
+            FontWeight::Bold => 700.0,
+            FontWeight::ExtraBold => 800.0,
+            FontWeight::Black => 900.0,
+            FontWeight::Custom(value) => *value,
+        }
+    }
+}
+
+impl Default for FontWeight {
+    fn default() -> Self {
+        FontWeight::Normal
+    }
+}
+
+/// Font style (italic/oblique)
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FontStyle {
+    Normal,
+    Italic,
+    Oblique(f32), // Custom oblique angle
+}
+
+impl FontStyle {
+    pub fn italic_value(&self) -> f32 {
+        match self {
+            FontStyle::Normal => 0.0,
+            FontStyle::Italic => 1.0,
+            FontStyle::Oblique(_) => 1.0,
+        }
+    }
+    
+    pub fn slant_value(&self) -> f32 {
+        match self {
+            FontStyle::Normal => 0.0,
+            FontStyle::Italic => -20.0, // Standard italic slant
+            FontStyle::Oblique(angle) => *angle,
+        }
+    }
+}
+
+impl Default for FontStyle {
+    fn default() -> Self {
+        FontStyle::Normal
+    }
+}
+
+/// Font width/stretch values
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FontWidth {
+    UltraCondensed, // 50%
+    ExtraCondensed, // 62.5%
+    Condensed,      // 75%
+    SemiCondensed,  // 87.5%
+    Normal,         // 100%
+    SemiExpanded,   // 112.5%
+    Expanded,       // 125%
+    ExtraExpanded,  // 150%
+    UltraExpanded,  // 200%
+    Custom(f32),    // Custom width percentage
+}
+
+impl FontWidth {
+    pub fn value(&self) -> f32 {
+        match self {
+            FontWidth::UltraCondensed => 50.0,
+            FontWidth::ExtraCondensed => 62.5,
+            FontWidth::Condensed => 75.0,
+            FontWidth::SemiCondensed => 87.5,
+            FontWidth::Normal => 100.0,
+            FontWidth::SemiExpanded => 112.5,
+            FontWidth::Expanded => 125.0,
+            FontWidth::ExtraExpanded => 150.0,
+            FontWidth::UltraExpanded => 200.0,
+            FontWidth::Custom(value) => *value,
+        }
+    }
+}
+
+impl Default for FontWidth {
+    fn default() -> Self {
+        FontWidth::Normal
+    }
+}
+
+/// Collection of font axes for variable font support
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct FontAxes {
+    pub weight: FontWeight,
+    pub style: FontStyle,
+    pub width: FontWidth,
+}
+
+impl Default for FontAxes {
+    fn default() -> Self {
+        Self {
+            weight: FontWeight::default(),
+            style: FontStyle::default(),
+            width: FontWidth::default(),
+        }
+    }
+}
+
+impl FontAxes {
+    pub fn new() -> Self {
+        Self::default()
+    }
+    
+    pub fn with_weight(mut self, weight: FontWeight) -> Self {
+        self.weight = weight;
+        self
+    }
+    
+    pub fn with_style(mut self, style: FontStyle) -> Self {
+        self.style = style;
+        self
+    }
+    
+    pub fn with_width(mut self, width: FontWidth) -> Self {
+        self.width = width;
+        self
+    }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -185,6 +334,7 @@ impl FontManager {
         &self,
         font_id: &FontIdentifier,
         font_size: f32,
+        font_axes: FontAxes,
         line_spacing: Option<LineSpacing>,
         locale: &str,
     ) -> Result<IDWriteTextFormat3> {
@@ -198,29 +348,29 @@ impl FontManager {
                 FontIdentifier::System(_) => None, // Use system collection (default)
             };
 
-            let font_axes = [
-                // DWRITE_FONT_AXIS_VALUE {
-                //     axisTag: DWRITE_FONT_AXIS_TAG_WEIGHT,
-                //     value: 400.0,
-                // },
-                // DWRITE_FONT_AXIS_VALUE {
-                //     axisTag: DWRITE_FONT_AXIS_TAG_WIDTH,
-                //     value: 100.0,
-                // },
-                // DWRITE_FONT_AXIS_VALUE {
-                //     axisTag: DWRITE_FONT_AXIS_TAG_ITALIC,
-                //     value: 0.0,
-                // },
-                // DWRITE_FONT_AXIS_VALUE {
-                //     axisTag: DWRITE_FONT_AXIS_TAG_SLANT,
-                //     value: 0.0,
-                // },
+            let font_axis_values = [
+                DWRITE_FONT_AXIS_VALUE {
+                    axisTag: DWRITE_FONT_AXIS_TAG_WEIGHT,
+                    value: font_axes.weight.value(),
+                },
+                DWRITE_FONT_AXIS_VALUE {
+                    axisTag: DWRITE_FONT_AXIS_TAG_WIDTH,
+                    value: font_axes.width.value(),
+                },
+                DWRITE_FONT_AXIS_VALUE {
+                    axisTag: DWRITE_FONT_AXIS_TAG_ITALIC,
+                    value: font_axes.style.italic_value(),
+                },
+                DWRITE_FONT_AXIS_VALUE {
+                    axisTag: DWRITE_FONT_AXIS_TAG_SLANT,
+                    value: font_axes.style.slant_value(),
+                },
             ];
 
             let format = self.dwrite_factory.CreateTextFormat(
                 PCWSTR(family_name_wide.as_ptr()),
                 font_collection,
-                &font_axes,
+                &font_axis_values,
                 font_size,
                 PCWSTR(locale_wide.as_ptr()),
             )?;
@@ -300,10 +450,11 @@ impl GlobalFontManager {
     pub fn create_text_format(
         font_id: &FontIdentifier,
         font_size: f32,
+        font_axes: FontAxes,
         line_spacing: Option<LineSpacing>,
         locale: &str,
     ) -> Result<IDWriteTextFormat3> {
-        Self::with(|manager| manager.create_text_format(font_id, font_size, line_spacing, locale))
+        Self::with(|manager| manager.create_text_format(font_id, font_size, font_axes, line_spacing, locale))
     }
 }
 

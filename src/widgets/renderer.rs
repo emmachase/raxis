@@ -918,4 +918,58 @@ impl Renderer<'_> {
             self.render_target.SetTransform(&current_transform);
         }
     }
+
+    /// Draw a line with optional dash style and stroke cap
+    pub fn draw_line(
+        &self,
+        start_x: f32,
+        start_y: f32,
+        end_x: f32,
+        end_y: f32,
+        color: Color,
+        stroke_width: f32,
+        dash_style: Option<&StrokeDashStyle>,
+        stroke_cap: Option<StrokeLineCap>,
+    ) {
+        unsafe {
+            // Set brush color
+            self.brush.SetColor(&D2D1_COLOR_F {
+                r: color.r,
+                g: color.g,
+                b: color.b,
+                a: color.a,
+            });
+
+            let start_point = Vector2 {
+                X: start_x,
+                Y: start_y,
+            };
+            let end_point = Vector2 {
+                X: end_x,
+                Y: end_y,
+            };
+
+            // Create stroke style if needed (for dash patterns or custom caps)
+            let stroke_style = if dash_style.is_some() || stroke_cap.is_some() {
+                // Convert Option<&StrokeDashStyle> to &Option<StrokeDashStyle>
+                let owned_dash_style = dash_style.cloned();
+                self.create_stroke_style(
+                    &owned_dash_style,
+                    stroke_cap.unwrap_or(StrokeLineCap::Square),
+                    StrokeLineJoin::Miter, // Line join doesn't matter for single lines
+                )
+            } else {
+                None
+            };
+
+            // Draw the line
+            self.render_target.DrawLine(
+                start_point,
+                end_point,
+                self.brush,
+                stroke_width,
+                stroke_style.as_ref(),
+            );
+        }
+    }
 }

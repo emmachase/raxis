@@ -21,6 +21,7 @@ pub mod dragdrop;
 pub mod drop_target;
 pub mod mouse_area;
 pub mod renderer;
+pub mod rule;
 pub mod spinner;
 pub mod svg;
 pub mod svg_path;

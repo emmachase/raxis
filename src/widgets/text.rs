@@ -13,7 +13,7 @@ use windows::core::Result;
 use crate::gfx::RectDIP;
 use crate::layout::UIArenas;
 use crate::layout::model::{Color, Element};
-use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing};
+use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing, FontAxes, FontWeight, FontStyle, FontWidth};
 use crate::util::str::StableString;
 use crate::util::unique::id_from_location;
 use crate::widgets::{Bounds, Instance, Widget, widget};
@@ -45,6 +45,7 @@ pub struct Text {
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_id: FontIdentifier,
+    pub font_axes: FontAxes,
     pub word_wrap: bool,
     pub caller: &'static Location<'static>,
 
@@ -67,6 +68,7 @@ impl Text {
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_id: FontIdentifier::system("Segoe UI"),
+            font_axes: FontAxes::default(),
             word_wrap: true,
             caller: Location::caller(),
 
@@ -114,6 +116,36 @@ impl Text {
         self
     }
 
+    pub fn with_font_axes(mut self, font_axes: FontAxes) -> Self {
+        self.font_axes = font_axes;
+        self
+    }
+
+    pub fn with_font_weight(mut self, weight: FontWeight) -> Self {
+        self.font_axes.weight = weight;
+        self
+    }
+
+    pub fn with_font_style(mut self, style: FontStyle) -> Self {
+        self.font_axes.style = style;
+        self
+    }
+
+    pub fn with_font_width(mut self, width: FontWidth) -> Self {
+        self.font_axes.width = width;
+        self
+    }
+
+    pub fn bold(mut self) -> Self {
+        self.font_axes.weight = FontWeight::Bold;
+        self
+    }
+
+    pub fn italic(mut self) -> Self {
+        self.font_axes.style = FontStyle::Italic;
+        self
+    }
+
     pub fn as_element<Message>(self) -> Element<Message> {
         let id = id_from_location(self.caller);
         Element {
@@ -145,6 +177,7 @@ struct TextWidgetState {
     cached_font_size: f32,
     cached_line_spacing: Option<LineSpacing>,
     cached_font_id: FontIdentifier,
+    cached_font_axes: FontAxes,
     cached_text_alignment: TextAlignment,
     cached_paragraph_alignment: ParagraphAlignment,
     cached_word_wrap: bool,
@@ -164,13 +197,14 @@ impl TextWidgetState {
         dwrite_factory: IDWriteFactory6,
         font_id: &FontIdentifier,
         font_size: f32,
+        font_axes: FontAxes,
         line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
         word_wrap: bool,
     ) -> Result<Self> {
         let text_format =
-            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
+            GlobalFontManager::create_text_format(font_id, font_size, font_axes, line_spacing, "en-us")?;
 
         let text_format = unsafe {
             // Set text alignment
@@ -216,6 +250,7 @@ impl TextWidgetState {
             cached_font_size: font_size,
             cached_line_spacing: line_spacing,
             cached_font_id: font_id.clone(),
+            cached_font_axes: font_axes,
             cached_text_alignment: text_alignment,
             cached_paragraph_alignment: paragraph_alignment,
             cached_word_wrap: word_wrap,
@@ -238,6 +273,7 @@ impl TextWidgetState {
         &self,
         font_id: &FontIdentifier,
         font_size: f32,
+        font_axes: FontAxes,
         line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
@@ -245,6 +281,7 @@ impl TextWidgetState {
     ) -> bool {
         self.cached_font_id != *font_id
             || self.cached_font_size != font_size
+            || self.cached_font_axes != font_axes
             || self.cached_line_spacing != line_spacing
             || self.cached_text_alignment != text_alignment
             || self.cached_paragraph_alignment != paragraph_alignment
@@ -255,13 +292,14 @@ impl TextWidgetState {
         &mut self,
         font_id: &FontIdentifier,
         font_size: f32,
+        font_axes: FontAxes,
         line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
         word_wrap: bool,
     ) -> Result<()> {
         self.text_format =
-            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
+            GlobalFontManager::create_text_format(font_id, font_size, font_axes, line_spacing, "en-us")?;
 
         unsafe {
             // Set text alignment
@@ -301,6 +339,8 @@ impl TextWidgetState {
         // Update cached values
         self.cached_font_id = font_id.clone();
         self.cached_font_size = font_size;
+        self.cached_font_axes = font_axes;
+        self.cached_line_spacing = line_spacing;
         self.cached_text_alignment = text_alignment;
         self.cached_paragraph_alignment = paragraph_alignment;
         self.cached_word_wrap = word_wrap;
@@ -417,6 +457,7 @@ impl<Message> Widget<Message> for Text {
             device_resources.dwrite_factory.clone(),
             &self.font_id,
             self.font_size,
+            self.font_axes,
             self.line_spacing,
             self.text_alignment,
             self.paragraph_alignment,
@@ -503,6 +544,7 @@ impl<Message> Widget<Message> for Text {
         if state.needs_text_format_rebuild(
             &self.font_id,
             self.font_size,
+            self.font_axes,
             self.line_spacing,
             self.text_alignment,
             self.paragraph_alignment,
@@ -511,6 +553,7 @@ impl<Message> Widget<Message> for Text {
             let _ = state.rebuild_text_format(
                 &self.font_id,
                 self.font_size,
+                self.font_axes,
                 self.line_spacing,
                 self.text_alignment,
                 self.paragraph_alignment,

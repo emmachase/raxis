@@ -22,7 +22,7 @@ pub struct Color {
 
 impl Default for Color {
     fn default() -> Self {
-        Color::BLACK
+        Color::default()
     }
 }
 
@@ -40,16 +40,28 @@ impl Color {
         b: 1.0,
         a: 1.0,
     };
+
+    pub const fn default() -> Self {
+        Self::BLACK
+    }
+
+    pub const fn from_rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self { r, g, b, a }
+    }
+
+    pub const fn from_hex(hex: u32) -> Self {
+        Self {
+            r: (0xFF & (hex >> 24)) as f32 / 255.0,
+            g: (0xFF & (hex >> 16)) as f32 / 255.0,
+            b: (0xFF & (hex >> 8)) as f32 / 255.0,
+            a: (0xFF & hex) as f32 / 255.0,
+        }
+    }
 }
 
 impl From<u32> for Color {
     fn from(color: u32) -> Self {
-        Color {
-            r: (0xFF & (color >> 24)) as f32 / 255.0,
-            g: (0xFF & (color >> 16)) as f32 / 255.0,
-            b: (0xFF & (color >> 8)) as f32 / 255.0,
-            a: (0xFF & color) as f32 / 255.0,
-        }
+        Color::from_hex(color)
     }
 }
 
@@ -368,6 +380,16 @@ pub struct DropShadow {
 }
 
 impl DropShadow {
+    pub const fn default() -> Self {
+        Self {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            spread_radius: 0.0,
+            blur_radius: 0.0,
+            color: Color::default(),
+        }
+    }
+
     pub fn new(
         offset_x: f32,
         offset_y: f32,
@@ -801,6 +823,13 @@ impl<Message> Element<Message> {
 
     pub fn with_wrap(self, wrap: bool) -> Self {
         Self { wrap, ..self }
+    }
+
+    pub fn with_widget(self, widget: impl Widget<Message> + 'static) -> Self {
+        Self {
+            content: Some(Box::new(widget)),
+            ..self
+        }
     }
 }
 

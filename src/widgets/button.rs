@@ -47,12 +47,7 @@ impl Default for ButtonStyle {
             },
             border: Some(Border {
                 width: 1.0,
-                color: Color {
-                    r: 0.7,
-                    g: 0.7,
-                    b: 0.7,
-                    a: 1.0,
-                },
+                color: Color::from(0x00000033),
                 ..Default::default()
             }),
             border_radius: None,
@@ -89,12 +84,7 @@ impl Default for ButtonStyleSet {
                 },
                 border: Some(Border {
                     width: 1.0,
-                    color: Color {
-                        r: 0.6,
-                        g: 0.6,
-                        b: 0.6,
-                        a: 1.0,
-                    },
+                    color: Color::from(0x00000033),
                     ..Default::default()
                 }),
                 border_radius: None,
@@ -115,12 +105,7 @@ impl Default for ButtonStyleSet {
                 },
                 border: Some(Border {
                     width: 1.0,
-                    color: Color {
-                        r: 0.5,
-                        g: 0.5,
-                        b: 0.5,
-                        a: 1.0,
-                    },
+                    color: Color::from(0x00000033),
                     ..Default::default()
                 }),
                 border_radius: None,
@@ -139,16 +124,7 @@ impl Default for ButtonStyleSet {
                     b: 0.6,
                     a: 1.0,
                 },
-                border: Some(Border {
-                    width: 1.0,
-                    color: Color {
-                        r: 0.8,
-                        g: 0.8,
-                        b: 0.8,
-                        a: 1.0,
-                    },
-                    ..Default::default()
-                }),
+                border: None,
                 border_radius: None,
                 drop_shadow: None,
             },
@@ -192,6 +168,11 @@ impl<Message: 'static + Send> Button<Message> {
 
     pub fn disabled(mut self) -> Self {
         self.enabled = false;
+        self
+    }
+
+    pub fn enabled(mut self, enabled: bool) -> Self {
+        self.enabled = enabled;
         self
     }
 
@@ -340,16 +321,7 @@ impl ButtonWidgetState {
 
         // Draw button border
         if let Some(border) = &style.border {
-            if let Some(border_radius) = &style.border_radius {
-                recorder.draw_rounded_rectangle_stroked(
-                    &bounds,
-                    border_radius,
-                    border.color,
-                    border.width,
-                );
-            } else {
-                recorder.draw_rectangle(&bounds, border.color, border.width);
-            }
+            recorder.draw_border(&bounds, style.border_radius.as_ref(), border);
         }
     }
 }

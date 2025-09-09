@@ -146,6 +146,28 @@ impl CommandExecutor {
             DrawCommand::StrokePathGeometry { rect, .. } => {
                 Self::rect_intersects_bounds(rect, bounds)
             }
+            DrawCommand::DrawLine {
+                start_x,
+                start_y,
+                end_x,
+                end_y,
+                stroke_width,
+                ..
+            } => {
+                // Create a bounding rect for the line, expanded by stroke width
+                let min_x = start_x.min(*end_x) - stroke_width / 2.0;
+                let min_y = start_y.min(*end_y) - stroke_width / 2.0;
+                let max_x = start_x.max(*end_x) + stroke_width / 2.0;
+                let max_y = start_y.max(*end_y) + stroke_width / 2.0;
+                
+                let line_rect = RectDIP {
+                    x: min_x,
+                    y: min_y,
+                    width: max_x - min_x,
+                    height: max_y - min_y,
+                };
+                Self::rect_intersects_bounds(&line_rect, bounds)
+            }
         }
     }
 
@@ -399,6 +421,28 @@ impl CommandExecutor {
                         *scale_y,
                         *stroke_cap,
                         *stroke_join,
+                    );
+                }
+
+                DrawCommand::DrawLine {
+                    start_x,
+                    start_y,
+                    end_x,
+                    end_y,
+                    color,
+                    stroke_width,
+                    dash_style,
+                    stroke_cap,
+                } => {
+                    renderer.draw_line(
+                        *start_x,
+                        *start_y,
+                        *end_x,
+                        *end_y,
+                        *color,
+                        *stroke_width,
+                        dash_style.as_ref(),
+                        *stroke_cap,
                     );
                 }
             }

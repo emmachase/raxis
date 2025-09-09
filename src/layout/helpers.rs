@@ -1,6 +1,4 @@
-use crate::layout::model::{
-    Color, Direction, Element, HorizontalAlignment, Sizing, VerticalAlignment,
-};
+use crate::layout::model::{Direction, Element, HorizontalAlignment, Sizing, VerticalAlignment};
 
 pub fn row<Message>(children: Vec<Element<Message>>) -> Element<Message> {
     Element {
@@ -39,55 +37,6 @@ pub fn center<Message>(content: impl Into<Element<Message>>) -> Element<Message>
         }],
         vertical_alignment: VerticalAlignment::Center,
         ..Default::default()
-    }
-}
-
-#[derive(Debug, Clone, Default)]
-pub struct Rule {
-    direction: Direction,
-    color: Color,
-}
-
-impl Rule {
-    pub fn horizontal() -> Self {
-        Self {
-            direction: Direction::LeftToRight,
-            ..Default::default()
-        }
-    }
-
-    pub fn vertical() -> Self {
-        Self {
-            direction: Direction::TopToBottom,
-            ..Default::default()
-        }
-    }
-
-    pub fn with_color(mut self, color: impl Into<Color>) -> Self {
-        self.color = color.into();
-        self
-    }
-
-    pub fn as_element<Message>(self) -> Element<Message> {
-        self.into()
-    }
-}
-
-impl<Message> From<Rule> for Element<Message> {
-    fn from(rule: Rule) -> Self {
-        Element {
-            direction: rule.direction,
-            width: match rule.direction {
-                Direction::LeftToRight => Sizing::grow(),
-                Direction::TopToBottom => Sizing::fixed(1.0),
-            },
-            height: match rule.direction {
-                Direction::LeftToRight => Sizing::fixed(1.0),
-                Direction::TopToBottom => Sizing::grow(),
-            },
-            background_color: Some(rule.color),
-            ..Default::default()
-        }
     }
 }
 

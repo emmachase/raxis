@@ -1,5 +1,5 @@
 use crate::gfx::RectDIP;
-use crate::layout::model::{BorderRadius, Color, DropShadow, StrokeLineCap, StrokeLineJoin};
+use crate::layout::model::{BorderRadius, Color, DropShadow, StrokeLineCap, StrokeLineJoin, StrokeDashStyle};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1PathGeometry, ID2D1SvgDocument};
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
@@ -93,6 +93,17 @@ pub enum DrawCommand {
         scale_y: f32,
         stroke_cap: Option<StrokeLineCap>,
         stroke_join: Option<StrokeLineJoin>,
+    },
+    /// Draw a line
+    DrawLine {
+        start_x: f32,
+        start_y: f32,
+        end_x: f32,
+        end_y: f32,
+        color: Color,
+        stroke_width: f32,
+        dash_style: Option<StrokeDashStyle>,
+        stroke_cap: Option<StrokeLineCap>,
     },
 }
 

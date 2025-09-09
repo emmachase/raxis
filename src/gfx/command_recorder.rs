@@ -1,4 +1,4 @@
-use crate::layout::model::{Border, BorderRadius, Color, DropShadow};
+use crate::layout::model::{Border, BorderRadius, Color, DropShadow, StrokeDashStyle};
 use crate::{
     gfx::{
         RectDIP,
@@ -237,6 +237,30 @@ impl CommandRecorder {
             scale_y,
             stroke_cap,
             stroke_join,
+        });
+    }
+
+    /// Record drawing a line
+    pub fn draw_line(
+        &mut self,
+        start_x: f32,
+        start_y: f32,
+        end_x: f32,
+        end_y: f32,
+        color: impl Into<Color>,
+        stroke_width: f32,
+        dash_style: Option<StrokeDashStyle>,
+        stroke_cap: Option<StrokeLineCap>,
+    ) {
+        self.commands.push(DrawCommand::DrawLine {
+            start_x,
+            start_y,
+            end_x,
+            end_y,
+            color: color.into(),
+            stroke_width,
+            dash_style,
+            stroke_cap,
         });
     }
 }

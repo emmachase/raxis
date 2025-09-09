@@ -20,7 +20,7 @@ use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
 use crate::layout::model::Color;
 use crate::runtime::clipboard::get_clipboard_text;
-use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing};
+use crate::runtime::font_manager::{FontAxes, FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
     Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
@@ -716,8 +716,13 @@ impl<Message> WidgetState<Message> {
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
     ) -> Result<Self> {
-        let text_format =
-            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
+        let text_format = GlobalFontManager::create_text_format(
+            font_id,
+            font_size,
+            FontAxes::default(),
+            line_spacing,
+            "en-us",
+        )?;
 
         let text_format = unsafe {
             // Set text alignment
@@ -809,8 +814,13 @@ impl<Message> WidgetState<Message> {
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
     ) -> Result<()> {
-        self.text_format =
-            GlobalFontManager::create_text_format(font_id, font_size, line_spacing, "en-us")?;
+        self.text_format = GlobalFontManager::create_text_format(
+            font_id,
+            font_size,
+            FontAxes::default(),
+            line_spacing,
+            "en-us",
+        )?;
 
         unsafe {
             // Set text alignment

@@ -243,9 +243,6 @@ struct Application<State, Message> {
 
     smooth_scroll_manager: SmoothScrollManager,
 
-    // Shadow bitmap cache for performance optimization
-    shadow_cache: RefCell<ShadowCache>,
-
     // Keep the window's OLE drop target alive for the lifetime of the window
     drop_target: Option<IDropTarget>,
 
@@ -280,6 +277,8 @@ pub struct DeviceResources {
     pub d2d_factory: ID2D1Factory8,
     pub d3d_context: ID3D11DeviceContext,
     pub d3d_device: ID3D11Device,
+
+    pub shadow_cache: RefCell<ShadowCache>,
 }
 
 impl DeviceResources {
@@ -375,6 +374,7 @@ impl DeviceResources {
         self.solid_brush = None;
         self.back_buffer = None;
         self.d2d_target_bitmap = None;
+        self.shadow_cache.borrow_mut().clear();
 
         unsafe {
             self.d2d_device_context.SetTarget(None);
@@ -468,6 +468,7 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
                 back_buffer: None,
                 d2d_target_bitmap: None,
                 dxgi_swapchain: None,
+                shadow_cache: RefCell::new(ShadowCache::default()),
             };
 
             // Call boot before we touch the tree
@@ -579,7 +580,6 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
                 user_state,
                 shell,
                 smooth_scroll_manager: SmoothScrollManager::new(),
-                shadow_cache: RefCell::new(ShadowCache::new()),
                 drop_target: None,
                 pending_high_surrogate: None,
                 last_click_time: 0,
@@ -1354,8 +1354,6 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         .borrow_mut()
                         .discard_device_resources();
 
-                    state.shadow_cache.borrow_mut().clear();
-
                     let _ = InvalidateRect(Some(hwnd), None, false);
                 }
                 LRESULT(0)
@@ -1419,7 +1417,8 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
             }
             WM_PAINT => {
                 // println!("WM_PAINT");
-                if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                let commands = if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd)
+                {
                     let state = state.deref_mut();
                     state.shell.replace_redraw_request(RedrawRequest::Wait);
 
@@ -1433,72 +1432,79 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             let device_resources = state.device_resources.clone();
                             let redraw_request = state.shell.redraw_request;
 
-                            let mut device_resources = device_resources.borrow_mut();
-                            device_resources.create_device_resources(hwnd).ok();
-
-                            let mut ps = PAINTSTRUCT::default();
-                            let _ = BeginPaint(hwnd, &mut ps);
-
-                            if let (rt, Some(brush)) = (
-                                &device_resources.d2d_device_context,
-                                &device_resources.solid_brush,
-                            ) {
-                                rt.BeginDraw();
-                                let white = D2D1_COLOR_F {
-                                    r: 1.0,
-                                    g: 1.0,
-                                    b: 1.0,
-                                    a: 1.0,
-                                };
-                                rt.Clear(Some(&white));
-
-                                let rc = client_rect(hwnd).unwrap();
-                                let bounds = RectDIP::from(hwnd, rc);
-
-                                let renderer = Renderer::new(
-                                    &device_resources.d2d_factory,
-                                    rt,
-                                    brush,
-                                    &state.shadow_cache,
-                                );
-
-                                // Start frame for cache management
-                                renderer.start_frame();
-
-                                CommandExecutor::execute_commands_with_bounds(
-                                    &renderer,
-                                    &commands,
-                                    Some(bounds),
-                                )
-                                .ok();
-
-                                // Evict unused cache entries before ending the frame
-                                renderer.evict_unused_cache_entries();
-
-                                let end = rt.EndDraw(None, None);
-                                if let Err(e) = end {
-                                    if e.code() == D2DERR_RECREATE_TARGET {
-                                        println!("Recreating D2D target");
-                                        device_resources.discard_device_resources();
-                                        device_resources.create_device_resources(hwnd).ok();
-                                    }
-                                }
-                            }
-
-                            // TODO: Pass present dirty rects / scroll info
-                            if let Some(ref swap_chain) = device_resources.dxgi_swapchain {
-                                let _ = swap_chain.Present(0, DXGI_PRESENT::default());
-                            }
-
-                            let _ = EndPaint(hwnd, &ps);
-
-                            if matches!(redraw_request, RedrawRequest::Immediate) {
-                                let _ = InvalidateRect(Some(hwnd), None, false);
-                            }
+                            Some((commands, device_resources, redraw_request))
                         }
                         Err(e) => {
                             eprintln!("Failed to paint: {e}");
+                            None
                         }
+                    }
+                } else {
+                    None
+                };
+
+                if let Some((commands, device_resources, redraw_request)) = commands {
+                    let mut ps = PAINTSTRUCT::default();
+                    let _ = BeginPaint(hwnd, &mut ps);
+
+                    let mut device_resources = device_resources.borrow_mut();
+                    device_resources.create_device_resources(hwnd).ok();
+
+                    if let (rt, Some(brush)) = (
+                        &device_resources.d2d_device_context,
+                        &device_resources.solid_brush,
+                    ) {
+                        rt.BeginDraw();
+                        let white = D2D1_COLOR_F {
+                            r: 1.0,
+                            g: 1.0,
+                            b: 1.0,
+                            a: 1.0,
+                        };
+                        rt.Clear(Some(&white));
+
+                        let rc = client_rect(hwnd).unwrap();
+                        let bounds = RectDIP::from(hwnd, rc);
+
+                        let renderer = Renderer::new(
+                            &device_resources.d2d_factory,
+                            rt,
+                            brush,
+                            &device_resources.shadow_cache,
+                        );
+
+                        // Start frame for cache management
+                        renderer.start_frame();
+
+                        CommandExecutor::execute_commands_with_bounds(
+                            &renderer,
+                            &commands,
+                            Some(bounds),
+                        )
+                        .ok();
+
+                        // Evict unused cache entries before ending the frame
+                        renderer.evict_unused_cache_entries();
+
+                        let end = rt.EndDraw(None, None);
+                        if let Err(e) = end {
+                            if e.code() == D2DERR_RECREATE_TARGET {
+                                println!("Recreating D2D target");
+                                device_resources.discard_device_resources();
+                                device_resources.create_device_resources(hwnd).ok();
+                            }
+                        }
+                    }
+
+                    // TODO: Pass present dirty rects / scroll info
+                    if let Some(ref swap_chain) = device_resources.dxgi_swapchain {
+                        let _ = swap_chain.Present(0, DXGI_PRESENT::default());
+                    }
+
+                    let _ = EndPaint(hwnd, &ps);
+
+                    if matches!(redraw_request, RedrawRequest::Immediate) {
+                        let _ = InvalidateRect(Some(hwnd), None, false);
                     }
                 }
 
