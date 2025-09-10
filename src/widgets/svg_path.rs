@@ -3,7 +3,7 @@ use crate::{
     gfx::command_recorder::CommandRecorder,
     layout::{
         UIArenas,
-        model::{Color, Element, StrokeLineCap, StrokeLineJoin},
+        model::{Color, Element, ElementStyle, StrokeLineCap, StrokeLineJoin},
     },
     runtime::DeviceResources,
     widgets::{
@@ -209,6 +209,7 @@ impl<Message> Widget<Message> for SvgPath {
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut CommandRecorder,
+        _style: ElementStyle,
         bounds: Bounds,
         _now: Instant,
     ) {

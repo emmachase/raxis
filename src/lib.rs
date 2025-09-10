@@ -43,6 +43,8 @@ pub struct HookManager<'a, Message> {
     pub focus_manager: &'a FocusManager,
 
     layout_invalidated: bool,
+
+    pub window_active: bool,
 }
 
 pub struct HookInstance<'a> {

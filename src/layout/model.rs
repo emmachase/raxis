@@ -12,58 +12,7 @@ use crate::{
 
 // ---------- Geometry & basic types ----------
 
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Color {
-    pub r: f32,
-    pub g: f32,
-    pub b: f32,
-    pub a: f32,
-}
-
-impl Default for Color {
-    fn default() -> Self {
-        Color::default()
-    }
-}
-
-impl Color {
-    pub const BLACK: Color = Color {
-        r: 0.0,
-        g: 0.0,
-        b: 0.0,
-        a: 1.0,
-    };
-
-    pub const WHITE: Color = Color {
-        r: 1.0,
-        g: 1.0,
-        b: 1.0,
-        a: 1.0,
-    };
-
-    pub const fn default() -> Self {
-        Self::BLACK
-    }
-
-    pub const fn from_rgba(r: f32, g: f32, b: f32, a: f32) -> Self {
-        Self { r, g, b, a }
-    }
-
-    pub const fn from_hex(hex: u32) -> Self {
-        Self {
-            r: (0xFF & (hex >> 24)) as f32 / 255.0,
-            g: (0xFF & (hex >> 16)) as f32 / 255.0,
-            b: (0xFF & (hex >> 8)) as f32 / 255.0,
-            a: (0xFF & hex) as f32 / 255.0,
-        }
-    }
-}
-
-impl From<u32> for Color {
-    fn from(color: u32) -> Self {
-        Color::from_hex(color)
-    }
-}
+pub use crate::gfx::color::Color;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BoxAmount {
@@ -474,7 +423,7 @@ pub enum StrokeLineJoin {
     MiterOrBevel,
 }
 
-#[derive(Clone, Debug, PartialEq, Default)]
+#[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub enum StrokeDashStyle {
     #[default]
     Solid,
@@ -483,12 +432,12 @@ pub enum StrokeDashStyle {
     DashDot,
     DashDotDot,
     Custom {
-        dashes: Vec<f32>,
+        dashes: &'static [f32],
         offset: f32,
     },
 }
 
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Border {
     pub width: f32,
     pub color: Color,
@@ -543,6 +492,33 @@ pub struct ScrollConfig {
 }
 
 // ---------- Element tree ----------
+
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ElementStyle {
+    pub background_color: Option<Color>,
+    pub color: Option<Color>,
+    pub word_break: Option<WordBreak>,
+    pub padding: BoxAmount,
+    pub border_radius: Option<BorderRadius>,
+    pub drop_shadow: Option<DropShadow>,
+    pub border: Option<Border>,
+    pub snap: bool,
+}
+
+impl<Message> From<&UIElement<Message>> for ElementStyle {
+    fn from(value: &UIElement<Message>) -> Self {
+        ElementStyle {
+            background_color: value.background_color,
+            color: value.color,
+            word_break: value.word_break,
+            padding: value.padding,
+            border_radius: value.border_radius,
+            drop_shadow: value.drop_shadow,
+            border: value.border,
+            snap: value.snap,
+        }
+    }
+}
 
 pub type WidgetContent<Message> = Box<dyn Widget<Message>>;
 

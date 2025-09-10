@@ -196,16 +196,16 @@ impl Renderer<'_> {
     ) -> Option<ID2D1StrokeStyle> {
         unsafe {
             let (dash, dashes, dash_offset) = match dash_style {
-                None => (D2D1_DASH_STYLE_SOLID, Vec::new(), 0.0f32),
-                Some(StrokeDashStyle::Solid) => (D2D1_DASH_STYLE_SOLID, Vec::new(), 0.0),
-                Some(StrokeDashStyle::Dash) => (D2D1_DASH_STYLE_DASH, Vec::new(), 0.0),
-                Some(StrokeDashStyle::Dot) => (D2D1_DASH_STYLE_DOT, Vec::new(), 0.0),
-                Some(StrokeDashStyle::DashDot) => (D2D1_DASH_STYLE_DASH_DOT, Vec::new(), 0.0),
+                None => (D2D1_DASH_STYLE_SOLID, &[] as &[f32], 0.0f32),
+                Some(StrokeDashStyle::Solid) => (D2D1_DASH_STYLE_SOLID, &[] as &[f32], 0.0),
+                Some(StrokeDashStyle::Dash) => (D2D1_DASH_STYLE_DASH, &[] as &[f32], 0.0),
+                Some(StrokeDashStyle::Dot) => (D2D1_DASH_STYLE_DOT, &[] as &[f32], 0.0),
+                Some(StrokeDashStyle::DashDot) => (D2D1_DASH_STYLE_DASH_DOT, &[] as &[f32], 0.0),
                 Some(StrokeDashStyle::DashDotDot) => {
-                    (D2D1_DASH_STYLE_DASH_DOT_DOT, Vec::new(), 0.0)
+                    (D2D1_DASH_STYLE_DASH_DOT_DOT, &[] as &[f32], 0.0)
                 }
                 Some(StrokeDashStyle::Custom { dashes, offset }) => {
-                    (D2D1_DASH_STYLE_CUSTOM, dashes.clone(), *offset)
+                    (D2D1_DASH_STYLE_CUSTOM, *dashes, *offset)
                 }
             };
 
@@ -944,10 +944,7 @@ impl Renderer<'_> {
                 X: start_x,
                 Y: start_y,
             };
-            let end_point = Vector2 {
-                X: end_x,
-                Y: end_y,
-            };
+            let end_point = Vector2 { X: end_x, Y: end_y };
 
             // Create stroke style if needed (for dash patterns or custom caps)
             let stroke_style = if dash_style.is_some() || stroke_cap.is_some() {

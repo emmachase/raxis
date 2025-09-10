@@ -3,7 +3,7 @@ use crate::{
     gfx::command_recorder::CommandRecorder,
     layout::{
         UIArenas,
-        model::{Color, Element},
+        model::{Color, Element, ElementStyle},
     },
     runtime::DeviceResources,
     util::str::StableString,
@@ -365,6 +365,7 @@ impl<Message> Widget<Message> for Svg {
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut CommandRecorder,
+        _style: ElementStyle,
         bounds: Bounds,
         _now: Instant,
     ) {

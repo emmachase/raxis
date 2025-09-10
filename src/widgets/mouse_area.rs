@@ -5,7 +5,7 @@ use windows::Win32::Foundation::HWND;
 
 use crate::gfx::PointDIP;
 use crate::layout::UIArenas;
-use crate::layout::model::Element;
+use crate::layout::model::{Element, ElementStyle};
 use crate::runtime::DeviceResources;
 use crate::widgets::{Bounds, Cursor, Event, Instance, Modifiers, State, Widget, widget};
 use crate::{Shell, with_state};
@@ -223,6 +223,7 @@ where
         _instance: &mut Instance,
         _shell: &Shell<Message>,
         _recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        _style: ElementStyle,
         _bounds: Bounds,
         _now: Instant,
     ) {

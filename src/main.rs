@@ -105,7 +105,7 @@ fn border_demos() -> Element<Message> {
         color: Color::from(0x424242FF),
         placement: BorderPlacement::Center,
         dash_style: Some(StrokeDashStyle::Custom {
-            dashes: vec![6.0, 2.0, 2.0, 2.0],
+            dashes: &[6.0, 2.0, 2.0, 2.0],
             offset: 0.0,
         }),
         dash_cap: StrokeLineCap::Round,
@@ -740,7 +740,57 @@ fn todo_item(
 }
 
 fn view(_state: &(), hook: &mut HookManager<Message>) -> Element<Message> {
-    todo_app(hook)
+    Element {
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::grow(),
+        children: vec![
+            Element {
+                height: Sizing::fixed(28.0),
+                padding: BoxAmount::horizontal(8.0),
+                children: vec![
+                    Text::new("Raxis Demo")
+                        .with_color(if hook.window_active {
+                            Color::WHITE
+                        } else {
+                            Color::from_rgba(1.0, 1.0, 1.0, 0.5)
+                        })
+                        .with_paragraph_alignment(ParagraphAlignment::Center)
+                        .with_font_size(12.0)
+                        .as_element()
+                        .with_height(Sizing::grow()),
+                ],
+                ..Default::default()
+            },
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::TopToBottom,
+                width: Sizing::grow(),
+                height: Sizing::grow(),
+                scroll: Some(ScrollConfig {
+                    vertical: Some(true),
+                    ..Default::default()
+                }),
+
+                children: vec![todo_app(hook)],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+    // Element {
+    //     direction: Direction::TopToBottom,
+    //     width: Sizing::fixed(100.0),
+    //     height: Sizing::fixed(100.0),
+    //     scroll: Some(ScrollConfig {
+    //         horizontal: Some(true),
+    //         vertical: Some(true),
+    //         ..Default::default()
+    //     }),
+    //     children: vec![todo_app(hook)],
+    //     ..Default::default()
+    // }
+    // todo_app(hook)
 }
 
 fn update(_state: &mut (), _message: Message) -> Option<Task<Message>> {

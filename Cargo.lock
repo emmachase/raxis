@@ -628,6 +628,7 @@ dependencies = [
  "smol_str",
  "string-interner",
  "tokio",
+ "trig-const",
  "unicode-segmentation",
  "windows",
  "windows-core",
@@ -839,6 +840,12 @@ dependencies = [
  "quote",
  "syn",
 ]
+
+[[package]]
+name = "trig-const"
+version = "0.3.0"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "d6a4c8f8ed144d6fd842b71e9fc9248ab646e7f4fb4d9927f601d62d848c287f"
 
 [[package]]
 name = "unicode-ident"

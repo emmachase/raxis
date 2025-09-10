@@ -30,6 +30,7 @@ windows = { version = "0.61.3", features = [
     "Win32_Graphics_Direct2D_Common",
     "Win32_Graphics_Direct3D",
     "Win32_Graphics_Direct3D11",
+    "Win32_Graphics_DirectComposition",
     "Win32_Graphics_DirectWrite",
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
@@ -53,6 +54,7 @@ windows-numerics = "0.2.0"
 raxis-core = { path = "raxis-core" }
 raxis-proc-macro = { path = "raxis-proc-macro" }
 lazy_static = "1.5.0"
+trig-const = "0.3.0"
 
 [profile.release]
 strip = true    # Automatically strip symbols from the binary.

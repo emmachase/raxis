@@ -4,7 +4,7 @@ use windows_numerics::Vector2;
 
 use crate::{
     Shell,
-    layout::UIArenas,
+    layout::{UIArenas, model::ElementStyle},
     math::easing::Easing,
     widgets::{Bounds, Instance, Widget},
     with_state,
@@ -110,6 +110,7 @@ impl<Message> Widget<Message> for Spinner {
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        _style: ElementStyle,
         bounds: Bounds,
         now: Instant,
     ) {

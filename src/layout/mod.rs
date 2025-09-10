@@ -7,12 +7,12 @@ use crate::{
     HookState, Shell,
     gfx::{RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList},
     layout::{
-        model::{Axis, UIElement, UIKey},
+        model::{Axis, ElementStyle, UIElement, UIKey},
         positioning::position_elements,
         visitors::VisitFrame,
     },
     runtime::scroll::ScrollStateManager,
-    widgets::Instance,
+    widgets::{Instance, PaintOwnership},
 };
 
 pub mod helpers;
@@ -141,36 +141,61 @@ pub fn generate_paint_commands<Message>(
                 let has_scroll_y =
                     matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
 
-                // Draw drop shadow first (behind the element)
-                if let Some(shadow) = &element.drop_shadow {
-                    let element_rect = RectDIP {
-                        x,
-                        y,
-                        width,
-                        height,
-                    };
+                let bounds = element.bounds();
+                let style = ElementStyle::from(&*element);
+                let (style, ownership) = if let Some(widget) = element.content.as_mut() {
+                    let state = ui_tree.widget_state.get(&element.id.unwrap()).unwrap();
+                    (widget.adjust_style(state, style), widget.paint_ownership())
+                } else {
+                    (style, PaintOwnership::Contents)
+                };
 
-                    recorder.draw_blurred_shadow(
-                        &element_rect,
-                        shadow,
-                        element.border_radius.as_ref(),
-                    );
-                }
+                if matches!(ownership, PaintOwnership::Contents) {
+                    // Draw drop shadow first (behind the element)
+                    if let Some(shadow) = &style.drop_shadow {
+                        let element_rect = RectDIP {
+                            x,
+                            y,
+                            width,
+                            height,
+                        };
 
-                if let Some(color) = element.background_color {
-                    let element_rect = RectDIP {
-                        x,
-                        y,
-                        width,
-                        height,
-                    };
+                        recorder.draw_blurred_shadow(
+                            &element_rect,
+                            shadow,
+                            style.border_radius.as_ref(),
+                        );
+                    }
 
-                    if let Some(border_radius) = &element.border_radius {
-                        // Use rounded rectangle rendering
-                        recorder.fill_rounded_rectangle(&element_rect, border_radius, color);
-                    } else {
-                        // Use regular rectangle rendering
-                        recorder.fill_rectangle(&element_rect, color);
+                    if let Some(color) = style.background_color {
+                        let element_rect = RectDIP {
+                            x,
+                            y,
+                            width,
+                            height,
+                        };
+
+                        if let Some(border_radius) = &style.border_radius {
+                            // Use rounded rectangle rendering
+                            recorder.fill_rounded_rectangle(&element_rect, border_radius, color);
+                        } else {
+                            // Use regular rectangle rendering
+                            recorder.fill_rectangle(&element_rect, color);
+                        }
+                    }
+
+                    if let Some(border) = &style.border {
+                        let x = element.x;
+                        let y = element.y;
+                        let width = element.computed_width;
+                        let height = element.computed_height;
+                        let element_rect = RectDIP {
+                            x,
+                            y,
+                            width,
+                            height,
+                        };
+                        recorder.draw_border(&element_rect, style.border_radius.as_ref(), border);
                     }
                 }
 
@@ -191,10 +216,17 @@ pub fn generate_paint_commands<Message>(
                     }
                 }
 
-                let bounds = element.bounds();
                 if let Some(widget) = element.content.as_mut() {
                     let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
-                    widget.paint(&ui_tree.arenas, state, shell, &mut recorder, bounds, now);
+                    widget.paint(
+                        &ui_tree.arenas,
+                        state,
+                        shell,
+                        &mut recorder,
+                        style,
+                        bounds,
+                        now,
+                    );
                 }
             },
             Some(
@@ -245,22 +277,6 @@ pub fn generate_paint_commands<Message>(
                             // Use regular axis-aligned clipping for non-rounded elements
                             recorder.pop_axis_aligned_clip();
                         }
-                    }
-
-                    // Draw element border after content and scrollbars, and after popping clip
-                    // so that Outset borders render outside the element bounds.
-                    if let Some(border) = &element.border {
-                        let x = element.x;
-                        let y = element.y;
-                        let width = element.computed_width;
-                        let height = element.computed_height;
-                        let element_rect = RectDIP {
-                            x,
-                            y,
-                            width,
-                            height,
-                        };
-                        recorder.draw_border(&element_rect, element.border_radius.as_ref(), border);
                     }
                 },
             ),

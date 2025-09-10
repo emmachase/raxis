@@ -16,9 +16,10 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
 use windows::Win32::UI::WindowsAndMessaging::STRSAFE_E_INSUFFICIENT_BUFFER;
 use windows::core::Result;
 
+use crate::gfx::command_recorder::CommandRecorder;
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::Color;
+use crate::layout::model::{Color, ElementStyle};
 use crate::runtime::clipboard::get_clipboard_text;
 use crate::runtime::font_manager::{FontAxes, FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
@@ -573,7 +574,8 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         _arenas: &UIArenas,
         instance: &mut Instance,
         shell: &Shell<Message>,
-        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        recorder: &mut CommandRecorder,
+        style: ElementStyle,
         bounds: Bounds,
         _now: Instant,
     ) {
@@ -601,7 +603,14 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
             .expect("update bounds failed");
 
         state
-            .draw(instance.id, shell, recorder, bounds.content_box, _now)
+            .draw(
+                instance.id,
+                shell,
+                recorder,
+                style,
+                bounds.content_box,
+                _now,
+            )
             .expect("draw failed");
     }
 
@@ -988,7 +997,8 @@ impl<Message> WidgetState<Message> {
         &mut self,
         id: u64,
         shell: &Shell<Message>,
-        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        recorder: &mut CommandRecorder,
+        style: ElementStyle,
         bounds: RectDIP,
         now: Instant,
     ) -> Result<()> {
@@ -1001,16 +1011,8 @@ impl<Message> WidgetState<Message> {
             self.draw_selection_with_recorder(layout, recorder, bounds)?;
 
             // Draw text using command recorder
-            recorder.draw_text(
-                &bounds,
-                layout,
-                crate::layout::model::Color {
-                    r: 0.0,
-                    g: 0.0,
-                    b: 0.0,
-                    a: 1.0,
-                },
-            );
+            let color = style.color.unwrap_or_default();
+            recorder.draw_text(&bounds, layout, color);
 
             // OLE drag-over preview caret
             if let Some(drop) = self.ole_drop_preview16 {
@@ -1027,7 +1029,7 @@ impl<Message> WidgetState<Message> {
                         width: CARET_WIDTH,
                         height: m.height,
                     };
-                    recorder.fill_rectangle(&caret_rect, Color::BLACK);
+                    recorder.fill_rectangle(&caret_rect, color);
                 }
             } else {
                 // Draw caret if there's no selection (1 DIP wide bar)
@@ -1046,7 +1048,7 @@ impl<Message> WidgetState<Message> {
                             width: CARET_WIDTH,
                             height: m.height,
                         };
-                        recorder.fill_rectangle(&caret_rect, Color::BLACK);
+                        recorder.fill_rectangle(&caret_rect, color);
                     } else if sel_start == sel_end {
                         let mut x = 0.0f32;
                         let mut y = 0.0f32;
@@ -1065,7 +1067,7 @@ impl<Message> WidgetState<Message> {
                             width: CARET_WIDTH,
                             height: m.height,
                         };
-                        recorder.fill_rectangle(&caret_rect, Color::BLACK);
+                        recorder.fill_rectangle(&caret_rect, color);
                     }
                 }
             }

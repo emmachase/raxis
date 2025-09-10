@@ -5,10 +5,10 @@ use windows::Win32::{Foundation::HWND, System::Ole::DROPEFFECT};
 
 use crate::{
     Shell,
-    gfx::{PointDIP, RectDIP},
+    gfx::{PointDIP, RectDIP, command_recorder::CommandRecorder},
     layout::{
         BorrowedUITree, UIArenas,
-        model::{UIElement, WidgetContent},
+        model::{ElementStyle, UIElement, WidgetContent},
         visitors,
     },
     runtime::DeviceResources,
@@ -47,6 +47,7 @@ pub struct Modifiers {
     pub alt: bool,
 }
 
+#[non_exhaustive]
 pub enum Event {
     ImeStartComposition,
     ImeComposition {
@@ -106,9 +107,11 @@ pub enum DragEvent {
     Drop { drag_info: DragInfo },
 }
 
+#[non_exhaustive]
 pub enum Cursor {
     Arrow,
     IBeam,
+    Pointer,
 }
 
 pub type State = Option<Box<dyn Any>>;
@@ -153,6 +156,11 @@ impl Instance {
     }
 }
 
+pub enum PaintOwnership {
+    Contents,
+    Full,
+}
+
 #[allow(unused)]
 pub trait Widget<Message>: std::fmt::Debug {
     fn limits_x(&self, arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX;
@@ -168,12 +176,21 @@ pub trait Widget<Message>: std::fmt::Debug {
         None
     }
 
+    fn paint_ownership(&self) -> PaintOwnership {
+        PaintOwnership::Contents
+    }
+
+    fn adjust_style(&self, instance: &Instance, style: ElementStyle) -> ElementStyle {
+        style
+    }
+
     fn paint(
         &mut self,
         arenas: &UIArenas,
         instance: &mut Instance,
         shell: &Shell<Message>,
-        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        recorder: &mut CommandRecorder,
+        style: ElementStyle,
         bounds: Bounds,
         now: Instant,
     );

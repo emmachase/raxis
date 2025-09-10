@@ -3,6 +3,7 @@ use windows::Win32::Foundation::{HWND, RECT};
 use crate::dips_scale;
 
 pub mod circle_arc;
+pub mod color;
 pub mod command_executor;
 pub mod command_recorder;
 pub mod draw_commands;

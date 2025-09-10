@@ -11,9 +11,12 @@ use windows::Win32::Graphics::DirectWrite::{
 use windows::core::Result;
 
 use crate::gfx::RectDIP;
+use crate::gfx::command_recorder::CommandRecorder;
 use crate::layout::UIArenas;
-use crate::layout::model::{Color, Element};
-use crate::runtime::font_manager::{FontIdentifier, GlobalFontManager, LineSpacing, FontAxes, FontWeight, FontStyle, FontWidth};
+use crate::layout::model::{Color, Element, ElementStyle};
+use crate::runtime::font_manager::{
+    FontAxes, FontIdentifier, FontStyle, FontWeight, FontWidth, GlobalFontManager, LineSpacing,
+};
 use crate::util::str::StableString;
 use crate::util::unique::id_from_location;
 use crate::widgets::{Bounds, Instance, Widget, widget};
@@ -41,7 +44,7 @@ pub struct Text {
     pub text: StableString,
     pub font_size: f32,
     pub line_spacing: Option<LineSpacing>,
-    pub color: Color,
+    pub color: Option<Color>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_id: FontIdentifier,
@@ -59,12 +62,7 @@ impl Text {
             text: text.into(),
             font_size: 14.0,
             line_spacing: None,
-            color: Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 1.0,
-            },
+            color: None,
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_id: FontIdentifier::system("Segoe UI"),
@@ -87,7 +85,7 @@ impl Text {
     }
 
     pub fn with_color(mut self, color: Color) -> Self {
-        self.color = color;
+        self.color = Some(color);
         self
     }
 
@@ -203,8 +201,13 @@ impl TextWidgetState {
         paragraph_alignment: ParagraphAlignment,
         word_wrap: bool,
     ) -> Result<Self> {
-        let text_format =
-            GlobalFontManager::create_text_format(font_id, font_size, font_axes, line_spacing, "en-us")?;
+        let text_format = GlobalFontManager::create_text_format(
+            font_id,
+            font_size,
+            font_axes,
+            line_spacing,
+            "en-us",
+        )?;
 
         let text_format = unsafe {
             // Set text alignment
@@ -298,8 +301,13 @@ impl TextWidgetState {
         paragraph_alignment: ParagraphAlignment,
         word_wrap: bool,
     ) -> Result<()> {
-        self.text_format =
-            GlobalFontManager::create_text_format(font_id, font_size, font_axes, line_spacing, "en-us")?;
+        self.text_format = GlobalFontManager::create_text_format(
+            font_id,
+            font_size,
+            font_axes,
+            line_spacing,
+            "en-us",
+        )?;
 
         unsafe {
             // Set text alignment
@@ -534,7 +542,8 @@ impl<Message> Widget<Message> for Text {
         arenas: &UIArenas,
         instance: &mut Instance,
         _shell: &Shell<Message>,
-        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        recorder: &mut CommandRecorder,
+        style: ElementStyle,
         bounds: Bounds,
         _now: Instant,
     ) {
@@ -569,7 +578,11 @@ impl<Message> Widget<Message> for Text {
 
         // Draw the text
         if let Some(layout) = &state.text_layout {
-            recorder.draw_text(&bounds.content_box, layout, self.color);
+            recorder.draw_text(
+                &bounds.content_box,
+                layout,
+                self.color.unwrap_or(style.color.unwrap_or_default()),
+            );
         }
     }
 

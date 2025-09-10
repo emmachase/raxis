@@ -52,9 +52,15 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
     ID3D11DeviceContext, ID3D11Texture2D,
 };
+use windows::Win32::Graphics::DirectComposition::{
+    DCompositionCreateDevice, DCompositionCreateDevice2, IDCompositionDevice, IDCompositionTarget,
+    IDCompositionVisual,
+};
 use windows::Win32::Graphics::Dwm::{
-    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DwmEnableBlurBehindWindow,
-    DwmExtendFrameIntoClientArea,
+    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW,
+    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
+    DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_IGNORE, DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_ALPHA_MODE_STRAIGHT,
@@ -62,12 +68,13 @@ use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
-    IDXGIFactory7, IDXGIOutput, IDXGISurface, IDXGISwapChain1,
+    DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
+    DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4, IDXGIFactory7, IDXGIOutput,
+    IDXGISurface, IDXGISwapChain1,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, ClientToScreen, CreateRectRgn, EndPaint, PAINTSTRUCT,
+    BeginPaint, ClientToScreen, CreateRectRgn, EndPaint, HRGN, PAINTSTRUCT,
 };
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
@@ -77,8 +84,11 @@ use windows::Win32::UI::Input::Ime::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
-    PostMessageW, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SystemParametersInfoW, WM_DPICHANGED, WM_KEYUP, WM_MOUSEWHEEL, WM_TIMER, WM_USER,
+    AdjustWindowRectEx, GetForegroundWindow, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
+    HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
+    NCCALCSIZE_PARAMS, PostMessageW, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED,
+    WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION,
     WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TRANSPARENT,
 };
 use windows::{
@@ -127,7 +137,8 @@ use windows::{
     },
     core::{PCWSTR, Result, w},
 };
-use windows_core::{IUnknown, Interface};
+use windows_core::{BOOL, IUnknown, Interface};
+use windows_numerics::Vector2;
 
 pub const LINE_HEIGHT: u32 = 32;
 
@@ -290,17 +301,24 @@ pub struct DeviceResources {
     pub d3d_context: ID3D11DeviceContext,
     pub d3d_device: ID3D11Device,
 
+    // DirectComposition objects
+    pub dcomp_device: IDCompositionDevice,
+    pub dcomp_target: IDCompositionTarget,
+    pub dcomp_visual: Option<IDCompositionVisual>,
+
     pub shadow_cache: RefCell<ShadowCache>,
 }
 
 impl DeviceResources {
-    fn create_device_resources(&mut self, hwnd: HWND) -> Result<()> {
+    fn create_device_resources(&mut self, hwnd: HWND, width: u32, height: u32) -> Result<()> {
         unsafe {
             let dxgi_swapchain = match self.dxgi_swapchain {
                 Some(ref dxgi_swapchain) => dxgi_swapchain,
                 None => {
                     // println!("Creating DXGI swapchain");
                     let swapchain_desc = DXGI_SWAP_CHAIN_DESC1 {
+                        Width: width,
+                        Height: height,
                         Format: DXGI_FORMAT_B8G8R8A8_UNORM,
                         SampleDesc: DXGI_SAMPLE_DESC {
                             Count: 1, // Don't use multi-sampling
@@ -308,23 +326,28 @@ impl DeviceResources {
                         },
                         BufferUsage: DXGI_USAGE_RENDER_TARGET_OUTPUT,
                         BufferCount: 2,
-                        Scaling: DXGI_SCALING_NONE,
+                        Scaling: DXGI_SCALING_STRETCH,
                         SwapEffect: DXGI_SWAP_EFFECT_FLIP_DISCARD,
-                        AlphaMode: DXGI_ALPHA_MODE_IGNORE,
+                        AlphaMode: DXGI_ALPHA_MODE_PREMULTIPLIED,
 
                         ..Default::default()
                     };
 
                     let dxgi_swapchain: IDXGISwapChain1 = self
                         .dxgi_factory
-                        .CreateSwapChainForHwnd(
+                        .CreateSwapChainForComposition(
                             &self.d3d_device.cast::<IUnknown>()?,
-                            hwnd,
                             &swapchain_desc,
                             None,
-                            None as Option<&IDXGIOutput>,
                         )
                         .expect("Failed to create DXGI swapchain");
+
+                    // Create DirectComp visual
+                    // TODO: split this out?
+                    let dcomp_visual = self.dcomp_device.CreateVisual()?;
+                    dcomp_visual.SetContent(&dxgi_swapchain);
+                    self.dcomp_target.SetRoot(&dcomp_visual);
+                    self.dcomp_visual = Some(dcomp_visual);
 
                     self.dxgi_swapchain = Some(dxgi_swapchain);
                     self.dxgi_swapchain.as_ref().unwrap()
@@ -375,11 +398,41 @@ impl DeviceResources {
                     r: 0.0,
                     g: 0.0,
                     b: 0.0,
-                    a: 1.0,
+                    a: 0.0,
                 };
                 let brush = rt.CreateSolidColorBrush(&black, None)?;
                 self.solid_brush = Some(brush);
             }
+
+            // Initialize DirectComposition objects if not already created
+            // if self.dcomp_device.is_none() {
+            //     // Step 3: Create DirectComposition device object
+            //     let dcomp_device =?;
+            //     self.dcomp_device = Some(dcomp_device);
+            // }
+
+            // if self.dcomp_target.is_none() && self.dcomp_device.is_some() {
+            //     // Step 4: Create composition target object
+            //     let dcomp_device = self.dcomp_device.as_ref().unwrap();
+            //     let dcomp_target = dcomp_device.CreateTargetForHwnd(hwnd, true)?;
+            //     self.dcomp_target = Some(dcomp_target);
+            // }
+
+            // if self.dcomp_visual.is_none() && self.dcomp_device.is_some() {
+            //     // Step 5: Create visual object
+            //     let dcomp_device = self.dcomp_device.as_ref().unwrap();
+            //     let dcomp_visual = dcomp_device.CreateVisual()?;
+            //     self.dcomp_visual = Some(dcomp_visual);
+
+            //     // Set the visual as the root visual of the target
+            //     if let Some(ref target) = self.dcomp_target {
+            //         target.SetRoot(&dcomp_visual)?;
+            //     }
+
+            //     // Commit the composition to make it visible
+            //     dcomp_device.Commit()?;
+            // }
+
             Ok(())
         }
     }
@@ -388,23 +441,27 @@ impl DeviceResources {
         self.solid_brush = None;
         self.back_buffer = None;
         self.d2d_target_bitmap = None;
+        // Clean up DirectComposition objects
+        // self.dcomp_visual = None;
+        // self.dcomp_target = None;
+        // self.dcomp_device = None;
         self.shadow_cache.borrow_mut().clear();
 
         unsafe {
             self.d2d_device_context.SetTarget(None);
             self.d3d_context.ClearState();
 
-            if let Some(ref mut swap_chain) = self.dxgi_swapchain {
-                swap_chain
-                    .ResizeBuffers(
-                        0,
-                        0,
-                        0,
-                        DXGI_FORMAT_UNKNOWN,
-                        DXGI_SWAP_CHAIN_FLAG::default(),
-                    )
-                    .unwrap();
-            }
+            // if let Some(ref mut swap_chain) = self.dxgi_swapchain {
+            //     swap_chain
+            //         .ResizeBuffers(
+            //             0,
+            //             0,
+            //             0,
+            //             DXGI_FORMAT_UNKNOWN,
+            //             DXGI_SWAP_CHAIN_FLAG::default(),
+            //         )
+            //         .unwrap();
+            // }
         }
     }
 }
@@ -468,6 +525,10 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
             let dxgi_adapter = dxgi_device.GetAdapter()?;
             let dxgi_factory = dxgi_adapter.GetParent::<IDXGIFactory7>()?;
 
+            // Direct Composition
+            let dcomp_device: IDCompositionDevice = DCompositionCreateDevice2(&d2d_device)?;
+            let dcomp_target: IDCompositionTarget = dcomp_device.CreateTargetForHwnd(hwnd, true)?;
+
             let device_resources = DeviceResources {
                 d3d_device,
                 d3d_context,
@@ -482,6 +543,10 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
                 back_buffer: None,
                 d2d_target_bitmap: None,
                 dxgi_swapchain: None,
+                // DirectComposition objects - initially None, will be created in create_device_resources
+                dcomp_device,
+                dcomp_target,
+                dcomp_visual: None,
                 shadow_cache: RefCell::new(ShadowCache::default()),
             };
 
@@ -501,6 +566,7 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
                     scroll_state_manager: &mut scroll_state_manager,
                     focus_manager: &mut focus_manager,
                     layout_invalidated: false,
+                    window_active: GetForegroundWindow() == hwnd,
                 },
             );
 
@@ -610,6 +676,8 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
         let dt = self.timing_info.rateCompose.uiDenominator as f64
             / self.timing_info.rateCompose.uiNumerator as f64;
 
+        let window_active = unsafe { GetForegroundWindow() == hwnd };
+
         // Update smooth scroll animations and apply positions to scroll state manager
         self.update_smooth_scroll_animations();
 
@@ -620,6 +688,7 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
                 scroll_state_manager: &mut self.shell.scroll_state_manager,
                 focus_manager: &mut self.shell.focus_manager,
                 layout_invalidated: false,
+                window_active,
             };
 
             create_tree_root(
@@ -800,12 +869,7 @@ fn create_tree_root<State: 'static, Message>(
         hook_manager.ui_tree,
         Element {
             id: Some(w_id!()),
-            // background_color: Some(0xFFFFFFFF.into()),
             direction: Direction::TopToBottom,
-            scroll: Some(ScrollConfig {
-                vertical: Some(true),
-                ..Default::default()
-            }),
             children: vec![children],
 
             ..Default::default()
@@ -827,7 +891,41 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
     lparam: LPARAM,
 ) -> LRESULT {
     let result = unsafe {
+        let mut l_ret = LRESULT(0);
+        let mut skip_normal_handlers =
+            DwmDefWindowProc(hwnd, msg, wparam, lparam, &mut l_ret).as_bool();
+
         match msg {
+            WM_NCCALCSIZE if wparam.0 == 1 => {
+                let pncsp = lparam.0 as *mut NCCALCSIZE_PARAMS;
+
+                // TODO: Not sure about these
+                (*pncsp).rgrc[0].left += (8.0) as i32;
+                (*pncsp).rgrc[0].top += (0.0) as i32;
+                (*pncsp).rgrc[0].right -= (8.0) as i32;
+                (*pncsp).rgrc[0].bottom -= (8.0) as i32;
+
+                return LRESULT(0);
+            }
+            WM_NCHITTEST if l_ret.0 == 0 => {
+                l_ret = LRESULT(hit_test_nca(hwnd, wparam, lparam) as isize);
+
+                if l_ret.0 != HTNOWHERE as isize {
+                    skip_normal_handlers = true;
+                }
+            }
+            _ => {}
+        }
+
+        if skip_normal_handlers {
+            return l_ret;
+        }
+
+        match msg {
+            WM_ACTIVATE => {
+                let _ = InvalidateRect(Some(hwnd), None, true);
+                LRESULT(0)
+            }
             WM_ASYNC_MESSAGE => {
                 // Handle async messages from executor thread
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
@@ -1360,7 +1458,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     suggested.top,
                     suggested.right - suggested.left,
                     suggested.bottom - suggested.top,
-                    SWP_NOZORDER | SWP_NOACTIVATE,
+                    SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 )
                 .unwrap();
 
@@ -1412,6 +1510,12 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                         }
                                     }
                                 }
+
+                                if cursor.is_some() {
+                                    VisitAction::Exit
+                                } else {
+                                    VisitAction::Continue
+                                }
                             },
                         );
 
@@ -1422,6 +1526,9 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                 }
                                 Cursor::IBeam => {
                                     let _ = SetCursor(Some(LoadCursorW(None, IDC_IBEAM).unwrap()));
+                                }
+                                Cursor::Pointer => {
+                                    let _ = SetCursor(Some(LoadCursorW(None, IDC_HAND).unwrap()));
                                 }
                             }
 
@@ -1463,9 +1570,20 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                 if let Some((commands, device_resources, redraw_request)) = commands {
                     let mut ps = PAINTSTRUCT::default();
                     let _ = BeginPaint(hwnd, &mut ps);
+                    // let device_width = ps.rcPaint.right.try_into().unwrap();
+                    // let device_height = ps.rcPaint.bottom.try_into().unwrap();
+                    // println!(
+                    //     "device_width: {}, device_height: {}",
+                    //     device_width, device_height
+                    // );
+                    let rc = client_rect(hwnd).unwrap();
+                    let device_width = rc.right.try_into().unwrap();
+                    let device_height = rc.bottom.try_into().unwrap();
 
                     let mut device_resources = device_resources.borrow_mut();
-                    device_resources.create_device_resources(hwnd).ok();
+                    device_resources
+                        .create_device_resources(hwnd, device_width, device_height)
+                        .ok();
 
                     if let (rt, Some(brush)) = (
                         &device_resources.d2d_device_context,
@@ -1480,7 +1598,6 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         };
                         rt.Clear(Some(&white));
 
-                        let rc = client_rect(hwnd).unwrap();
                         let bounds = RectDIP::from(hwnd, rc);
 
                         let renderer = Renderer::new(
@@ -1508,14 +1625,38 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             if e.code() == D2DERR_RECREATE_TARGET {
                                 println!("Recreating D2D target");
                                 device_resources.discard_device_resources();
-                                device_resources.create_device_resources(hwnd).ok();
+                                device_resources
+                                    .create_device_resources(hwnd, device_width, device_height)
+                                    .ok();
                             }
                         }
                     }
 
-                    // TODO: Pass present dirty rects / scroll info
+                    // // Present using DirectComposition if available, otherwise fallback to direct swap chain present
+                    // if let (dcomp_device, Some(ref dcomp_visual), Some(ref swap_chain)) = (
+                    //     &device_resources.dcomp_device,
+                    //     &device_resources.dcomp_visual,
+                    //     &device_resources.dxgi_swapchain,
+                    // ) {
+                    //     // Create composition surface from the swap chain for DirectComposition
+                    //     if let Ok(comp_surface) =
+                    //         dcomp_device.CreateSurfaceFromSwapChain(swap_chain)
+                    //     {
+                    //         // Set the composition surface as the visual's content
+                    //         let _ = dcomp_visual.SetContent(&comp_surface);
+                    //         // Commit the composition to make changes visible
+                    //         let _ = dcomp_device.Commit();
+                    //     }
                     if let Some(ref swap_chain) = device_resources.dxgi_swapchain {
+                        // Fallback to traditional swap chain present if DirectComposition not available
                         let _ = swap_chain.Present(0, DXGI_PRESENT::default());
+
+                        // device_resources
+                        //     .dcomp_visual
+                        //     .as_mut()
+                        //     .unwrap()
+                        //     .SetContent(swap_chain);
+                        device_resources.dcomp_device.Commit().unwrap();
                     }
 
                     let _ = EndPaint(hwnd, &ps);
@@ -1631,6 +1772,116 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
     result
 }
 
+// // Hit test the frame for resizing and moving.
+// LRESULT HitTestNCA(HWND hWnd, WPARAM wParam, LPARAM lParam)
+// {
+//     // Get the point coordinates for the hit test.
+//     POINT ptMouse = { GET_X_LPARAM(lParam), GET_Y_LPARAM(lParam)};
+
+//     // Get the window rectangle.
+//     RECT rcWindow;
+//     GetWindowRect(hWnd, &rcWindow);
+
+//     // Get the frame rectangle, adjusted for the style without a caption.
+//     RECT rcFrame = { 0 };
+//     AdjustWindowRectEx(&rcFrame, WS_OVERLAPPEDWINDOW & ~WS_CAPTION, FALSE, NULL);
+
+//     // Determine if the hit test is for resizing. Default middle (1,1).
+//     USHORT uRow = 1;
+//     USHORT uCol = 1;
+//     bool fOnResizeBorder = false;
+
+//     // Determine if the point is at the top or bottom of the window.
+//     if (ptMouse.y >= rcWindow.top && ptMouse.y < rcWindow.top + TOPEXTENDWIDTH)
+//     {
+//         fOnResizeBorder = (ptMouse.y < (rcWindow.top - rcFrame.top));
+//         uRow = 0;
+//     }
+//     else if (ptMouse.y < rcWindow.bottom && ptMouse.y >= rcWindow.bottom - BOTTOMEXTENDWIDTH)
+//     {
+//         uRow = 2;
+//     }
+
+//     // Determine if the point is at the left or right of the window.
+//     if (ptMouse.x >= rcWindow.left && ptMouse.x < rcWindow.left + LEFTEXTENDWIDTH)
+//     {
+//         uCol = 0; // left side
+//     }
+//     else if (ptMouse.x < rcWindow.right && ptMouse.x >= rcWindow.right - RIGHTEXTENDWIDTH)
+//     {
+//         uCol = 2; // right side
+//     }
+
+//     // Hit test (HTTOPLEFT, ... HTBOTTOMRIGHT)
+//     LRESULT hitTests[3][3] =
+//     {
+//         { HTTOPLEFT,    fOnResizeBorder ? HTTOP : HTCAPTION,    HTTOPRIGHT },
+//         { HTLEFT,       HTNOWHERE,     HTRIGHT },
+//         { HTBOTTOMLEFT, HTBOTTOM, HTBOTTOMRIGHT },
+//     };
+
+//     return hitTests[uRow][uCol];
+// }
+
+fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
+    // let pt_mouse = POINT {
+    //     x: GET_X_LPARAM(lparam),
+    //     y: GET_Y_LPARAM(lparam),
+    // };
+    let x_px = (lparam.0 & 0xFFFF) as i16 as i32;
+    let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+
+    let mut rc_window = RECT::default();
+    unsafe { GetWindowRect(hwnd, &mut rc_window).unwrap() };
+
+    let mut rc_frame = RECT::default();
+    unsafe {
+        AdjustWindowRectEx(
+            &mut rc_frame,
+            WS_OVERLAPPEDWINDOW & !WS_CAPTION,
+            false,
+            WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
+        )
+        .unwrap()
+    };
+
+    let mut u_row = 1;
+    let mut u_col = 1;
+    let mut f_on_resize_border = false;
+
+    let dpi_scale = dips_scale(hwnd);
+
+    let topextendwidth: i32 = (28.0 / dpi_scale) as i32;
+    let bottomextendwidth: i32 = (8.0 / dpi_scale) as i32;
+    let leftextendwidth: i32 = (8.0 / dpi_scale) as i32;
+    let rightextendwidth: i32 = (8.0 / dpi_scale) as i32;
+
+    if y_px >= rc_window.top && y_px < rc_window.top + topextendwidth {
+        f_on_resize_border = y_px < (rc_window.top - rc_frame.top);
+        u_row = 0;
+    } else if y_px < rc_window.bottom && y_px >= rc_window.bottom - bottomextendwidth {
+        u_row = 2;
+    }
+
+    if x_px >= rc_window.left && x_px < rc_window.left + leftextendwidth {
+        u_col = 0;
+    } else if x_px < rc_window.right && x_px >= rc_window.right - rightextendwidth {
+        u_col = 2;
+    }
+
+    let hit_tests = [
+        [
+            HTTOPLEFT,
+            if f_on_resize_border { HTTOP } else { HTCAPTION },
+            HTTOPRIGHT,
+        ],
+        [HTLEFT, HTNOWHERE, HTRIGHT],
+        [HTBOTTOMLEFT, HTBOTTOM, HTBOTTOMRIGHT],
+    ];
+
+    hit_tests[u_row][u_col]
+}
+
 fn get_modifiers() -> Modifiers {
     let shift_down = unsafe { GetKeyState(VK_SHIFT.0 as i32) } < 0;
     let ctrl_down = unsafe { GetKeyState(VK_CONTROL.0 as i32) } < 0;
@@ -1677,7 +1928,7 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
 
         // Create window first without user data
         let hwnd = CreateWindowExW(
-            WINDOW_EX_STYLE::default(),
+            WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
             class_name,
             PCWSTR(w!("Raxis").as_ptr()),
             WS_OVERLAPPEDWINDOW,
@@ -1692,20 +1943,39 @@ pub fn run_event_loop<State: 'static, Message: 'static + Send>(
         )?;
 
         // Enable composition and transparency on the window
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_USE_IMMERSIVE_DARK_MODE,
+            &BOOL(1) as *const _ as _,
+            size_of::<BOOL>() as _,
+        )
+        .unwrap();
+
+        // For Mica effect (Windows 11)
+        DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_SYSTEMBACKDROP_TYPE,
+            &DWMSBT_TABBEDWINDOW as *const _ as _,
+            size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
+        )
+        .unwrap();
+
         let bb = DWM_BLURBEHIND {
-            dwFlags: DWM_BB_ENABLE | DWM_BB_BLURREGION,
+            dwFlags: DWM_BB_ENABLE,
             fEnable: true.into(),
-            hRgnBlur: CreateRectRgn(0, 0, -1, -1),
             ..Default::default()
         };
         DwmEnableBlurBehindWindow(hwnd, &bb).unwrap();
 
-        // For Mica effect (Windows 11)
         let margins = MARGINS {
             cxLeftWidth: -1,
             cxRightWidth: -1,
             cyTopHeight: -1,
             cyBottomHeight: -1,
+            // cxLeftWidth: 8,
+            // cxRightWidth: 8,
+            // cyBottomHeight: 8,
+            // cyTopHeight: 28,
         };
         DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
 

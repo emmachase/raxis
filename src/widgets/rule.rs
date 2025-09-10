@@ -3,7 +3,7 @@ use windows::Win32::Foundation::HWND;
 use crate::Shell;
 use crate::gfx::command_recorder::CommandRecorder;
 use crate::layout::UIArenas;
-use crate::layout::model::{Color, Element, Sizing, StrokeDashStyle, StrokeLineCap};
+use crate::layout::model::{Color, Element, ElementStyle, Sizing, StrokeDashStyle, StrokeLineCap};
 use crate::widgets::{Bounds, Event, Instance, Widget};
 
 /// Orientation of the rule/divider
@@ -101,7 +101,7 @@ impl Rule {
     }
 
     /// Set a custom dash pattern
-    pub fn with_custom_dashes(self, dashes: Vec<f32>, offset: f32) -> Self {
+    pub fn with_custom_dashes(self, dashes: &'static [f32], offset: f32) -> Self {
         Self {
             dash_style: Some(StrokeDashStyle::Custom { dashes, offset }),
             ..self
@@ -199,7 +199,8 @@ impl<Message> Widget<Message> for Rule {
         _instance: &mut Instance,
         _shell: &crate::Shell<Message>,
         recorder: &mut CommandRecorder,
-        bounds: crate::widgets::Bounds,
+        _style: ElementStyle,
+        bounds: Bounds,
         _now: std::time::Instant,
     ) {
         let rect = &bounds.content_box;

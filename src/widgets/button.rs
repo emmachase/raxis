@@ -4,9 +4,10 @@ use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
 
+use crate::gfx::command_recorder::CommandRecorder;
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::{Border, BorderRadius, Color, DropShadow, Element};
+use crate::layout::model::{Border, BorderRadius, Color, DropShadow, Element, ElementStyle};
 use crate::widgets::{Bounds, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
@@ -183,18 +184,9 @@ impl<Message: 'static + Send> Button<Message> {
 
     pub fn with_bg_color(mut self, color: Color) -> Self {
         self.styles.normal.bg_color = color;
-        self.styles.hover.bg_color = Color {
-            r: color.r * 0.9,
-            g: color.g * 0.9,
-            b: color.b * 0.9,
-            a: color.a,
-        };
-        self.styles.pressed.bg_color = Color {
-            r: color.r * 0.8,
-            g: color.g * 0.8,
-            b: color.b * 0.8,
-            a: color.a,
-        };
+        self.styles.hover.bg_color = color.deviate(0.05);
+        self.styles.pressed.bg_color = color.deviate(0.1);
+        self.styles.disabled.bg_color = color.darken(0.4).desaturate(0.3);
         self
     }
 
@@ -416,7 +408,8 @@ impl<Message> Widget<Message> for Button<Message> {
         _arenas: &UIArenas,
         instance: &mut Instance,
         _shell: &Shell<Message>,
-        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
+        recorder: &mut CommandRecorder,
+        style: ElementStyle,
         bounds: Bounds,
         _now: Instant,
     ) {
@@ -440,7 +433,7 @@ impl<Message> Widget<Message> for Button<Message> {
         bounds: Bounds,
     ) -> Option<super::Cursor> {
         if point.within(bounds.border_box) && self.enabled {
-            Some(super::Cursor::Arrow)
+            Some(super::Cursor::Pointer)
         } else {
             None
         }
