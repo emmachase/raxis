@@ -9,7 +9,7 @@ pub mod task;
 use crate::gfx::PointDIP;
 use crate::gfx::command_executor::CommandExecutor;
 use crate::gfx::draw_commands::DrawCommandList;
-use crate::layout::model::{Axis, Direction, Element, ScrollConfig, Sizing, create_tree};
+use crate::layout::model::{Axis, Direction, Element, Sizing, create_tree};
 use crate::layout::visitors::VisitAction;
 use crate::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
@@ -36,9 +36,7 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
 use windows::Win32::Foundation::HMODULE;
-use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_ALPHA_MODE_IGNORE, D2D1_ALPHA_MODE_PREMULTIPLIED,
-};
+use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
     D2D1_DEVICE_CONTEXT_OPTIONS_NONE, ID2D1Bitmap1, ID2D1Device7, ID2D1DeviceContext7,
@@ -53,29 +51,22 @@ use windows::Win32::Graphics::Direct3D11::{
     ID3D11DeviceContext, ID3D11Texture2D,
 };
 use windows::Win32::Graphics::DirectComposition::{
-    DCompositionCreateDevice, DCompositionCreateDevice2, IDCompositionDevice, IDCompositionTarget,
-    IDCompositionVisual,
+    DCompositionCreateDevice2, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
 };
 use windows::Win32::Graphics::Dwm::{
-    DWM_BB_BLURREGION, DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW,
-    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
-    DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
-    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+    DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_TABBEDWINDOW,
+    DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc,
+    DwmEnableBlurBehindWindow, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_ALPHA_MODE_IGNORE, DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_ALPHA_MODE_STRAIGHT,
-    DXGI_ALPHA_MODE_UNSPECIFIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FORMAT_B8G8R8A8_UNORM_SRGB,
-    DXGI_FORMAT_R8G8B8A8_TYPELESS, DXGI_FORMAT_R8G8B8A8_UNORM, DXGI_SAMPLE_DESC,
+    DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
 };
 use windows::Win32::Graphics::Dxgi::{
-    DXGI_PRESENT, DXGI_SCALING_NONE, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1,
-    DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4, IDXGIFactory7, IDXGIOutput,
-    IDXGISurface, IDXGISwapChain1,
+    DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
+    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
+    IDXGIFactory7, IDXGISurface, IDXGISwapChain1,
 };
-use windows::Win32::Graphics::Gdi::{
-    BeginPaint, ClientToScreen, CreateRectRgn, EndPaint, HRGN, PAINTSTRUCT,
-};
+use windows::Win32::Graphics::Gdi::{BeginPaint, ClientToScreen, EndPaint, PAINTSTRUCT};
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
 use windows::Win32::UI::Controls::MARGINS;
@@ -89,7 +80,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     NCCALCSIZE_PARAMS, PostMessageW, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED,
     WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION,
-    WS_EX_LAYERED, WS_EX_NOREDIRECTIONBITMAP, WS_EX_TRANSPARENT,
+    WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -138,7 +129,6 @@ use windows::{
     core::{PCWSTR, Result, w},
 };
 use windows_core::{BOOL, IUnknown, Interface};
-use windows_numerics::Vector2;
 
 pub const LINE_HEIGHT: u32 = 32;
 
@@ -333,20 +323,18 @@ impl DeviceResources {
                         ..Default::default()
                     };
 
-                    let dxgi_swapchain: IDXGISwapChain1 = self
-                        .dxgi_factory
-                        .CreateSwapChainForComposition(
+                    let dxgi_swapchain: IDXGISwapChain1 =
+                        self.dxgi_factory.CreateSwapChainForComposition(
                             &self.d3d_device.cast::<IUnknown>()?,
                             &swapchain_desc,
                             None,
-                        )
-                        .expect("Failed to create DXGI swapchain");
+                        )?;
 
                     // Create DirectComp visual
                     // TODO: split this out?
                     let dcomp_visual = self.dcomp_device.CreateVisual()?;
-                    dcomp_visual.SetContent(&dxgi_swapchain);
-                    self.dcomp_target.SetRoot(&dcomp_visual);
+                    dcomp_visual.SetContent(&dxgi_swapchain)?;
+                    self.dcomp_target.SetRoot(&dcomp_visual)?;
                     self.dcomp_visual = Some(dcomp_visual);
 
                     self.dxgi_swapchain = Some(dxgi_swapchain);

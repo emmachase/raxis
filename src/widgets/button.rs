@@ -205,9 +205,9 @@ impl<Message: 'static + Send> Button<Message> {
             color,
             ..Default::default()
         };
-        self.styles.normal.border = Some(border.clone());
-        self.styles.hover.border = Some(border.clone());
-        self.styles.pressed.border = Some(border.clone());
+        self.styles.normal.border = Some(border);
+        self.styles.hover.border = Some(border);
+        self.styles.pressed.border = Some(border);
         self.styles.disabled.border = Some(border);
         self
     }
@@ -409,7 +409,7 @@ impl<Message> Widget<Message> for Button<Message> {
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut CommandRecorder,
-        style: ElementStyle,
+        _style: ElementStyle,
         bounds: Bounds,
         _now: Instant,
     ) {

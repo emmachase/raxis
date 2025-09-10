@@ -181,7 +181,7 @@ impl CommandRecorder {
         self.commands.push(DrawCommand::DrawBorder {
             rect: *rect,
             border_radius: border_radius.cloned(),
-            border: border.clone(),
+            border: *border,
         });
     }
 

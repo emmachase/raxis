@@ -59,10 +59,12 @@ pub struct FontManager {
 
 /// Font weight values (100-900, where 400 is normal, 700 is bold)
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum FontWeight {
     Thin,        // 100
     ExtraLight,  // 200
     Light,       // 300
+    #[default]
     Normal,      // 400
     Medium,      // 500
     SemiBold,    // 600
@@ -89,15 +91,12 @@ impl FontWeight {
     }
 }
 
-impl Default for FontWeight {
-    fn default() -> Self {
-        FontWeight::Normal
-    }
-}
 
 /// Font style (italic/oblique)
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum FontStyle {
+    #[default]
     Normal,
     Italic,
     Oblique(f32), // Custom oblique angle
@@ -121,19 +120,16 @@ impl FontStyle {
     }
 }
 
-impl Default for FontStyle {
-    fn default() -> Self {
-        FontStyle::Normal
-    }
-}
 
 /// Font width/stretch values
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum FontWidth {
     UltraCondensed, // 50%
     ExtraCondensed, // 62.5%
     Condensed,      // 75%
     SemiCondensed,  // 87.5%
+    #[default]
     Normal,         // 100%
     SemiExpanded,   // 112.5%
     Expanded,       // 125%
@@ -159,29 +155,16 @@ impl FontWidth {
     }
 }
 
-impl Default for FontWidth {
-    fn default() -> Self {
-        FontWidth::Normal
-    }
-}
 
 /// Collection of font axes for variable font support
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub struct FontAxes {
     pub weight: FontWeight,
     pub style: FontStyle,
     pub width: FontWidth,
 }
 
-impl Default for FontAxes {
-    fn default() -> Self {
-        Self {
-            weight: FontWeight::default(),
-            style: FontStyle::default(),
-            width: FontWidth::default(),
-        }
-    }
-}
 
 impl FontAxes {
     pub fn new() -> Self {

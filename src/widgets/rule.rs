@@ -8,16 +8,13 @@ use crate::widgets::{Bounds, Event, Instance, Widget};
 
 /// Orientation of the rule/divider
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Default)]
 pub enum RuleOrientation {
+    #[default]
     Horizontal,
     Vertical,
 }
 
-impl Default for RuleOrientation {
-    fn default() -> Self {
-        RuleOrientation::Horizontal
-    }
-}
 
 /// A Rule (divider line) widget for creating horizontal or vertical separators
 #[derive(Debug, Clone)]
@@ -216,7 +213,7 @@ impl<Message> Widget<Message> for Rule {
                     y,
                     self.color,
                     self.thickness,
-                    self.dash_style.clone(),
+                    self.dash_style,
                     self.stroke_cap,
                 );
             }
@@ -230,7 +227,7 @@ impl<Message> Widget<Message> for Rule {
                     rect.y + rect.height,
                     self.color,
                     self.thickness,
-                    self.dash_style.clone(),
+                    self.dash_style,
                     self.stroke_cap,
                 );
             }

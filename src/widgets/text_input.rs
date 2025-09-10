@@ -19,7 +19,7 @@ use windows::core::Result;
 use crate::gfx::command_recorder::CommandRecorder;
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::{Color, ElementStyle};
+use crate::layout::model::ElementStyle;
 use crate::runtime::clipboard::get_clipboard_text;
 use crate::runtime::font_manager::{FontAxes, FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};

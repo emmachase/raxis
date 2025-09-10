@@ -236,7 +236,7 @@ impl Renderer<'_> {
             let dashes_slice = if dashes.is_empty() {
                 None
             } else {
-                Some(&dashes[..])
+                Some(dashes)
             };
             self.factory.CreateStrokeStyle(&props, dashes_slice).ok()
         }
