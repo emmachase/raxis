@@ -85,6 +85,8 @@ pub type ViewFn<State, Message> = dyn Fn(&State, &mut HookManager<Message>) -> E
 pub type UpdateFn<State, Message> =
     dyn Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
 
+pub use runtime::Application;
+
 pub enum DeferredControl {
     StartDrag { data: DragData, src_id: u64 },
 

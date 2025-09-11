@@ -29,11 +29,13 @@ pub mod text;
 pub mod text_input;
 
 pub mod limit_response {
+    #[derive(Debug, Default, Clone, Copy)]
     pub struct SizingForX {
         pub min_width: f32,
         pub preferred_width: f32,
     }
 
+    #[derive(Debug, Default, Clone, Copy)]
     pub struct SizingForY {
         pub min_height: f32,
         pub preferred_height: f32,
@@ -138,8 +140,8 @@ macro_rules! with_state {
 }
 
 pub struct Instance {
-    id: u64,
-    state: State,
+    pub id: u64,
+    pub state: State,
 }
 
 impl Instance {
@@ -163,14 +165,19 @@ pub enum PaintOwnership {
 
 #[allow(unused)]
 pub trait Widget<Message>: std::fmt::Debug {
-    fn limits_x(&self, arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX;
+    fn limits_x(&self, arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX {
+        limit_response::SizingForX::default()
+    }
+
     fn limits_y(
         &self,
         arenas: &UIArenas,
         instance: &mut Instance,
         border_width: f32,
         content_width: f32,
-    ) -> limit_response::SizingForY;
+    ) -> limit_response::SizingForY {
+        limit_response::SizingForY::default()
+    }
 
     fn state(&self, arenas: &UIArenas, device_resources: &DeviceResources) -> State {
         None
@@ -254,6 +261,7 @@ pub fn dispatch_operation<Message>(ui_tree: BorrowedUITree<Message>, operation: 
     });
 }
 
+#[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct Bounds {
     pub content_box: RectDIP,
     pub border_box: RectDIP,

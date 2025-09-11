@@ -58,6 +58,11 @@ impl BoxAmount {
             left: 0.0,
         }
     }
+
+    pub fn apply(mut self, f: impl FnOnce(&mut Self)) -> Self {
+        f(&mut self);
+        self
+    }
 }
 
 impl_numeric!(From<[
@@ -486,8 +491,8 @@ pub struct ScrollConfig {
 
     // Scrollbar appearance customization
     pub scrollbar_size: Option<f32>, // width of the scrollbar track
-    pub scrollbar_track_color: Option<u32>,
-    pub scrollbar_thumb_color: Option<u32>,
+    pub scrollbar_track_color: Option<Color>,
+    pub scrollbar_thumb_color: Option<Color>,
     pub scrollbar_min_thumb_size: Option<f32>, // minimum size of the thumb in pixels
 }
 

@@ -486,12 +486,14 @@ impl<Message> Widget<Message> for Text {
         if let Some(text) = self.text.resolve(arenas)
             && let Ok(preferred_width) = state.get_preferred_width(text)
         {
+            let preferred_width = self
+                .assisted_width
+                .unwrap_or(preferred_width)
+                .max(preferred_width);
+
             super::limit_response::SizingForX {
-                min_width: 0.0,
-                preferred_width: self
-                    .assisted_width
-                    .unwrap_or(preferred_width)
-                    .max(preferred_width),
+                min_width: if self.word_wrap { 0.0 } else { preferred_width },
+                preferred_width,
             }
         } else {
             super::limit_response::SizingForX {

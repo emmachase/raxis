@@ -13,7 +13,7 @@ use raxis::{
             VerticalAlignment,
         },
     },
-    runtime::{font_manager::FontIdentifier, scroll::ScrollPosition, task::Task},
+    runtime::{Backdrop, font_manager::FontIdentifier, scroll::ScrollPosition, task::Task},
     util::{str::StableString, unique::combine_id},
     w_id,
     widgets::{
@@ -745,23 +745,23 @@ fn view(_state: &(), hook: &mut HookManager<Message>) -> Element<Message> {
         width: Sizing::grow(),
         height: Sizing::grow(),
         children: vec![
-            Element {
-                height: Sizing::fixed(28.0),
-                padding: BoxAmount::horizontal(8.0),
-                children: vec![
-                    Text::new("Raxis Demo")
-                        .with_color(if hook.window_active {
-                            Color::WHITE
-                        } else {
-                            Color::from_rgba(1.0, 1.0, 1.0, 0.5)
-                        })
-                        .with_paragraph_alignment(ParagraphAlignment::Center)
-                        .with_font_size(12.0)
-                        .as_element()
-                        .with_height(Sizing::grow()),
-                ],
-                ..Default::default()
-            },
+            // Element {
+            //     height: Sizing::fixed(28.0),
+            //     padding: BoxAmount::horizontal(8.0),
+            //     children: vec![
+            //         Text::new("Raxis Demo")
+            //             .with_color(if hook.window_active {
+            //                 Color::WHITE
+            //             } else {
+            //                 Color::from_rgba(1.0, 1.0, 1.0, 0.5)
+            //             })
+            //             .with_paragraph_alignment(ParagraphAlignment::Center)
+            //             .with_font_size(12.0)
+            //             .as_element()
+            //             .with_height(Sizing::grow()),
+            //     ],
+            //     ..Default::default()
+            // },
             Element {
                 id: Some(w_id!()),
                 direction: Direction::TopToBottom,
@@ -801,6 +801,9 @@ fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    raxis::runtime::run_event_loop(view, update, (), |_state| None)
+    raxis::Application::new((), view, update, |_state| None)
+        .with_title("Raxis Demo")
+        .with_backdrop(Backdrop::Mica)
+        .run()
         .expect("Failed to run event loop");
 }

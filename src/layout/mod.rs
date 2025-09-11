@@ -5,7 +5,9 @@ use string_interner::{StringInterner, backend::StringBackend};
 
 use crate::{
     HookState, Shell,
-    gfx::{RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList},
+    gfx::{
+        RectDIP, color::Color, command_recorder::CommandRecorder, draw_commands::DrawCommandList,
+    },
     layout::{
         model::{Axis, ElementStyle, UIElement, UIKey},
         positioning::position_elements,
@@ -89,8 +91,8 @@ pub fn layout<Message>(
     position_elements(ui_tree, root, scroll_state_manager, dip_scale);
 }
 
-pub const DEFAULT_SCROLLBAR_TRACK_COLOR: u32 = 0x00000033;
-pub const DEFAULT_SCROLLBAR_THUMB_COLOR: u32 = 0x00000055;
+pub const DEFAULT_SCROLLBAR_TRACK_COLOR: Color = Color::from_hex(0x00000033);
+pub const DEFAULT_SCROLLBAR_THUMB_COLOR: Color = Color::from_hex(0x00000055);
 pub const DEFAULT_SCROLLBAR_SIZE: f32 = 16.0;
 pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 

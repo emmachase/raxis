@@ -111,6 +111,7 @@ impl ScrollStateManager {
                 metadata.was_at_bottom = was_at_bottom;
                 metadata.was_at_right = was_at_right;
                 metadata.previous_content_dimensions = (content_width, content_height);
+                metadata.container_dimensions = (container_width, container_height);
             })
             .or_insert(ScrollMetadata {
                 position: current_position,

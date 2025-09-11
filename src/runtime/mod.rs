@@ -54,9 +54,10 @@ use windows::Win32::Graphics::DirectComposition::{
     DCompositionCreateDevice2, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
 };
 use windows::Win32::Graphics::Dwm::{
-    DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_TABBEDWINDOW,
-    DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc,
-    DwmEnableBlurBehindWindow, DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
+    DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_NONE,
+    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
+    DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
+    DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Dxgi::Common::{
     DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
@@ -77,7 +78,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, GetForegroundWindow, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
     HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
-    NCCALCSIZE_PARAMS, PostMessageW, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED,
+    NCCALCSIZE_PARAMS, PostMessageW, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED,
     WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION,
     WS_EX_NOREDIRECTIONBITMAP,
@@ -156,14 +157,14 @@ struct ScrollDragState {
 
 struct MaybeGuard<State: 'static, Message: 'static> {
     #[cfg(debug_assertions)]
-    guard: std::sync::MutexGuard<'static, Application<State, Message>>,
+    guard: std::sync::MutexGuard<'static, ApplicationHandle<State, Message>>,
 
     #[cfg(not(debug_assertions))]
-    guard: &'static mut Application<State, Message>,
+    guard: &'static mut ApplicationHandle<State, Message>,
 }
 
 impl<State: 'static, Message> Deref for MaybeGuard<State, Message> {
-    type Target = Application<State, Message>;
+    type Target = ApplicationHandle<State, Message>;
 
     fn deref(&self) -> &Self::Target {
         #[cfg(debug_assertions)]
@@ -184,7 +185,7 @@ impl<State: 'static, Message> DerefMut for MaybeGuard<State, Message> {
     }
 }
 
-type WinUserData<State, Message> = Mutex<Application<State, Message>>;
+type WinUserData<State, Message> = Mutex<ApplicationHandle<State, Message>>;
 
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
 fn state_mut_from_hwnd<State, Message>(hwnd: HWND) -> Option<MaybeGuard<State, Message>> {
@@ -241,7 +242,7 @@ fn window_rect(hwnd: HWND) -> Result<RECT> {
     }
 }
 
-struct Application<State, Message> {
+struct ApplicationHandle<State, Message> {
     device_resources: Rc<RefCell<DeviceResources>>, // TODO: This shouldn't really be necessary
 
     clock: f64,
@@ -456,7 +457,7 @@ impl DeviceResources {
 
 static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
 
-impl<State: 'static, Message: 'static + Send> Application<State, Message> {
+impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> {
     fn new(
         view_fn: Box<ViewFn<State, Message>>,
         update_fn: Box<UpdateFn<State, Message>>,
@@ -749,7 +750,7 @@ impl<State: 'static, Message: 'static + Send> Application<State, Message> {
     // then compute scrollbar thumb rects for hit-testing and return the last (topmost) hit.
     fn hit_test_scrollbar_thumb(&self, x: f32, y: f32) -> Option<ScrollDragState> {
         fn dfs<State, Message>(
-            state: &Application<State, Message>,
+            state: &ApplicationHandle<State, Message>,
             key: DefaultKey,
             x: f32,
             y: f32,
@@ -872,6 +873,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
     WNDPROC_IMPL.get().unwrap()(hwnd, msg, wparam, lparam)
 }
 
+static REPLACE_TITLEBAR: AtomicBool = AtomicBool::new(false);
 fn wndproc_impl<State: 'static, Message: 'static + Send>(
     hwnd: HWND,
     msg: u32,
@@ -879,34 +881,36 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
     lparam: LPARAM,
 ) -> LRESULT {
     let result = unsafe {
-        let mut l_ret = LRESULT(0);
-        let mut skip_normal_handlers =
-            DwmDefWindowProc(hwnd, msg, wparam, lparam, &mut l_ret).as_bool();
+        if REPLACE_TITLEBAR.load(Ordering::Relaxed) {
+            let mut l_ret = LRESULT(0);
+            let mut skip_normal_handlers =
+                DwmDefWindowProc(hwnd, msg, wparam, lparam, &mut l_ret).as_bool();
 
-        match msg {
-            WM_NCCALCSIZE if wparam.0 == 1 => {
-                let pncsp = lparam.0 as *mut NCCALCSIZE_PARAMS;
+            match msg {
+                WM_NCCALCSIZE if wparam.0 == 1 => {
+                    let pncsp = lparam.0 as *mut NCCALCSIZE_PARAMS;
 
-                // TODO: Not sure about these
-                (*pncsp).rgrc[0].left += (8.0) as i32;
-                (*pncsp).rgrc[0].top += (0.0) as i32;
-                (*pncsp).rgrc[0].right -= (8.0) as i32;
-                (*pncsp).rgrc[0].bottom -= (8.0) as i32;
+                    // TODO: Not sure about these
+                    (*pncsp).rgrc[0].left += (8.0) as i32;
+                    (*pncsp).rgrc[0].top += (0.0) as i32;
+                    (*pncsp).rgrc[0].right -= (8.0) as i32;
+                    (*pncsp).rgrc[0].bottom -= (8.0) as i32;
 
-                return LRESULT(0);
-            }
-            WM_NCHITTEST if l_ret.0 == 0 => {
-                l_ret = LRESULT(hit_test_nca(hwnd, wparam, lparam) as isize);
-
-                if l_ret.0 != HTNOWHERE as isize {
-                    skip_normal_handlers = true;
+                    return LRESULT(0);
                 }
-            }
-            _ => {}
-        }
+                WM_NCHITTEST if l_ret.0 == 0 => {
+                    l_ret = LRESULT(hit_test_nca(hwnd, wparam, lparam) as isize);
 
-        if skip_normal_handlers {
-            return l_ret;
+                    if l_ret.0 != HTNOWHERE as isize {
+                        skip_normal_handlers = true;
+                    }
+                }
+                _ => {}
+            }
+
+            if skip_normal_handlers {
+                return l_ret;
+            }
         }
 
         match msg {
@@ -1881,170 +1885,276 @@ fn get_modifiers() -> Modifiers {
     }
 }
 
-pub fn run_event_loop<State: 'static, Message: 'static + Send>(
-    view_fn: impl Fn(&State, &mut HookManager<Message>) -> Element<Message> + 'static,
-    update_fn: impl Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
-    user_state: State,
-    boot_fn: impl Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
-) -> Result<()> {
-    WNDPROC_IMPL
-        .set(Box::new(wndproc_impl::<State, Message>))
-        .map_err(|_| "WNDPROC_IMPL already initialized")
-        .unwrap();
+#[derive(Debug, Default)]
+pub enum Backdrop {
+    None,
+    #[default]
+    Mica,
+    MicaAlt,
+    Acrylic,
+}
 
-    unsafe {
-        // Opt-in to Per-Monitor V2 DPI awareness for crisp rendering on high-DPI displays
-        let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+pub struct Application<
+    V: Fn(&State, &mut HookManager<Message>) -> Element<Message> + 'static,
+    U: Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
+    B: Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
+    State: 'static,
+    Message: 'static + Send,
+> {
+    view_fn: V,
+    update_fn: U,
+    boot_fn: B,
+    state: State,
 
-        let _ = CoInitialize(None);
+    title: String,
+    width: u32,
+    height: u32,
 
-        // Initialize OLE for drag-and-drop
-        let _ = OleInitialize(None);
+    backdrop: Backdrop,
+    replace_titlebar: bool,
+}
 
-        let hinstance = GetModuleHandleW(None)?;
-        let class_name = PCWSTR(w!("DWriteSampleWindow").as_ptr());
-
-        let wc = WNDCLASSW {
-            style: CS_HREDRAW | CS_VREDRAW,
-            lpfnWndProc: Some(wndproc),
-            hInstance: hinstance.into(),
-            hCursor: LoadCursorW(None, IDC_ARROW)?,
-            lpszClassName: class_name,
-            ..Default::default()
-        };
-        RegisterClassW(&wc);
-
-        // Create window first without user data
-        let hwnd = CreateWindowExW(
-            WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
-            class_name,
-            PCWSTR(w!("Raxis").as_ptr()),
-            WS_OVERLAPPEDWINDOW,
-            CW_USEDEFAULT,
-            CW_USEDEFAULT,
-            800, // Will be adjusted after DPI calculation
-            600, // Will be adjusted after DPI calculation
-            None,
-            None,
-            Some(hinstance.into()),
-            None, // No user data yet
-        )?;
-
-        // Enable composition and transparency on the window
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_USE_IMMERSIVE_DARK_MODE,
-            &BOOL(1) as *const _ as _,
-            size_of::<BOOL>() as _,
-        )
-        .unwrap();
-
-        // For Mica effect (Windows 11)
-        DwmSetWindowAttribute(
-            hwnd,
-            DWMWA_SYSTEMBACKDROP_TYPE,
-            &DWMSBT_TABBEDWINDOW as *const _ as _,
-            size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
-        )
-        .unwrap();
-
-        let bb = DWM_BLURBEHIND {
-            dwFlags: DWM_BB_ENABLE,
-            fEnable: true.into(),
-            ..Default::default()
-        };
-        DwmEnableBlurBehindWindow(hwnd, &bb).unwrap();
-
-        let margins = MARGINS {
-            cxLeftWidth: -1,
-            cxRightWidth: -1,
-            cyTopHeight: -1,
-            cyBottomHeight: -1,
-            // cxLeftWidth: 8,
-            // cxRightWidth: 8,
-            // cyBottomHeight: 8,
-            // cyTopHeight: 28,
-        };
-        DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
-
-        // Now create the app state with the hwnd
-        let mut app = Application::new(
-            Box::new(view_fn),
-            Box::new(update_fn),
+impl<
+    V: Fn(&State, &mut HookManager<Message>) -> Element<Message> + 'static,
+    U: Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
+    B: Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
+    State: 'static,
+    Message: 'static + Send,
+> Application<V, U, B, State, Message>
+{
+    pub fn new(state: State, view_fn: V, update_fn: U, boot_fn: B) -> Self {
+        Self {
+            view_fn,
+            update_fn,
             boot_fn,
-            user_state,
-            hwnd,
-        )?;
+            state,
 
-        let mut dpi_x = 0.0f32;
-        let mut dpi_y = 0.0f32;
-        app.device_resources
-            .borrow()
-            .d2d_factory
-            .GetDesktopDpi(&mut dpi_x, &mut dpi_y);
+            title: "Raxis".to_string(),
+            width: 800,
+            height: 600,
 
-        // Register OLE drop target
-        let dt: IDropTarget = DropTarget::new(hwnd, |hwnd, event| {
-            // Dispatch drag/drop events to the Shell
-            if let Some(mut app_state) = state_mut_from_hwnd::<State, Message>(hwnd) {
-                let app_state = app_state.deref_mut();
-                if let Some(result) = app_state.shell.dispatch_drag_event(
-                    &mut app_state.ui_tree,
-                    &event,
-                    match &event {
-                        DragEvent::DragEnter { drag_info }
-                        | DragEvent::DragOver { drag_info }
-                        | DragEvent::Drop { drag_info } => drag_info.position,
-                        DragEvent::DragLeave => PointDIP { x: 0.0, y: 0.0 }, // Position not needed for DragLeave
-                    },
-                ) {
-                    // We don't get any other events while drag is ongoing, assume we need to redraw
-                    let _ = InvalidateRect(Some(hwnd), None, false);
-                    result.effect
+            backdrop: Backdrop::default(),
+            replace_titlebar: false,
+        }
+    }
+
+    pub fn with_title(self, title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            ..self
+        }
+    }
+
+    pub fn with_window_size(self, width: u32, height: u32) -> Self {
+        Self {
+            width,
+            height,
+            ..self
+        }
+    }
+
+    pub fn with_backdrop(self, backdrop: Backdrop) -> Self {
+        Self { backdrop, ..self }
+    }
+
+    pub fn replace_titlebar(self) -> Self {
+        Self {
+            replace_titlebar: true,
+            ..self
+        }
+    }
+
+    pub fn run(self) -> Result<()> {
+        let Application {
+            view_fn,
+            update_fn,
+            boot_fn,
+            state,
+
+            title,
+            width,
+            height,
+
+            backdrop,
+            replace_titlebar,
+        } = self;
+
+        WNDPROC_IMPL
+            .set(Box::new(wndproc_impl::<State, Message>))
+            .map_err(|_| "WNDPROC_IMPL already initialized")
+            .unwrap();
+
+        unsafe {
+            // Opt-in to Per-Monitor V2 DPI awareness for crisp rendering on high-DPI displays
+            let _ = SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
+            let _ = CoInitialize(None);
+
+            // Initialize OLE for drag-and-drop
+            let _ = OleInitialize(None);
+
+            let hinstance = GetModuleHandleW(None)?;
+            let class_name = PCWSTR(w!("DWriteSampleWindow").as_ptr());
+
+            let wc = WNDCLASSW {
+                style: CS_HREDRAW | CS_VREDRAW,
+                lpfnWndProc: Some(wndproc),
+                hInstance: hinstance.into(),
+                hCursor: LoadCursorW(None, IDC_ARROW)?,
+                lpszClassName: class_name,
+                ..Default::default()
+            };
+            RegisterClassW(&wc);
+
+            // Create window first without user data
+            let hwnd = CreateWindowExW(
+                WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
+                class_name,
+                PCWSTR(
+                    title
+                        .encode_utf16()
+                        .chain(std::iter::once(0))
+                        .collect::<Vec<u16>>()
+                        .as_ptr(),
+                ),
+                WS_OVERLAPPEDWINDOW,
+                CW_USEDEFAULT,
+                CW_USEDEFAULT,
+                width as i32,  // Will be adjusted after DPI calculation
+                height as i32, // Will be adjusted after DPI calculation
+                None,
+                None,
+                Some(hinstance.into()),
+                None, // No user data yet
+            )?;
+
+            // Enable composition and transparency on the window
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_USE_IMMERSIVE_DARK_MODE,
+                &BOOL(1) as *const _ as _,
+                size_of::<BOOL>() as _,
+            )
+            .unwrap();
+
+            // For Mica effect (Windows 11)
+            DwmSetWindowAttribute(
+                hwnd,
+                DWMWA_SYSTEMBACKDROP_TYPE,
+                &match backdrop {
+                    Backdrop::None => DWMSBT_NONE,
+                    Backdrop::Mica => DWMSBT_MAINWINDOW,
+                    Backdrop::MicaAlt => DWMSBT_TABBEDWINDOW,
+                    Backdrop::Acrylic => DWMSBT_TRANSIENTWINDOW,
+                } as *const _ as _,
+                size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
+            )
+            .unwrap();
+
+            if !matches!(backdrop, Backdrop::None) {
+                let bb = DWM_BLURBEHIND {
+                    dwFlags: DWM_BB_ENABLE,
+                    fEnable: true.into(),
+                    ..Default::default()
+                };
+                DwmEnableBlurBehindWindow(hwnd, &bb).unwrap();
+            }
+
+            if replace_titlebar {
+                REPLACE_TITLEBAR.store(true, Ordering::Relaxed);
+
+                let margins = MARGINS {
+                    cxLeftWidth: -1,
+                    cxRightWidth: -1,
+                    cyTopHeight: -1,
+                    cyBottomHeight: -1,
+                    // cxLeftWidth: 8,
+                    // cxRightWidth: 8,
+                    // cyBottomHeight: 8,
+                    // cyTopHeight: 28,
+                };
+                DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
+            }
+
+            // Now create the app handle with the hwnd
+            let mut app = ApplicationHandle::new(
+                Box::new(view_fn),
+                Box::new(update_fn),
+                boot_fn,
+                state,
+                hwnd,
+            )?;
+
+            let mut dpi_x = 0.0f32;
+            let mut dpi_y = 0.0f32;
+            app.device_resources
+                .borrow()
+                .d2d_factory
+                .GetDesktopDpi(&mut dpi_x, &mut dpi_y);
+
+            // Register OLE drop target
+            let dt: IDropTarget = DropTarget::new(hwnd, |hwnd, event| {
+                // Dispatch drag/drop events to the Shell
+                if let Some(mut app_state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                    let app_state = app_state.deref_mut();
+                    if let Some(result) = app_state.shell.dispatch_drag_event(
+                        &mut app_state.ui_tree,
+                        &event,
+                        match &event {
+                            DragEvent::DragEnter { drag_info }
+                            | DragEvent::DragOver { drag_info }
+                            | DragEvent::Drop { drag_info } => drag_info.position,
+                            DragEvent::DragLeave => PointDIP { x: 0.0, y: 0.0 }, // Position not needed for DragLeave
+                        },
+                    ) {
+                        // We don't get any other events while drag is ongoing, assume we need to redraw
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                        result.effect
+                    } else {
+                        windows::Win32::System::Ole::DROPEFFECT_NONE
+                    }
                 } else {
                     windows::Win32::System::Ole::DROPEFFECT_NONE
                 }
-            } else {
-                windows::Win32::System::Ole::DROPEFFECT_NONE
+            })
+            .into();
+            let _ = RegisterDragDrop(hwnd, &dt);
+            app.drop_target = Some(dt);
+
+            let app = Mutex::new(app);
+            let boxed = Box::new(app);
+            let ptr = Box::into_raw(boxed) as isize;
+
+            // Set the window's user data to point to our Application
+            SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr);
+
+            // Resize window based on DPI
+            SetWindowPos(
+                hwnd,
+                None,
+                0,
+                0,
+                (self.width as f32 / dips_scale_for_dpi(dpi_x)) as i32,
+                (self.height as f32 / dips_scale_for_dpi(dpi_y)) as i32,
+                SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE,
+            )
+            .ok();
+
+            // We don't care if the window was previously hidden or not
+            let _ = ShowWindow(hwnd, SW_SHOW);
+            UpdateWindow(hwnd).ok()?;
+
+            let mut msg = MSG::default();
+            while GetMessageW(&mut msg, None, 0, 0).into() {
+                // We don't care if the message was translated or not
+                let _ = TranslateMessage(&msg);
+                DispatchMessageW(&msg);
             }
-        })
-        .into();
-        let _ = RegisterDragDrop(hwnd, &dt);
-        app.drop_target = Some(dt);
-
-        let app = Mutex::new(app);
-        let boxed = Box::new(app);
-        let ptr = Box::into_raw(boxed) as isize;
-
-        // Set the window's user data to point to our Application
-        SetWindowLongPtrW(hwnd, GWLP_USERDATA, ptr);
-
-        // Resize window based on DPI
-        SetWindowPos(
-            hwnd,
-            None,
-            0,
-            0,
-            (800.0 / dips_scale_for_dpi(dpi_x)) as i32,
-            (600.0 / dips_scale_for_dpi(dpi_y)) as i32,
-            SWP_NOZORDER | SWP_NOACTIVATE,
-        )
-        .ok();
-
-        // We don't care if the window was previously hidden or not
-        let _ = ShowWindow(hwnd, SW_SHOW);
-        UpdateWindow(hwnd).ok()?;
-
-        let mut msg = MSG::default();
-        while GetMessageW(&mut msg, None, 0, 0).into() {
-            // We don't care if the message was translated or not
-            let _ = TranslateMessage(&msg);
-            DispatchMessageW(&msg);
+            // Uninitialize OLE
+            OleUninitialize();
+            // Uninitialize COM
+            CoUninitialize();
         }
-        // Uninitialize OLE
-        OleUninitialize();
-        // Uninitialize COM
-        CoUninitialize();
+        Ok(())
     }
-    Ok(())
 }
