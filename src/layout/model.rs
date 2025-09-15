@@ -480,6 +480,7 @@ impl From<Color> for Border {
 pub struct ScrollConfig {
     pub horizontal: Option<bool>,
     pub vertical: Option<bool>,
+    pub safe_area_padding: Option<BoxAmount>,
     pub horizontal_scroll_amount: Option<f32>,
     pub vertical_scroll_amount: Option<f32>,
     pub max_horizontal_scroll: Option<f32>,

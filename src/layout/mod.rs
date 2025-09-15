@@ -376,10 +376,6 @@ pub fn compute_scrollbar_geom<Message>(
                 .scrollbar_min_thumb_size
                 .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
 
-            let visible_ratio = (height / content_height).min(1.0);
-            let thumb_len = (height * visible_ratio).max(scrollbar_min_thumb_size);
-            let range = (height - thumb_len).max(0.0);
-
             let scroll_y = scroll_state_manager.get_scroll_position(id).y;
             let effective_scroll_y = scroll_y.clamp(0.0, max_scroll_y);
             let progress = if max_scroll_y > 0.0 {
@@ -387,17 +383,25 @@ pub fn compute_scrollbar_geom<Message>(
             } else {
                 0.0
             };
+            let visible_ratio = (height / content_height).min(1.0);
 
-            let x = element.x;
-            let y = element.y;
+            let safe_area_padding = sc.safe_area_padding.unwrap_or_default();
+            let x = element.x + safe_area_padding.left;
+            let y = element.y + safe_area_padding.top;
+            let safe_width = width - safe_area_padding.left - safe_area_padding.right;
+            let safe_height = height - safe_area_padding.top - safe_area_padding.bottom;
+
+            let thumb_len = (safe_height * visible_ratio).max(scrollbar_min_thumb_size);
+            let range = (safe_height - thumb_len).max(0.0);
+
             let track_rect = RectDIP {
-                x: x + width - scrollbar_size,
+                x: x + safe_width - scrollbar_size,
                 y,
                 width: scrollbar_size,
-                height,
+                height: safe_height,
             };
             let thumb_rect = RectDIP {
-                x: x + width - scrollbar_size,
+                x: x + safe_width - scrollbar_size,
                 y: y + range * progress,
                 width: scrollbar_size,
                 height: thumb_len,
@@ -426,10 +430,6 @@ pub fn compute_scrollbar_geom<Message>(
                 .scrollbar_min_thumb_size
                 .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
 
-            let visible_ratio = (width / content_width).min(1.0);
-            let thumb_len = (width * visible_ratio).max(scrollbar_min_thumb_size);
-            let range = (width - thumb_len).max(0.0);
-
             let scroll_x = scroll_state_manager.get_scroll_position(id).x;
             let effective_scroll_x = scroll_x.clamp(0.0, max_scroll_x);
             let progress = if max_scroll_x > 0.0 {
@@ -437,18 +437,26 @@ pub fn compute_scrollbar_geom<Message>(
             } else {
                 0.0
             };
+            let visible_ratio = (width / content_width).min(1.0);
 
-            let x = element.x;
-            let y = element.y;
+            let safe_area_padding = sc.safe_area_padding.unwrap_or_default();
+            let x = element.x + safe_area_padding.left;
+            let y = element.y + safe_area_padding.top;
+            let safe_width = width - safe_area_padding.left - safe_area_padding.right;
+            let safe_height = height - safe_area_padding.top - safe_area_padding.bottom;
+
+            let thumb_len = (safe_width * visible_ratio).max(scrollbar_min_thumb_size);
+            let range = (safe_width - thumb_len).max(0.0);
+
             let track_rect = RectDIP {
                 x,
-                y: y + height - scrollbar_size,
-                width,
+                y: y + safe_height - scrollbar_size,
+                width: safe_width,
                 height: scrollbar_size,
             };
             let thumb_rect = RectDIP {
                 x: x + range * progress,
-                y: y + height - scrollbar_size,
+                y: y + safe_height - scrollbar_size,
                 width: thumb_len,
                 height: scrollbar_size,
             };
