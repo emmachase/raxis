@@ -52,6 +52,13 @@ impl Color {
         a: 1.0,
     };
 
+    pub const TRANSPARENT: Color = Color {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
+
     pub const fn default() -> Self {
         Self::BLACK
     }
