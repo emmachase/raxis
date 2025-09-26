@@ -56,6 +56,21 @@ raxis-proc-macro = { path = "raxis-proc-macro" }
 lazy_static = "1.5.0"
 trig-const = "0.3.0"
 
+# Hot-patching
+# dioxus-devtools = "0.7.0-rc.0"
+# subsecond = "0.7.0-rc.0"
+
+[profile.dev]
+debug = "line-tables-only"
+# codegen-backend = "cranelift"
+
+[profile.dev.package."*"]
+debug = false
+
+[profile.debugging]
+inherits = "dev"
+debug = true
+
 [profile.release]
 strip = true    # Automatically strip symbols from the binary.
 opt-level = "z" # Optimize for size.

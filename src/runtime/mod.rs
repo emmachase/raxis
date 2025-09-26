@@ -247,8 +247,8 @@ struct ApplicationHandle<State, Message> {
 
     clock: f64,
     timing_info: DWM_TIMING_INFO,
-    view_fn: Box<ViewFn<State, Message>>,
-    update_fn: Box<UpdateFn<State, Message>>,
+    view_fn: ViewFn<State, Message>,
+    update_fn: UpdateFn<State, Message>,
     user_state: State,
 
     ui_tree: OwnedUITree<Message>,
@@ -339,7 +339,9 @@ impl DeviceResources {
                     self.dcomp_visual = Some(dcomp_visual);
 
                     self.dxgi_swapchain = Some(dxgi_swapchain);
-                    self.dxgi_swapchain.as_ref().unwrap()
+                    self.dxgi_swapchain
+                        .as_ref()
+                        .expect("Failed to create DXGI swapchain")
                 }
             };
 
@@ -349,7 +351,9 @@ impl DeviceResources {
                     // println!("Fetching back buffer");
                     let back_buffer: ID3D11Texture2D = dxgi_swapchain.GetBuffer(0)?;
                     self.back_buffer = Some(back_buffer);
-                    self.back_buffer.as_ref().unwrap()
+                    self.back_buffer
+                        .as_ref()
+                        .expect("Failed to create back buffer")
                 }
             };
 
@@ -459,8 +463,8 @@ static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
 
 impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> {
     fn new(
-        view_fn: Box<ViewFn<State, Message>>,
-        update_fn: Box<UpdateFn<State, Message>>,
+        view_fn: ViewFn<State, Message>,
+        update_fn: UpdateFn<State, Message>,
         boot_fn: impl Fn(&State) -> Option<Task<Message>>,
         user_state: State,
         hwnd: HWND,
@@ -487,8 +491,8 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 None,
                 Some(&mut d3d_context),
             )?;
-            let d3d_device = d3d_device.unwrap();
-            let d3d_context = d3d_context.unwrap();
+            let d3d_device = d3d_device.expect("Failed to create D3D device");
+            let d3d_context = d3d_context.expect("Failed to create D3D context");
 
             let dxgi_device: IDXGIDevice4 = Interface::cast(&d3d_device)?;
 
@@ -548,7 +552,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
 
             create_tree_root(
                 &user_state,
-                &view_fn,
+                view_fn,
                 &device_resources,
                 &mut HookManager {
                     ui_tree: &mut ui_tree,
@@ -682,7 +686,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
 
             create_tree_root(
                 &self.user_state,
-                &self.view_fn,
+                self.view_fn,
                 &self.device_resources.borrow(),
                 &mut hook,
             );
@@ -848,7 +852,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
 
 fn create_tree_root<State: 'static, Message>(
     state: &State,
-    view_fn: &ViewFn<State, Message>,
+    view_fn: ViewFn<State, Message>,
     device_resources: &DeviceResources,
     hook_manager: &mut HookManager<Message>,
 ) {
@@ -1245,7 +1249,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                         Some(&mut scroll_lines as *mut i32 as *mut _),
                                         SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
                                     )
-                                    .unwrap();
+                                    .expect("Failed to get wheel scroll lines");
 
                                     let wheel_delta =
                                         wheel_delta * LINE_HEIGHT as f32 * scroll_lines as f32;
@@ -1452,7 +1456,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     suggested.bottom - suggested.top,
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 )
-                .unwrap();
+                .ok();
 
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                     let state = state.deref_mut();
@@ -1575,7 +1579,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     let mut device_resources = device_resources.borrow_mut();
                     device_resources
                         .create_device_resources(hwnd, device_width, device_height)
-                        .ok();
+                        .expect("Failed to create device resources");
 
                     if let (rt, Some(brush)) = (
                         &device_resources.d2d_device_context,
@@ -1619,7 +1623,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                 device_resources.discard_device_resources();
                                 device_resources
                                     .create_device_resources(hwnd, device_width, device_height)
-                                    .ok();
+                                    .expect("Failed to recreate device resources");
                             }
                         }
                     }
@@ -1648,7 +1652,10 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         //     .as_mut()
                         //     .unwrap()
                         //     .SetContent(swap_chain);
-                        device_resources.dcomp_device.Commit().unwrap();
+                        device_resources
+                            .dcomp_device
+                            .Commit()
+                            .expect("Failed to commit DirectComposition");
                     }
 
                     let _ = EndPaint(hwnd, &ps);
@@ -1895,14 +1902,12 @@ pub enum Backdrop {
 }
 
 pub struct Application<
-    V: Fn(&State, &mut HookManager<Message>) -> Element<Message> + 'static,
-    U: Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
     B: Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
     State: 'static,
     Message: 'static + Send,
 > {
-    view_fn: V,
-    update_fn: U,
+    view_fn: fn(&State, &mut HookManager<Message>) -> Element<Message>,
+    update_fn: fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>,
     boot_fn: B,
     state: State,
 
@@ -1915,14 +1920,17 @@ pub struct Application<
 }
 
 impl<
-    V: Fn(&State, &mut HookManager<Message>) -> Element<Message> + 'static,
-    U: Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>> + 'static,
     B: Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
     State: 'static,
     Message: 'static + Send,
-> Application<V, U, B, State, Message>
+> Application<B, State, Message>
 {
-    pub fn new(state: State, view_fn: V, update_fn: U, boot_fn: B) -> Self {
+    pub fn new(
+        state: State,
+        view_fn: fn(&State, &mut HookManager<Message>) -> Element<Message>,
+        update_fn: fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>,
+        boot_fn: B,
+    ) -> Self {
         Self {
             view_fn,
             update_fn,
@@ -2028,16 +2036,16 @@ impl<
                 None, // No user data yet
             )?;
 
-            // Enable composition and transparency on the window
+            // Dark mode
             DwmSetWindowAttribute(
                 hwnd,
                 DWMWA_USE_IMMERSIVE_DARK_MODE,
                 &BOOL(1) as *const _ as _,
                 size_of::<BOOL>() as _,
             )
-            .unwrap();
+            .ok();
 
-            // For Mica effect (Windows 11)
+            // For Mica effect (Windows 11 only)
             DwmSetWindowAttribute(
                 hwnd,
                 DWMWA_SYSTEMBACKDROP_TYPE,
@@ -2049,7 +2057,7 @@ impl<
                 } as *const _ as _,
                 size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
             )
-            .unwrap();
+            .ok();
 
             if !matches!(backdrop, Backdrop::None) {
                 let bb = DWM_BLURBEHIND {
@@ -2057,7 +2065,7 @@ impl<
                     fEnable: true.into(),
                     ..Default::default()
                 };
-                DwmEnableBlurBehindWindow(hwnd, &bb).unwrap();
+                DwmEnableBlurBehindWindow(hwnd, &bb).ok();
             }
 
             if replace_titlebar {
@@ -2073,17 +2081,11 @@ impl<
                     // cyBottomHeight: 8,
                     // cyTopHeight: 28,
                 };
-                DwmExtendFrameIntoClientArea(hwnd, &margins).unwrap();
+                DwmExtendFrameIntoClientArea(hwnd, &margins).ok();
             }
 
             // Now create the app handle with the hwnd
-            let mut app = ApplicationHandle::new(
-                Box::new(view_fn),
-                Box::new(update_fn),
-                boot_fn,
-                state,
-                hwnd,
-            )?;
+            let mut app = ApplicationHandle::new(view_fn, update_fn, boot_fn, state, hwnd)?;
 
             let mut dpi_x = 0.0f32;
             let mut dpi_y = 0.0f32;

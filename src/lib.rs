@@ -81,9 +81,9 @@ impl<Message> HookManager<'_, Message> {
     }
 }
 
-pub type ViewFn<State, Message> = dyn Fn(&State, &mut HookManager<Message>) -> Element<Message>;
+pub type ViewFn<State, Message> = fn(&State, &mut HookManager<Message>) -> Element<Message>;
 pub type UpdateFn<State, Message> =
-    dyn Fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
+    fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
 
 pub use runtime::Application;
 
