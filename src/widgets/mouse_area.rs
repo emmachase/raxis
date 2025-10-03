@@ -26,15 +26,19 @@ pub enum MouseAreaEvent {
         y: f32,
         click_count: u32,
         modifiers: Modifiers,
+
+        inside: bool,
     },
     /// Mouse moved within the area
-    MouseMove { x: f32, y: f32 },
+    MouseMove { x: f32, y: f32, inside: bool },
     /// Mouse wheel scrolled within the area
     MouseWheel {
         x: f32,
         y: f32,
         wheel_delta: f32,
         modifiers: Modifiers,
+
+        inside: bool,
     },
     /// Mouse entered the area (synthetic event)
     MouseEntered { x: f32, y: f32 },
@@ -46,7 +50,39 @@ pub enum MouseAreaEvent {
 #[derive(Debug, Default)]
 struct MouseAreaState {
     mouse_inside: bool,
+    mouse_held: bool,
     last_mouse_pos: Option<(f32, f32)>,
+}
+
+#[derive(Debug)]
+pub struct CaptureFor {
+    pub mouse_up: bool,
+    pub mouse_move: bool,
+    pub mouse_wheel: bool,
+}
+
+impl CaptureFor {
+    pub fn none() -> Self {
+        Self {
+            mouse_up: false,
+            mouse_move: false,
+            mouse_wheel: false,
+        }
+    }
+
+    pub fn all() -> Self {
+        Self {
+            mouse_up: true,
+            mouse_move: true,
+            mouse_wheel: true,
+        }
+    }
+}
+
+impl Default for CaptureFor {
+    fn default() -> Self {
+        Self::all()
+    }
 }
 
 pub type OnMouseAreaEventFn<Message> =
@@ -55,6 +91,7 @@ pub type OnMouseAreaEventFn<Message> =
 /// MouseArea widget - invisible container that captures mouse events
 pub struct MouseArea<Message> {
     event_handler: Option<Box<OnMouseAreaEventFn<Message>>>,
+    capture_for: CaptureFor,
 }
 
 impl<Message> Debug for MouseArea<Message> {
@@ -70,11 +107,21 @@ impl<Message: 'static> MouseArea<Message> {
     {
         Self {
             event_handler: Some(Box::new(handler)),
+            capture_for: CaptureFor::all(),
         }
     }
 
+    pub fn capture_for(&mut self, capture_for: CaptureFor) {
+        self.capture_for = capture_for;
+    }
+
     /// Convert framework Event to MouseAreaEvent if applicable
-    fn map_event(&self, event: &Event, bounds: &Bounds) -> Option<MouseAreaEvent> {
+    fn map_event(
+        &self,
+        state: &MouseAreaState,
+        event: &Event,
+        bounds: &Bounds,
+    ) -> Option<MouseAreaEvent> {
         match event {
             Event::MouseButtonDown {
                 x,
@@ -83,7 +130,8 @@ impl<Message: 'static> MouseArea<Message> {
                 modifiers,
             } => {
                 let point = PointDIP { x: *x, y: *y };
-                if point.within(bounds.border_box) {
+                let inside = point.within(bounds.border_box);
+                if inside {
                     Some(MouseAreaEvent::MouseButtonDown {
                         x: *x,
                         y: *y,
@@ -101,12 +149,14 @@ impl<Message: 'static> MouseArea<Message> {
                 modifiers,
             } => {
                 let point = PointDIP { x: *x, y: *y };
-                if point.within(bounds.border_box) {
+                let inside = point.within(bounds.border_box);
+                if inside || (state.mouse_held && self.capture_for.mouse_up) {
                     Some(MouseAreaEvent::MouseButtonUp {
                         x: *x,
                         y: *y,
                         click_count: *click_count,
                         modifiers: *modifiers,
+                        inside,
                     })
                 } else {
                     None
@@ -114,8 +164,13 @@ impl<Message: 'static> MouseArea<Message> {
             }
             Event::MouseMove { x, y } => {
                 let point = PointDIP { x: *x, y: *y };
-                if point.within(bounds.border_box) {
-                    Some(MouseAreaEvent::MouseMove { x: *x, y: *y })
+                let inside = point.within(bounds.border_box);
+                if inside || (state.mouse_held && self.capture_for.mouse_move) {
+                    Some(MouseAreaEvent::MouseMove {
+                        x: *x,
+                        y: *y,
+                        inside,
+                    })
                 } else {
                     None
                 }
@@ -127,12 +182,14 @@ impl<Message: 'static> MouseArea<Message> {
                 modifiers,
             } => {
                 let point = PointDIP { x: *x, y: *y };
-                if point.within(bounds.border_box) {
+                let inside = point.within(bounds.border_box);
+                if inside || (state.mouse_held && self.capture_for.mouse_wheel) {
                     Some(MouseAreaEvent::MouseWheel {
                         x: *x,
                         y: *y,
                         wheel_delta: *wheel_delta,
                         modifiers: *modifiers,
+                        inside,
                     })
                 } else {
                     None
@@ -150,28 +207,33 @@ impl<Message: 'static> MouseArea<Message> {
         bounds: &Bounds,
         shell: &mut Shell<Message>,
     ) {
-        if let Event::MouseMove { x, y } = event {
-            let point = PointDIP { x: *x, y: *y };
-            let inside = point.within(bounds.border_box);
+        // if let Event::MouseMove { x, y } = event {
 
-            if inside != state.mouse_inside {
-                state.mouse_inside = inside;
-                state.last_mouse_pos = Some((*x, *y));
+        match event {
+            Event::MouseMove { x, y } => {
+                let point = PointDIP { x: *x, y: *y };
+                let inside = point.within(bounds.border_box);
 
-                let synthetic_event = if inside {
-                    MouseAreaEvent::MouseEntered { x: *x, y: *y }
-                } else {
-                    MouseAreaEvent::MouseLeft { x: *x, y: *y }
-                };
+                if inside != state.mouse_inside {
+                    state.mouse_inside = inside;
+                    state.last_mouse_pos = Some((*x, *y));
 
-                if let Some(ref handler) = self.event_handler {
-                    if let Some(message) = handler(synthetic_event, shell) {
-                        shell.publish(message);
+                    let synthetic_event = if inside {
+                        MouseAreaEvent::MouseEntered { x: *x, y: *y }
+                    } else {
+                        MouseAreaEvent::MouseLeft { x: *x, y: *y }
+                    };
+
+                    if let Some(ref handler) = self.event_handler {
+                        if let Some(message) = handler(synthetic_event, shell) {
+                            shell.publish(message);
+                        }
                     }
+                } else if inside {
+                    state.last_mouse_pos = Some((*x, *y));
                 }
-            } else if inside {
-                state.last_mouse_pos = Some((*x, *y));
             }
+            _ => {}
         }
     }
 
@@ -241,16 +303,24 @@ where
     ) {
         let state = with_state!(mut instance as MouseAreaState);
 
+        if matches!(event, Event::MouseButtonDown { .. }) {
+            state.mouse_held = true;
+        }
+
         // Handle synthetic enter/leave events first
         self.handle_synthetic_events(state, event, &bounds, shell);
 
         // Map and handle core mouse events
-        if let Some(mouse_event) = self.map_event(event, &bounds) {
+        if let Some(mouse_event) = self.map_event(state, event, &bounds) {
             if let Some(ref handler) = self.event_handler {
                 if let Some(message) = handler(mouse_event, shell) {
                     shell.publish(message);
                 }
             }
+        }
+
+        if matches!(event, Event::MouseButtonUp { .. }) {
+            state.mouse_held = false;
         }
     }
 

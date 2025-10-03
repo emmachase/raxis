@@ -16,7 +16,7 @@ use windows::Win32::{
     Graphics::Direct2D::{
         Common::D2D1_COLOR_F, D2D1_SVG_ATTRIBUTE_POD_TYPE_COLOR,
         D2D1_SVG_ATTRIBUTE_POD_TYPE_VIEWBOX, D2D1_SVG_PAINT_TYPE_COLOR, D2D1_SVG_VIEWBOX,
-        ID2D1DeviceContext7, ID2D1SvgDocument, ID2D1SvgElement, ID2D1SvgPaint,
+        ID2D1DeviceContext6, ID2D1SvgDocument, ID2D1SvgElement, ID2D1SvgPaint,
     },
     UI::Shell::SHCreateMemStream,
 };
@@ -79,7 +79,7 @@ impl ViewBox {
 /// State for SVG widget that caches the expensive SVG document
 struct SvgWidgetState {
     /// Device context for creating SVG document
-    device_context: ID2D1DeviceContext7,
+    device_context: ID2D1DeviceContext6,
     /// Cached SVG document
     svg_document: Option<ID2D1SvgDocument>,
     /// Cached SVG content string to detect changes
@@ -91,7 +91,7 @@ struct SvgWidgetState {
 }
 
 impl SvgWidgetState {
-    pub fn new(device_context: ID2D1DeviceContext7) -> Self {
+    pub fn new(device_context: ID2D1DeviceContext6) -> Self {
         Self {
             device_context,
             svg_document: None,

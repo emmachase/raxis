@@ -55,6 +55,7 @@ raxis-core = { path = "raxis-core" }
 raxis-proc-macro = { path = "raxis-proc-macro" }
 lazy_static = "1.5.0"
 trig-const = "0.3.0"
+thiserror = "2.0.17"
 
 # Hot-patching
 # dioxus-devtools = "0.7.0-rc.0"

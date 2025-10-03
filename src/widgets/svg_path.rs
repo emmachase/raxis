@@ -15,7 +15,7 @@ use raxis_core::SvgPathCommands;
 use std::{any::Any, time::Instant};
 use windows::Win32::{
     Foundation::HWND,
-    Graphics::Direct2D::{ID2D1Factory8, ID2D1PathGeometry},
+    Graphics::Direct2D::{ID2D1Factory7, ID2D1PathGeometry},
 };
 
 /// SVG Path widget for rendering procedurally generated SVG paths
@@ -44,7 +44,7 @@ pub struct SvgPath {
 /// State for SVG Path widget that caches the Direct2D geometry
 struct SvgPathWidgetState {
     /// Direct2D factory for creating geometry
-    d2d_factory: ID2D1Factory8,
+    d2d_factory: ID2D1Factory7,
     /// Cached Direct2D path geometry
     path_geometry: Option<ID2D1PathGeometry>,
     /// Whether the geometry needs to be recreated
@@ -52,7 +52,7 @@ struct SvgPathWidgetState {
 }
 
 impl SvgPathWidgetState {
-    pub fn new(d2d_factory: ID2D1Factory8, svg_path: &SvgPathCommands) -> Self {
+    pub fn new(d2d_factory: ID2D1Factory7, svg_path: &SvgPathCommands) -> Self {
         // Create the geometry immediately during state creation
         let path_geometry = svg_path.create_geometry(&d2d_factory).ok();
 

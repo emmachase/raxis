@@ -14,7 +14,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT,
     D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
     D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-    ID2D1DeviceContext7, ID2D1Effect, ID2D1Factory, ID2D1GeometrySink, ID2D1Image,
+    ID2D1DeviceContext6, ID2D1Effect, ID2D1Factory, ID2D1GeometrySink, ID2D1Image,
     ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows_core::Interface;
@@ -157,7 +157,7 @@ impl ShadowCache {
 
 pub struct Renderer<'a> {
     pub factory: &'a ID2D1Factory,
-    pub render_target: &'a ID2D1DeviceContext7,
+    pub render_target: &'a ID2D1DeviceContext6,
     pub brush: &'a ID2D1SolidColorBrush,
     shadow_cache: &'a RefCell<ShadowCache>,
 }
@@ -166,7 +166,7 @@ impl Renderer<'_> {
     /// Create a new Renderer with a reference to the shadow cache
     pub fn new<'a>(
         factory: &'a ID2D1Factory,
-        render_target: &'a ID2D1DeviceContext7,
+        render_target: &'a ID2D1DeviceContext6,
         brush: &'a ID2D1SolidColorBrush,
         shadow_cache: &'a RefCell<ShadowCache>,
     ) -> Renderer<'a> {

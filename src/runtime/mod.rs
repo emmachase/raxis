@@ -35,12 +35,13 @@ use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
-use windows::Win32::Foundation::HMODULE;
+use thiserror::Error;
+use windows::Win32::Foundation::{COLORREF, HMODULE, SIZE};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
-    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, ID2D1Bitmap1, ID2D1Device7, ID2D1DeviceContext7,
-    ID2D1Factory8,
+    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, ID2D1Bitmap1, ID2D1Device6, ID2D1DeviceContext6,
+    ID2D1Factory7,
 };
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
@@ -55,7 +56,7 @@ use windows::Win32::Graphics::DirectComposition::{
 };
 use windows::Win32::Graphics::Dwm::{
     DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_NONE,
-    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
+    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_CAPTION_COLOR, DWMWA_SYSTEMBACKDROP_TYPE,
     DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
@@ -67,21 +68,28 @@ use windows::Win32::Graphics::Dxgi::{
     DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
     IDXGIFactory7, IDXGISurface, IDXGISwapChain1,
 };
-use windows::Win32::Graphics::Gdi::{BeginPaint, ClientToScreen, EndPaint, PAINTSTRUCT};
+use windows::Win32::Graphics::Gdi::{
+    BeginPaint, ClientToScreen, CreateSolidBrush, DeleteObject, EndPaint, FillRect, HDC, HGDIOBJ,
+    PAINTSTRUCT,
+};
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::System::SystemServices::MK_SHIFT;
-use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::Controls::{
+    CS_ACTIVE, CloseThemeData, GetThemePartSize, MARGINS, OpenThemeData, TS_TRUE, WP_CAPTION,
+};
+use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, GetForegroundWindow, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
-    HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
-    NCCALCSIZE_PARAMS, PostMessageW, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE,
-    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED,
-    WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION,
-    WS_EX_NOREDIRECTIONBITMAP,
+    AdjustWindowRectEx, GCLP_HBRBACKGROUND, GetForegroundWindow, GetWindowRect, HTBOTTOM,
+    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT,
+    HTTOPRIGHT, IDC_HAND, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER,
+    SM_CYFRAME, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetClassLongPtrW, SystemParametersInfoW, WM_ACTIVATE,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER,
+    WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -127,8 +135,9 @@ use windows::{
             },
         },
     },
-    core::{PCWSTR, Result, w},
+    core::{PCWSTR, w},
 };
+use windows_core::Error as WinError;
 use windows_core::{BOOL, IUnknown, Interface};
 
 pub const LINE_HEIGHT: u32 = 32;
@@ -286,9 +295,9 @@ pub struct DeviceResources {
     pub dxgi_factory: IDXGIFactory7,
     pub dxgi_adapter: IDXGIAdapter,
     pub dxgi_device: IDXGIDevice4,
-    pub d2d_device_context: ID2D1DeviceContext7,
-    pub d2d_device: ID2D1Device7,
-    pub d2d_factory: ID2D1Factory8,
+    pub d2d_device_context: ID2D1DeviceContext6,
+    pub d2d_device: ID2D1Device6,
+    pub d2d_factory: ID2D1Factory7,
     pub d3d_context: ID3D11DeviceContext,
     pub d3d_device: ID3D11Device,
 
@@ -299,6 +308,56 @@ pub struct DeviceResources {
 
     pub shadow_cache: RefCell<ShadowCache>,
 }
+
+#[derive(Debug, Error)]
+pub enum RuntimeError {
+    #[error("Windows API error: {0}")]
+    WindowsApi(#[from] WinError),
+
+    #[error("Failed to create D3D11 device")]
+    D3D11DeviceCreationFailed(WinError),
+
+    #[error("Failed to create D2D factory")]
+    D2DFactoryCreationFailed(WinError),
+
+    #[error("Failed to create DWrite factory")]
+    DWriteFactoryCreationFailed(WinError),
+
+    #[error("Failed to initialize global font manager")]
+    FontManagerInitializationFailed(WinError),
+
+    #[error("Failed to create D2D device")]
+    D2DDeviceCreationFailed(WinError),
+
+    #[error("Failed to create D2D device context")]
+    D2DDeviceContextCreationFailed(WinError),
+
+    #[error("Failed to get DXGI adapter")]
+    DxgiAdapterCreationFailed(WinError),
+
+    #[error("Failed to create DirectComposition device")]
+    DcompDeviceCreationFailed(WinError),
+
+    #[error("Failed to create DirectComposition target")]
+    DcompTargetCreationFailed(WinError),
+
+    #[error("Failed to create DirectComposition visual")]
+    DcompVisualCreationFailed(WinError),
+
+    #[error("Failed to create DXGI swapchain")]
+    DxgiSwapchainCreationFailed(WinError),
+
+    #[error("Failed to resize swap chain buffers")]
+    SwapChainResizeFailed(WinError),
+
+    #[error("Failed to create window")]
+    WindowCreationFailed(WinError),
+
+    #[error("Task channel send failed")]
+    TaskChannelSendFailed,
+}
+
+pub type Result<T> = std::result::Result<T, RuntimeError>;
 
 impl DeviceResources {
     fn create_device_resources(&mut self, hwnd: HWND, width: u32, height: u32) -> Result<()> {
@@ -324,18 +383,27 @@ impl DeviceResources {
                         ..Default::default()
                     };
 
-                    let dxgi_swapchain: IDXGISwapChain1 =
-                        self.dxgi_factory.CreateSwapChainForComposition(
-                            &self.d3d_device.cast::<IUnknown>()?,
+                    let dxgi_swapchain: IDXGISwapChain1 = self
+                        .dxgi_factory
+                        .CreateSwapChainForComposition(
+                            &self.d3d_device.cast::<IUnknown>().unwrap(),
                             &swapchain_desc,
                             None,
-                        )?;
+                        )
+                        .map_err(RuntimeError::DxgiSwapchainCreationFailed)?;
 
                     // Create DirectComp visual
                     // TODO: split this out?
-                    let dcomp_visual = self.dcomp_device.CreateVisual()?;
-                    dcomp_visual.SetContent(&dxgi_swapchain)?;
-                    self.dcomp_target.SetRoot(&dcomp_visual)?;
+                    let dcomp_visual = self
+                        .dcomp_device
+                        .CreateVisual()
+                        .map_err(RuntimeError::DcompVisualCreationFailed)?;
+                    dcomp_visual
+                        .SetContent(&dxgi_swapchain)
+                        .map_err(RuntimeError::DcompVisualCreationFailed)?;
+                    self.dcomp_target
+                        .SetRoot(&dcomp_visual)
+                        .map_err(RuntimeError::DcompTargetCreationFailed)?;
                     self.dcomp_visual = Some(dcomp_visual);
 
                     self.dxgi_swapchain = Some(dxgi_swapchain);
@@ -349,7 +417,9 @@ impl DeviceResources {
                 Some(ref back_buffer) => back_buffer,
                 None => {
                     // println!("Fetching back buffer");
-                    let back_buffer: ID3D11Texture2D = dxgi_swapchain.GetBuffer(0)?;
+                    let back_buffer: ID3D11Texture2D = dxgi_swapchain
+                        .GetBuffer(0)
+                        .map_err(RuntimeError::DxgiSwapchainCreationFailed)?;
                     self.back_buffer = Some(back_buffer);
                     self.back_buffer
                         .as_ref()
@@ -374,10 +444,13 @@ impl DeviceResources {
 
                 self.d2d_device_context.SetDpi(dpi, dpi);
 
-                let d2d_target_bitmap = self.d2d_device_context.CreateBitmapFromDxgiSurface(
-                    &back_buffer.cast::<IDXGISurface>()?,
-                    Some(&bitmap_properties),
-                )?;
+                let d2d_target_bitmap = self
+                    .d2d_device_context
+                    .CreateBitmapFromDxgiSurface(
+                        &back_buffer.cast::<IDXGISurface>().unwrap(),
+                        Some(&bitmap_properties),
+                    )
+                    .map_err(RuntimeError::DxgiSwapchainCreationFailed)?;
 
                 self.d2d_device_context.SetTarget(&d2d_target_bitmap);
                 self.d2d_target_bitmap = Some(d2d_target_bitmap);
@@ -391,39 +464,41 @@ impl DeviceResources {
                     r: 0.0,
                     g: 0.0,
                     b: 0.0,
-                    a: 0.0,
+                    a: 1.0,
                 };
-                let brush = rt.CreateSolidColorBrush(&black, None)?;
+                let brush = rt
+                    .CreateSolidColorBrush(&black, None)
+                    .map_err(RuntimeError::DxgiSwapchainCreationFailed)?;
                 self.solid_brush = Some(brush);
             }
 
             // Initialize DirectComposition objects if not already created
             // if self.dcomp_device.is_none() {
             //     // Step 3: Create DirectComposition device object
-            //     let dcomp_device =?;
+            //     let dcomp_device =.unwrap();
             //     self.dcomp_device = Some(dcomp_device);
             // }
 
             // if self.dcomp_target.is_none() && self.dcomp_device.is_some() {
             //     // Step 4: Create composition target object
             //     let dcomp_device = self.dcomp_device.as_ref().unwrap();
-            //     let dcomp_target = dcomp_device.CreateTargetForHwnd(hwnd, true)?;
+            //     let dcomp_target = dcomp_device.CreateTargetForHwnd(hwnd, true).unwrap();
             //     self.dcomp_target = Some(dcomp_target);
             // }
 
             // if self.dcomp_visual.is_none() && self.dcomp_device.is_some() {
             //     // Step 5: Create visual object
             //     let dcomp_device = self.dcomp_device.as_ref().unwrap();
-            //     let dcomp_visual = dcomp_device.CreateVisual()?;
+            //     let dcomp_visual = dcomp_device.CreateVisual().unwrap();
             //     self.dcomp_visual = Some(dcomp_visual);
 
             //     // Set the visual as the root visual of the target
             //     if let Some(ref target) = self.dcomp_target {
-            //         target.SetRoot(&dcomp_visual)?;
+            //         target.SetRoot(&dcomp_visual).unwrap();
             //     }
 
             //     // Commit the composition to make it visible
-            //     dcomp_device.Commit()?;
+            //     dcomp_device.Commit().unwrap();
             // }
 
             Ok(())
@@ -490,37 +565,54 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 Some(&mut d3d_device),
                 None,
                 Some(&mut d3d_context),
-            )?;
+            )
+            .map_err(RuntimeError::D3D11DeviceCreationFailed)?;
             let d3d_device = d3d_device.expect("Failed to create D3D device");
             let d3d_context = d3d_context.expect("Failed to create D3D context");
 
-            let dxgi_device: IDXGIDevice4 = Interface::cast(&d3d_device)?;
+            let dxgi_device: IDXGIDevice4 = Interface::cast(&d3d_device).unwrap();
 
             // Ensure that DXGI doesn't queue more than one frame at a time.
-            dxgi_device.SetMaximumFrameLatency(1)?;
+            dxgi_device
+                .SetMaximumFrameLatency(1)
+                .map_err(RuntimeError::WindowsApi)?;
 
             let options = D2D1_FACTORY_OPTIONS {
                 debugLevel: D2D1_DEBUG_LEVEL_NONE,
             };
-            let d2d_factory: ID2D1Factory8 =
-                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, Some(&options))?;
+            let d2d_factory: ID2D1Factory7 =
+                D2D1CreateFactory(D2D1_FACTORY_TYPE_SINGLE_THREADED, Some(&options))
+                    .map_err(RuntimeError::D2DFactoryCreationFailed)?;
 
-            let dwrite_factory: IDWriteFactory6 = DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)?;
+            let dwrite_factory: IDWriteFactory6 =
+                DWriteCreateFactory(DWRITE_FACTORY_TYPE_SHARED)
+                    .map_err(RuntimeError::DWriteFactoryCreationFailed)?;
 
             // Initialize global font manager
-            font_manager::GlobalFontManager::initialize(dwrite_factory.clone())?;
+            font_manager::GlobalFontManager::initialize(dwrite_factory.clone())
+                .map_err(RuntimeError::FontManagerInitializationFailed)?;
 
-            let d2d_device = d2d_factory.CreateDevice(&dxgi_device)?;
+            let d2d_device = d2d_factory
+                .CreateDevice(&dxgi_device)
+                .map_err(RuntimeError::D2DDeviceCreationFailed)?;
 
-            let d2d_device_context =
-                d2d_device.CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)?;
+            let d2d_device_context = d2d_device
+                .CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE)
+                .map_err(RuntimeError::D2DDeviceContextCreationFailed)?;
 
-            let dxgi_adapter = dxgi_device.GetAdapter()?;
-            let dxgi_factory = dxgi_adapter.GetParent::<IDXGIFactory7>()?;
+            let dxgi_adapter = dxgi_device
+                .GetAdapter()
+                .map_err(RuntimeError::DxgiAdapterCreationFailed)?;
+            let dxgi_factory = dxgi_adapter
+                .GetParent::<IDXGIFactory7>()
+                .map_err(RuntimeError::DxgiAdapterCreationFailed)?;
 
             // Direct Composition
-            let dcomp_device: IDCompositionDevice = DCompositionCreateDevice2(&d2d_device)?;
-            let dcomp_target: IDCompositionTarget = dcomp_device.CreateTargetForHwnd(hwnd, true)?;
+            let dcomp_device: IDCompositionDevice = DCompositionCreateDevice2(&d2d_device)
+                .map_err(RuntimeError::DcompDeviceCreationFailed)?;
+            let dcomp_target: IDCompositionTarget = dcomp_device
+                .CreateTargetForHwnd(hwnd, true)
+                .map_err(RuntimeError::DcompTargetCreationFailed)?;
 
             let device_resources = DeviceResources {
                 d3d_device,
@@ -567,7 +659,9 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
             let (task_sender, task_receiver) = mpsc::channel::<Task<Message>>();
             let (message_sender, message_receiver) = mpsc::channel::<Message>();
             if let Some(boot_task) = boot_task {
-                task_sender.send(boot_task).unwrap();
+                task_sender
+                    .send(boot_task)
+                    .map_err(|_| RuntimeError::TaskChannelSendFailed)?;
             }
 
             let shell = Shell::new(
@@ -694,7 +788,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
 
             let root = self.ui_tree.root;
 
-            let rc = client_rect(hwnd)?;
+            let rc = client_rect(hwnd).unwrap();
             let rc_dip = RectDIP::from(hwnd, rc);
             self.ui_tree.slots[root].width = Sizing::fixed(rc_dip.width);
             self.ui_tree.slots[root].height = Sizing::fixed(rc_dip.height);
@@ -725,7 +819,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
         // let rt = &self.device_resources.d2d_device_context;
 
         // unsafe {
-        //     rt.Resize(&D2D_SIZE_U { width, height })?;
+        //     rt.Resize(&D2D_SIZE_U { width, height }).unwrap();
         // }
 
         unsafe {
@@ -737,13 +831,15 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
             device_resources.back_buffer = None;
 
             if let Some(ref mut swap_chain) = device_resources.dxgi_swapchain {
-                swap_chain.ResizeBuffers(
-                    0,
-                    width,
-                    height,
-                    DXGI_FORMAT_UNKNOWN,
-                    DXGI_SWAP_CHAIN_FLAG::default(),
-                )?;
+                swap_chain
+                    .ResizeBuffers(
+                        0,
+                        width,
+                        height,
+                        DXGI_FORMAT_UNKNOWN,
+                        DXGI_SWAP_CHAIN_FLAG::default(),
+                    )
+                    .map_err(RuntimeError::SwapChainResizeFailed)?;
             }
         }
 
@@ -838,7 +934,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
         }
 
         unsafe {
-            InvalidateRect(Some(hwnd), None, true).unwrap();
+            let _ = InvalidateRect(Some(hwnd), None, false);
         }
 
         PENDING_MESSAGE_PROCESSING.store(false, Ordering::SeqCst);
@@ -894,11 +990,12 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                 WM_NCCALCSIZE if wparam.0 == 1 => {
                     let pncsp = lparam.0 as *mut NCCALCSIZE_PARAMS;
 
-                    // TODO: Not sure about these
-                    (*pncsp).rgrc[0].left += (8.0) as i32;
-                    (*pncsp).rgrc[0].top += (0.0) as i32;
-                    (*pncsp).rgrc[0].right -= (8.0) as i32;
-                    (*pncsp).rgrc[0].bottom -= (8.0) as i32;
+                    (*pncsp).rgrc[0].left +=
+                        GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    (*pncsp).rgrc[0].right -=
+                        GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    (*pncsp).rgrc[0].bottom -=
+                        GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
 
                     return LRESULT(0);
                 }
@@ -908,6 +1005,15 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     if l_ret.0 != HTNOWHERE as isize {
                         skip_normal_handlers = true;
                     }
+                }
+                WM_ERASEBKGND => {
+                    let hdc = HDC(std::mem::transmute(wparam.0));
+                    let mut rc = RECT::default();
+                    GetClientRect(hwnd, &mut rc).unwrap();
+                    let brush = CreateSolidBrush(COLORREF(0x000000));
+                    FillRect(hdc, &rc, brush);
+                    let _ = DeleteObject(brush.into());
+                    return LRESULT(1);
                 }
                 _ => {}
             }
@@ -1243,13 +1349,12 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                     &state.shell.scroll_state_manager,
                                 ) {
                                     let mut scroll_lines = 3;
-                                    SystemParametersInfoW(
+                                    let _ = SystemParametersInfoW(
                                         SPI_GETWHEELSCROLLLINES,
                                         0,
                                         Some(&mut scroll_lines as *mut i32 as *mut _),
                                         SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-                                    )
-                                    .expect("Failed to get wheel scroll lines");
+                                    );
 
                                     let wheel_delta =
                                         wheel_delta * LINE_HEIGHT as f32 * scroll_lines as f32;
@@ -1457,6 +1562,20 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     SWP_NOZORDER | SWP_NOACTIVATE | SWP_FRAMECHANGED,
                 )
                 .ok();
+
+                if REPLACE_TITLEBAR.load(Ordering::Relaxed) {
+                    let margins = MARGINS {
+                        cxLeftWidth: -1,
+                        cxRightWidth: -1,
+                        cyTopHeight: -1,
+                        cyBottomHeight: -1,
+                        // cxLeftWidth: 0,
+                        // cxRightWidth: 0,
+                        // cyBottomHeight: 0,
+                        // cyTopHeight: compute_standard_caption_height_for_window(hwnd).unwrap(),
+                    };
+                    DwmExtendFrameIntoClientArea(hwnd, &margins).ok();
+                }
 
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                     let state = state.deref_mut();
@@ -1850,10 +1969,11 @@ fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
 
     let dpi_scale = dips_scale(hwnd);
 
-    let topextendwidth: i32 = (28.0 / dpi_scale) as i32;
-    let bottomextendwidth: i32 = (8.0 / dpi_scale) as i32;
-    let leftextendwidth: i32 = (8.0 / dpi_scale) as i32;
-    let rightextendwidth: i32 = (8.0 / dpi_scale) as i32;
+    let topextendwidth: i32 =
+        compute_standard_caption_height_for_window(hwnd).unwrap_or((28.0 / dpi_scale) as i32);
+    let bottomextendwidth: i32 = (10.0 / dpi_scale) as i32;
+    let leftextendwidth: i32 = (10.0 / dpi_scale) as i32;
+    let rightextendwidth: i32 = (10.0 / dpi_scale) as i32;
 
     if y_px >= rc_window.top && y_px < rc_window.top + topextendwidth {
         f_on_resize_border = y_px < (rc_window.top - rc_frame.top);
@@ -1890,6 +2010,17 @@ fn get_modifiers() -> Modifiers {
         ctrl: ctrl_down,
         alt: alt_down,
     }
+}
+fn compute_standard_caption_height_for_window(window_handle: HWND) -> Result<i32> {
+    let accounting_for_borders = -1;
+    let theme = unsafe { OpenThemeData(Some(window_handle), w!("WINDOW")) };
+    let dpi = unsafe { GetDpiForWindow(window_handle) };
+    let caption_size =
+        unsafe { GetThemePartSize(theme, None, WP_CAPTION.0, CS_ACTIVE.0, None, TS_TRUE)? };
+    unsafe { CloseThemeData(theme)? };
+
+    let height = (caption_size.cy as f32 * dpi as f32) / 96.0;
+    Ok((height as i32) + accounting_for_borders)
 }
 
 #[derive(Debug, Default)]
@@ -2001,7 +2132,7 @@ impl<
             // Initialize OLE for drag-and-drop
             let _ = OleInitialize(None);
 
-            let hinstance = GetModuleHandleW(None)?;
+            let hinstance = GetModuleHandleW(None).unwrap();
             let class_name = PCWSTR(w!("DWriteSampleWindow").as_ptr());
 
             let wc = WNDCLASSW {
@@ -2016,7 +2147,7 @@ impl<
 
             // Create window first without user data
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
+                WINDOW_EX_STYLE::default(), // | WS_EX_NOREDIRECTIONBITMAP,
                 class_name,
                 PCWSTR(
                     title
@@ -2034,7 +2165,8 @@ impl<
                 None,
                 Some(hinstance.into()),
                 None, // No user data yet
-            )?;
+            )
+            .map_err(RuntimeError::WindowCreationFailed)?;
 
             // Dark mode
             DwmSetWindowAttribute(
@@ -2045,8 +2177,16 @@ impl<
             )
             .ok();
 
+            // DwmSetWindowAttribute(
+            //     hwnd,
+            //     DWMWA_CAPTION_COLOR,
+            //     &COLORREF(0x000000) as *const _ as _,
+            //     size_of::<COLORREF>() as _,
+            // )
+            // .ok();
+
             // For Mica effect (Windows 11 only)
-            DwmSetWindowAttribute(
+            let backdrop_result = DwmSetWindowAttribute(
                 hwnd,
                 DWMWA_SYSTEMBACKDROP_TYPE,
                 &match backdrop {
@@ -2056,10 +2196,12 @@ impl<
                     Backdrop::Acrylic => DWMSBT_TRANSIENTWINDOW,
                 } as *const _ as _,
                 size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
-            )
-            .ok();
+            );
 
-            if !matches!(backdrop, Backdrop::None) {
+            // Check if backdrop setting succeeded
+            let backdrop_supported = backdrop_result.is_ok();
+
+            if backdrop_supported && !matches!(backdrop, Backdrop::None) {
                 let bb = DWM_BLURBEHIND {
                     dwFlags: DWM_BB_ENABLE,
                     fEnable: true.into(),
@@ -2076,10 +2218,10 @@ impl<
                     cxRightWidth: -1,
                     cyTopHeight: -1,
                     cyBottomHeight: -1,
-                    // cxLeftWidth: 8,
-                    // cxRightWidth: 8,
-                    // cyBottomHeight: 8,
-                    // cyTopHeight: 28,
+                    // cxLeftWidth: 0,
+                    // cxRightWidth: 0,
+                    // cyBottomHeight: 0,
+                    // cyTopHeight: compute_standard_caption_height_for_window(hwnd)?,
                 };
                 DwmExtendFrameIntoClientArea(hwnd, &margins).ok();
             }
