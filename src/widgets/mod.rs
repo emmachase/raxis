@@ -11,7 +11,7 @@ use crate::{
         model::{ElementStyle, UIElement, WidgetContent},
         visitors,
     },
-    runtime::DeviceResources,
+    runtime::{DeviceResources, vkey::VKey},
 };
 
 pub use dragdrop::{DragData, DragInfo, DropResult, WidgetDragDropTarget};
@@ -83,11 +83,11 @@ pub enum Event {
         modifiers: Modifiers,
     },
     KeyDown {
-        key: u32,
+        key: VKey,
         modifiers: Modifiers,
     },
     KeyUp {
-        key: u32,
+        key: VKey,
         modifiers: Modifiers,
     },
     Char {

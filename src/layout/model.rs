@@ -59,6 +59,42 @@ impl BoxAmount {
         }
     }
 
+    pub fn top(amount: f32) -> Self {
+        Self {
+            top: amount,
+            right: 0.0,
+            bottom: 0.0,
+            left: 0.0,
+        }
+    }
+
+    pub fn bottom(amount: f32) -> Self {
+        Self {
+            top: 0.0,
+            right: 0.0,
+            bottom: amount,
+            left: 0.0,
+        }
+    }
+
+    pub fn left(amount: f32) -> Self {
+        Self {
+            top: 0.0,
+            right: 0.0,
+            bottom: 0.0,
+            left: amount,
+        }
+    }
+
+    pub fn right(amount: f32) -> Self {
+        Self {
+            top: 0.0,
+            right: amount,
+            bottom: 0.0,
+            left: 0.0,
+        }
+    }
+
     pub fn apply(mut self, f: impl FnOnce(&mut Self)) -> Self {
         f(&mut self);
         self

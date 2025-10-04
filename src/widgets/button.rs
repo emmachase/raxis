@@ -190,8 +190,8 @@ impl<Message: 'static + Send> Button<Message> {
         self
     }
 
-    pub fn with_border_radius(mut self, radius: f32) -> Self {
-        let border_radius = BorderRadius::all(radius);
+    pub fn with_border_radius(mut self, radius: impl Into<BorderRadius>) -> Self {
+        let border_radius = radius.into();
         self.styles.normal.border_radius = Some(border_radius);
         self.styles.hover.border_radius = Some(border_radius);
         self.styles.pressed.border_radius = Some(border_radius);

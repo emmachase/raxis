@@ -27,6 +27,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 // use crate::core::widget;
 use futures::channel::mpsc;
 use futures::channel::oneshot;
+use futures::channel::oneshot::Sender;
 use futures::future::{self, FutureExt};
 use futures::stream::BoxStream;
 use futures::stream::{self, Stream, StreamExt};
@@ -44,8 +45,14 @@ where
     futures::stream::StreamExt::boxed(stream)
 }
 
+pub enum ClipboardAction {
+    Set(String),
+    Get(Sender<Option<String>>),
+}
+
 pub enum Action<T> {
     Output(T),
+    Clipboard(ClipboardAction),
     Exit,
 }
 
@@ -60,7 +67,7 @@ impl<T> Action<T> {
             Action::Output(output) => Ok(output),
             // Action::LoadFont { bytes, channel } => Err(Action::LoadFont { bytes, channel }),
             // Action::Widget(operation) => Err(Action::Widget(operation)),
-            // Action::Clipboard(action) => Err(Action::Clipboard(action)),
+            Action::Clipboard(action) => Err(Action::Clipboard(action)),
             // Action::Window(action) => Err(Action::Window(action)),
             // Action::System(action) => Err(Action::System(action)),
             // Action::Reload => Err(Action::Reload),

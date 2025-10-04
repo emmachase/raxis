@@ -5,6 +5,7 @@ pub mod font_manager;
 pub mod scroll;
 pub mod smooth_scroll;
 pub mod task;
+pub mod vkey;
 
 use crate::gfx::PointDIP;
 use crate::gfx::command_executor::CommandExecutor;
@@ -18,11 +19,14 @@ use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::focus::FocusManager;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
-use crate::runtime::task::{Action, Task, into_stream};
+use crate::runtime::task::{Action, ClipboardAction, Task, into_stream};
+use crate::runtime::vkey::VKey;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::renderer::{Renderer, ShadowCache};
 use crate::widgets::{Cursor, DragData, DragEvent, Event, Modifiers};
-use crate::{DeferredControl, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id};
+use crate::{
+    DeferredControl, EventMapperFn, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id,
+};
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
 use slotmap::DefaultKey;
 use std::cell::RefCell;
@@ -83,8 +87,8 @@ use windows::Win32::UI::Input::Ime::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, GCLP_HBRBACKGROUND, GetForegroundWindow, GetWindowRect, HTBOTTOM,
-    HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT,
+    AdjustWindowRectEx, DestroyWindow, GCLP_HBRBACKGROUND, GetForegroundWindow, GetWindowRect,
+    HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT,
     HTTOPRIGHT, IDC_HAND, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER,
     SM_CYFRAME, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE,
     SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetClassLongPtrW, SystemParametersInfoW, WM_ACTIVATE,
@@ -258,6 +262,7 @@ struct ApplicationHandle<State, Message> {
     timing_info: DWM_TIMING_INFO,
     view_fn: ViewFn<State, Message>,
     update_fn: UpdateFn<State, Message>,
+    event_mapper_fn: EventMapperFn<Message>,
     user_state: State,
 
     ui_tree: OwnedUITree<Message>,
@@ -540,6 +545,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
     fn new(
         view_fn: ViewFn<State, Message>,
         update_fn: UpdateFn<State, Message>,
+        event_mapper_fn: EventMapperFn<Message>,
         boot_fn: impl Fn(&State) -> Option<Task<Message>>,
         user_state: State,
         hwnd: HWND,
@@ -669,6 +675,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 task_sender.clone(),
                 scroll_state_manager,
                 focus_manager,
+                event_mapper_fn,
             );
 
             // Spawn executor thread with selected async runtime
@@ -684,22 +691,36 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                         use futures::StreamExt;
                         let mut stream = stream;
                         while let Some(action) = stream.next().await {
-                            if let Action::Output(message) = action {
-                                // Send message to channel for UI thread processing
-                                let _ = message_sender.send(message);
+                            // if let Action::Output(message) = action {
+                            match action {
+                                Action::Output(message) => {
+                                    // Send message to channel for UI thread processing
+                                    let _ = message_sender.send(message);
 
-                                // If the UI thread is not processing messages, notify it
-                                if !PENDING_MESSAGE_PROCESSING.swap(true, Ordering::SeqCst) {
-                                    unsafe {
-                                        PostMessageW(
-                                            Some(hwnd.0),
-                                            WM_ASYNC_MESSAGE,
-                                            WPARAM(0),
-                                            LPARAM(0),
-                                        )
-                                        .ok();
+                                    // If the UI thread is not processing messages, notify it
+                                    if !PENDING_MESSAGE_PROCESSING.swap(true, Ordering::SeqCst) {
+                                        unsafe {
+                                            PostMessageW(
+                                                Some(hwnd.0),
+                                                WM_ASYNC_MESSAGE,
+                                                WPARAM(0),
+                                                LPARAM(0),
+                                            )
+                                            .ok();
+                                        }
                                     }
                                 }
+                                Action::Clipboard(action) => match action {
+                                    ClipboardAction::Set(text) => {
+                                        let _ = clipboard::set_clipboard_text(hwnd.0, &text);
+                                    }
+                                    ClipboardAction::Get(sender) => {
+                                        let _ = sender.send(clipboard::get_clipboard_text(hwnd.0));
+                                    }
+                                },
+                                Action::Exit => unsafe {
+                                    DestroyWindow(hwnd.0).ok();
+                                },
                             }
                         }
                     }
@@ -744,6 +765,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 ui_tree,
                 view_fn,
                 update_fn,
+                event_mapper_fn,
                 user_state,
                 shell,
                 smooth_scroll_manager: SmoothScrollManager::new(),
@@ -1496,14 +1518,16 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                 // println!("WM_KEYDOWN");
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                     let state = state.deref_mut();
-                    let vk = wparam.0 as u32;
+                    let vk = wparam.0 as i32;
 
                     let modifiers = get_modifiers();
-                    state.shell.dispatch_event(
-                        hwnd,
-                        &mut state.ui_tree,
-                        Event::KeyDown { key: vk, modifiers },
-                    );
+                    if let Ok(vk) = VKey::try_from(vk) {
+                        state.shell.dispatch_event(
+                            hwnd,
+                            &mut state.ui_tree,
+                            Event::KeyDown { key: vk, modifiers },
+                        );
+                    }
 
                     // if handled {
                     let _ = InvalidateRect(Some(hwnd), None, false);
@@ -1517,14 +1541,16 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                 // println!("WM_KEYUP");
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                     let state = state.deref_mut();
-                    let vk = wparam.0 as u32;
+                    let vk = wparam.0 as i32;
 
                     let modifiers = get_modifiers();
-                    state.shell.dispatch_event(
-                        hwnd,
-                        &mut state.ui_tree,
-                        Event::KeyUp { key: vk, modifiers },
-                    );
+                    if let Ok(vk) = VKey::try_from(vk) {
+                        state.shell.dispatch_event(
+                            hwnd,
+                            &mut state.ui_tree,
+                            Event::KeyUp { key: vk, modifiers },
+                        );
+                    }
 
                     // if handled {
                     let _ = InvalidateRect(Some(hwnd), None, false);
@@ -2037,8 +2063,9 @@ pub struct Application<
     State: 'static,
     Message: 'static + Send,
 > {
-    view_fn: fn(&State, &mut HookManager<Message>) -> Element<Message>,
-    update_fn: fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>,
+    view_fn: ViewFn<State, Message>,
+    update_fn: UpdateFn<State, Message>,
+    event_mapper_fn: EventMapperFn<Message>,
     boot_fn: B,
     state: State,
 
@@ -2058,13 +2085,14 @@ impl<
 {
     pub fn new(
         state: State,
-        view_fn: fn(&State, &mut HookManager<Message>) -> Element<Message>,
-        update_fn: fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>,
+        view_fn: ViewFn<State, Message>,
+        update_fn: UpdateFn<State, Message>,
         boot_fn: B,
     ) -> Self {
         Self {
             view_fn,
             update_fn,
+            event_mapper_fn: |_, _| None,
             boot_fn,
             state,
 
@@ -2096,6 +2124,13 @@ impl<
         Self { backdrop, ..self }
     }
 
+    pub fn with_event_mapper(self, event_mapper_fn: EventMapperFn<Message>) -> Self {
+        Self {
+            event_mapper_fn,
+            ..self
+        }
+    }
+
     pub fn replace_titlebar(self) -> Self {
         Self {
             replace_titlebar: true,
@@ -2107,6 +2142,7 @@ impl<
         let Application {
             view_fn,
             update_fn,
+            event_mapper_fn,
             boot_fn,
             state,
 
@@ -2227,7 +2263,8 @@ impl<
             }
 
             // Now create the app handle with the hwnd
-            let mut app = ApplicationHandle::new(view_fn, update_fn, boot_fn, state, hwnd)?;
+            let mut app =
+                ApplicationHandle::new(view_fn, update_fn, event_mapper_fn, boot_fn, state, hwnd)?;
 
             let mut dpi_x = 0.0f32;
             let mut dpi_y = 0.0f32;

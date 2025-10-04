@@ -22,6 +22,7 @@ use crate::layout::UIArenas;
 use crate::layout::model::ElementStyle;
 use crate::runtime::clipboard::get_clipboard_text;
 use crate::runtime::font_manager::{FontAxes, FontIdentifier, GlobalFontManager, LineSpacing};
+use crate::runtime::vkey::VKey;
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
     Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
@@ -391,7 +392,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                     let shift_down = modifiers.shift;
                     let ctrl_down = modifiers.ctrl;
                     let _handled = match *key {
-                        x if x == VK_LEFT.0 as u32 => {
+                        VKey::LEFT => {
                             if ctrl_down {
                                 state.move_word_left(shift_down);
                             } else {
@@ -399,7 +400,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             }
                             true
                         }
-                        x if x == VK_RIGHT.0 as u32 => {
+                        VKey::RIGHT => {
                             if ctrl_down {
                                 state.move_word_right(shift_down);
                             } else {
@@ -407,23 +408,23 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             }
                             true
                         }
-                        x if x == VK_UP.0 as u32 => {
+                        VKey::UP => {
                             state.move_up(shift_down);
                             true
                         }
-                        x if x == VK_DOWN.0 as u32 => {
+                        VKey::DOWN => {
                             state.move_down(shift_down);
                             true
                         }
-                        x if x == VK_HOME.0 as u32 => {
+                        VKey::HOME => {
                             state.move_to_start(shift_down);
                             true
                         }
-                        x if x == VK_END.0 as u32 => {
+                        VKey::END => {
                             state.move_to_end(shift_down);
                             true
                         }
-                        x if x == VK_BACK.0 as u32 => {
+                        VKey::BACK => {
                             if ctrl_down {
                                 let _ = state.backspace_word();
                             } else {
@@ -431,7 +432,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             }
                             true
                         }
-                        x if x == VK_DELETE.0 as u32 => {
+                        VKey::DELETE => {
                             if ctrl_down {
                                 let _ = state.delete_word_forward();
                             } else {
@@ -439,11 +440,11 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             }
                             true
                         }
-                        x if x == VK_A.0 as u32 && ctrl_down => {
+                        VKey::A if ctrl_down => {
                             state.select_all();
                             true
                         }
-                        x if x == VK_C.0 as u32 && ctrl_down => {
+                        VKey::C if ctrl_down => {
                             if let Some(s) = state.selected_text() {
                                 // let _ = set_clipboard_text(hwnd, &s);
                                 shell.queue_deferred_control(DeferredControl::SetClipboardText(
@@ -452,7 +453,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             }
                             true
                         }
-                        x if x == VK_X.0 as u32 && ctrl_down => {
+                        VKey::X if ctrl_down => {
                             if let Some(s) = state.selected_text() {
                                 // let _ = set_clipboard_text(hwnd, &s);
                                 shell.queue_deferred_control(DeferredControl::SetClipboardText(
@@ -462,7 +463,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             }
                             true
                         }
-                        x if x == VK_V.0 as u32 && ctrl_down => {
+                        VKey::V if ctrl_down => {
                             if !state.is_composing() {
                                 if let Some(s) = get_clipboard_text(hwnd) {
                                     let _ = state.insert_str(&s);
@@ -470,15 +471,15 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             }
                             true
                         }
-                        x if x == VK_Z.0 as u32 && ctrl_down && shift_down => {
+                        VKey::Z if ctrl_down && shift_down => {
                             let _ = state.redo();
                             true
                         }
-                        x if x == VK_Z.0 as u32 && ctrl_down => {
+                        VKey::Z if ctrl_down => {
                             let _ = state.undo();
                             true
                         }
-                        x if x == VK_ESCAPE.0 as u32 => {
+                        VKey::ESCAPE => {
                             if state.has_selection() {
                                 state.clear_selection();
                             } else {

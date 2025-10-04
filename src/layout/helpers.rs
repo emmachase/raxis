@@ -23,6 +23,14 @@ pub fn container<Message>(content: impl Into<Element<Message>>) -> Element<Messa
     }
 }
 
+pub fn spacer<Message>() -> Element<Message> {
+    Element {
+        width: Sizing::grow(),
+        height: Sizing::grow(),
+        ..Default::default()
+    }
+}
+
 pub fn center<Message>(content: impl Into<Element<Message>>) -> Element<Message> {
     Element {
         direction: Direction::TopToBottom,

@@ -84,6 +84,7 @@ impl<Message> HookManager<'_, Message> {
 pub type ViewFn<State, Message> = fn(&State, &mut HookManager<Message>) -> Element<Message>;
 pub type UpdateFn<State, Message> =
     fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
+pub type EventMapperFn<Message> = fn(Event, bool) -> Option<Message>;
 
 pub use runtime::Application;
 
@@ -115,6 +116,7 @@ pub struct Shell<Message> {
 
     deferred_controls: Vec<DeferredControl>,
 
+    event_mapper: EventMapperFn<Message>,
     message_sender: mpsc::Sender<Message>,
     pending_messages: bool,
 
@@ -141,6 +143,7 @@ impl<Message> Shell<Message> {
         task_dispatcher: mpsc::Sender<Task<Message>>,
         scroll_state_manager: ScrollStateManager,
         focus_manager: FocusManager,
+        event_mapper: EventMapperFn<Message>,
     ) -> Self {
         Self {
             focus_manager,
@@ -155,6 +158,7 @@ impl<Message> Shell<Message> {
             message_sender,
             pending_messages: false,
             task_dispatcher,
+            event_mapper,
         }
     }
 
@@ -234,6 +238,10 @@ impl<Message> Shell<Message> {
 
             VisitAction::Continue
         });
+
+        if let Some(message) = (self.event_mapper)(event, self.event_captured) {
+            self.publish(message);
+        }
     }
 
     pub fn dispatch_event_to(
