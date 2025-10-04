@@ -2266,12 +2266,7 @@ impl<
             let mut app =
                 ApplicationHandle::new(view_fn, update_fn, event_mapper_fn, boot_fn, state, hwnd)?;
 
-            let mut dpi_x = 0.0f32;
-            let mut dpi_y = 0.0f32;
-            app.device_resources
-                .borrow()
-                .d2d_factory
-                .GetDesktopDpi(&mut dpi_x, &mut dpi_y);
+            let dips = dips_scale(hwnd);
 
             // Register OLE drop target
             let dt: IDropTarget = DropTarget::new(hwnd, |hwnd, event| {
@@ -2315,8 +2310,8 @@ impl<
                 None,
                 0,
                 0,
-                (self.width as f32 / dips_scale_for_dpi(dpi_x)) as i32,
-                (self.height as f32 / dips_scale_for_dpi(dpi_y)) as i32,
+                (self.width as f32 / dips) as i32,
+                (self.height as f32 / dips) as i32,
                 SWP_NOZORDER | SWP_NOMOVE | SWP_NOACTIVATE,
             )
             .ok();
