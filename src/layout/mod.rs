@@ -9,7 +9,7 @@ use crate::{
         RectDIP, color::Color, command_recorder::CommandRecorder, draw_commands::DrawCommandList,
     },
     layout::{
-        model::{Axis, ElementStyle, ScrollBarSize, UIElement, UIKey},
+        model::{Axis, BorderRadius, ElementStyle, ScrollBarSize, UIElement, UIKey},
         positioning::position_elements,
         visitors::VisitFrame,
     },
@@ -95,6 +95,8 @@ pub const DEFAULT_SCROLLBAR_TRACK_COLOR: Color = Color::from_hex(0x00000033);
 pub const DEFAULT_SCROLLBAR_THUMB_COLOR: Color = Color::from_hex(0x00000055);
 pub const DEFAULT_SCROLLBAR_SIZE: ScrollBarSize = ScrollBarSize::ThinThick(8.0, 16.0);
 pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
+pub const DEFAULT_SCROLLBAR_TRACK_RADIUS: BorderRadius = BorderRadius::all(0.0);
+pub const DEFAULT_SCROLLBAR_THUMB_RADIUS: BorderRadius = BorderRadius::all(0.0);
 
 pub fn paint<Message>(
     shell: &mut Shell<Message>,
@@ -251,14 +253,29 @@ pub fn generate_paint_commands<Message>(
                             .scrollbar_thumb_color
                             .unwrap_or(DEFAULT_SCROLLBAR_THUMB_COLOR);
 
+                        let track_radius = scroll_config
+                            .scrollbar_track_radius
+                            .unwrap_or(DEFAULT_SCROLLBAR_TRACK_RADIUS);
+                        let thumb_radius = scroll_config
+                            .scrollbar_thumb_radius
+                            .unwrap_or(DEFAULT_SCROLLBAR_THUMB_RADIUS);
+
                         if let Some(ScrollbarGeom {
                             track_rect,
                             thumb_rect,
                             ..
                         }) = compute_scrollbar_geom(&mut shell.borrow_mut(), element, Axis::X)
                         {
-                            recorder.fill_rectangle(&track_rect, scrollbar_track_color);
-                            recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
+                            recorder.fill_rounded_rectangle(
+                                &track_rect,
+                                &track_radius,
+                                scrollbar_track_color,
+                            );
+                            recorder.fill_rounded_rectangle(
+                                &thumb_rect,
+                                &thumb_radius,
+                                scrollbar_thumb_color,
+                            );
                         }
 
                         if let Some(ScrollbarGeom {
@@ -267,8 +284,16 @@ pub fn generate_paint_commands<Message>(
                             ..
                         }) = compute_scrollbar_geom(&mut shell.borrow_mut(), element, Axis::Y)
                         {
-                            recorder.fill_rectangle(&track_rect, scrollbar_track_color);
-                            recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
+                            recorder.fill_rounded_rectangle(
+                                &track_rect,
+                                &track_radius,
+                                scrollbar_track_color,
+                            );
+                            recorder.fill_rounded_rectangle(
+                                &thumb_rect,
+                                &thumb_radius,
+                                scrollbar_thumb_color,
+                            );
                         }
 
                         if element.border_radius.is_some() {

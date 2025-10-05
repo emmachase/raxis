@@ -499,6 +499,9 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
         scroll: Some(ScrollConfig {
             horizontal: Some(true),
             vertical: Some(true),
+            safe_area_padding: Some(BoxAmount::from(4.0)),
+            scrollbar_track_radius: Some(BorderRadius::all(4.0)),
+            scrollbar_thumb_radius: Some(BorderRadius::all(4.0)),
             ..Default::default()
         }),
         border: Some(Border {
@@ -804,6 +807,9 @@ fn view(_state: &(), hook: &mut HookManager<Message>) -> Element<Message> {
                 height: Sizing::grow(),
                 scroll: Some(ScrollConfig {
                     vertical: Some(true),
+                    safe_area_padding: Some(BoxAmount::from(4.0)),
+                    scrollbar_track_radius: Some(BorderRadius::all(4.0)),
+                    scrollbar_thumb_radius: Some(BorderRadius::all(4.0)),
                     ..Default::default()
                 }),
 

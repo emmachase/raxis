@@ -224,7 +224,11 @@ impl CommandExecutor {
                     border_radius,
                     color,
                 } => {
-                    renderer.fill_rounded_rectangle(rect, border_radius, *color);
+                    if border_radius.is_some() {
+                        renderer.fill_rounded_rectangle(rect, border_radius, *color);
+                    } else {
+                        renderer.fill_rectangle(rect, *color);
+                    }
                 }
 
                 DrawCommand::DrawBlurredShadow {

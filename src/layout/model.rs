@@ -288,7 +288,14 @@ pub struct BorderRadius {
 }
 
 impl BorderRadius {
-    pub fn all(radius: f32) -> Self {
+    pub const fn is_some(&self) -> bool {
+        self.top_left != 0.0
+            || self.top_right != 0.0
+            || self.bottom_right != 0.0
+            || self.bottom_left != 0.0
+    }
+
+    pub const fn all(radius: f32) -> Self {
         Self {
             top_left: radius,
             top_right: radius,
@@ -297,7 +304,7 @@ impl BorderRadius {
         }
     }
 
-    pub fn top(radius: f32) -> Self {
+    pub const fn top(radius: f32) -> Self {
         Self {
             top_left: radius,
             top_right: radius,
@@ -306,7 +313,7 @@ impl BorderRadius {
         }
     }
 
-    pub fn bottom(radius: f32) -> Self {
+    pub const fn bottom(radius: f32) -> Self {
         Self {
             top_left: 0.0,
             top_right: 0.0,
@@ -315,7 +322,7 @@ impl BorderRadius {
         }
     }
 
-    pub fn left(radius: f32) -> Self {
+    pub const fn left(radius: f32) -> Self {
         Self {
             top_left: radius,
             top_right: 0.0,
@@ -324,7 +331,7 @@ impl BorderRadius {
         }
     }
 
-    pub fn right(radius: f32) -> Self {
+    pub const fn right(radius: f32) -> Self {
         Self {
             top_left: 0.0,
             top_right: radius,
@@ -333,7 +340,7 @@ impl BorderRadius {
         }
     }
 
-    pub fn tl_br(radius: f32) -> Self {
+    pub const fn tl_br(radius: f32) -> Self {
         Self {
             top_left: radius,
             top_right: 0.0,
@@ -342,7 +349,7 @@ impl BorderRadius {
         }
     }
 
-    pub fn tr_bl(radius: f32) -> Self {
+    pub const fn tr_bl(radius: f32) -> Self {
         Self {
             top_left: 0.0,
             top_right: radius,
@@ -550,6 +557,8 @@ pub struct ScrollConfig {
 
     // Scrollbar appearance customization
     pub scrollbar_size: Option<ScrollBarSize>, // width of the scrollbar track
+    pub scrollbar_track_radius: Option<BorderRadius>,
+    pub scrollbar_thumb_radius: Option<BorderRadius>,
     pub scrollbar_track_color: Option<Color>,
     pub scrollbar_thumb_color: Option<Color>,
     pub scrollbar_min_thumb_size: Option<f32>, // minimum size of the thumb in pixels
