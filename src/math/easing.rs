@@ -1,5 +1,5 @@
 // Phase easing for grow/shrink interpolation.
-#[derive(Copy, Clone, Debug, Default)]
+#[derive(Copy, Clone, Debug, Default, PartialEq)]
 pub enum Easing {
     Linear,
     #[default]

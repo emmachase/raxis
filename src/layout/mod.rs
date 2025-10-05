@@ -9,7 +9,7 @@ use crate::{
         RectDIP, color::Color, command_recorder::CommandRecorder, draw_commands::DrawCommandList,
     },
     layout::{
-        model::{Axis, ElementStyle, UIElement, UIKey},
+        model::{Axis, ElementStyle, ScrollBarSize, UIElement, UIKey},
         positioning::position_elements,
         visitors::VisitFrame,
     },
@@ -93,11 +93,11 @@ pub fn layout<Message>(
 
 pub const DEFAULT_SCROLLBAR_TRACK_COLOR: Color = Color::from_hex(0x00000033);
 pub const DEFAULT_SCROLLBAR_THUMB_COLOR: Color = Color::from_hex(0x00000055);
-pub const DEFAULT_SCROLLBAR_SIZE: f32 = 16.0;
+pub const DEFAULT_SCROLLBAR_SIZE: ScrollBarSize = ScrollBarSize::ThinThick(8.0, 16.0);
 pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
 
 pub fn paint<Message>(
-    shell: &Shell<Message>,
+    shell: &mut Shell<Message>,
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
 ) -> DrawCommandList {
@@ -106,7 +106,7 @@ pub fn paint<Message>(
 }
 
 pub fn generate_paint_commands<Message>(
-    shell: &Shell<Message>,
+    shell: &mut Shell<Message>,
     ui_tree: BorrowedUITree<'_, Message>,
     root: UIKey,
 ) -> DrawCommandList {
@@ -116,6 +116,7 @@ pub fn generate_paint_commands<Message>(
     // TODO: Modify visitor to allow handing this around
     // rather than unnecessarily creating a RefCell<>
     let recorder = RefCell::new(recorder);
+    let shell = RefCell::new(shell);
 
     {
         // Track current z-index for deferred rendering
@@ -223,7 +224,7 @@ pub fn generate_paint_commands<Message>(
                     widget.paint(
                         &ui_tree.arenas,
                         state,
-                        shell,
+                        &shell.borrow(),
                         &mut recorder,
                         style,
                         bounds,
@@ -254,8 +255,7 @@ pub fn generate_paint_commands<Message>(
                             track_rect,
                             thumb_rect,
                             ..
-                        }) =
-                            compute_scrollbar_geom(element, Axis::X, &shell.scroll_state_manager)
+                        }) = compute_scrollbar_geom(&mut shell.borrow_mut(), element, Axis::X)
                         {
                             recorder.fill_rectangle(&track_rect, scrollbar_track_color);
                             recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
@@ -265,8 +265,7 @@ pub fn generate_paint_commands<Message>(
                             track_rect,
                             thumb_rect,
                             ..
-                        }) =
-                            compute_scrollbar_geom(element, Axis::Y, &shell.scroll_state_manager)
+                        }) = compute_scrollbar_geom(&mut shell.borrow_mut(), element, Axis::Y)
                         {
                             recorder.fill_rectangle(&track_rect, scrollbar_track_color);
                             recorder.fill_rectangle(&thumb_rect, scrollbar_thumb_color);
@@ -352,14 +351,16 @@ pub fn can_scroll_further<Message>(
 }
 
 pub fn compute_scrollbar_geom<Message>(
+    shell: &mut Shell<Message>,
     element: &UIElement<Message>,
     axis: Axis,
-    scroll_state_manager: &ScrollStateManager,
 ) -> Option<ScrollbarGeom> {
     let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
     let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
     let id = element.id?;
     let sc = element.scroll.as_ref()?;
+
+    let scroll_metadata = shell.scroll_state_manager.get_scroll_metadata(id);
 
     match axis {
         Axis::Y if has_scroll_y => {
@@ -372,11 +373,18 @@ pub fn compute_scrollbar_geom<Message>(
             }
 
             let scrollbar_size = sc.scrollbar_size.unwrap_or(DEFAULT_SCROLLBAR_SIZE);
+            let scrollbar_size = scroll_metadata.animation.1.interpolate(
+                shell,
+                scrollbar_size.thin(),
+                scrollbar_size.thick(),
+                Instant::now(),
+            );
+
             let scrollbar_min_thumb_size = sc
                 .scrollbar_min_thumb_size
                 .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
 
-            let scroll_y = scroll_state_manager.get_scroll_position(id).y;
+            let scroll_y = scroll_metadata.position.y;
             let effective_scroll_y = scroll_y.clamp(0.0, max_scroll_y);
             let progress = if max_scroll_y > 0.0 {
                 effective_scroll_y / max_scroll_y
@@ -426,11 +434,18 @@ pub fn compute_scrollbar_geom<Message>(
             }
 
             let scrollbar_size = sc.scrollbar_size.unwrap_or(DEFAULT_SCROLLBAR_SIZE);
+            let scrollbar_size = scroll_metadata.animation.0.interpolate(
+                shell,
+                scrollbar_size.thin(),
+                scrollbar_size.thick(),
+                Instant::now(),
+            );
+
             let scrollbar_min_thumb_size = sc
                 .scrollbar_min_thumb_size
                 .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
 
-            let scroll_x = scroll_state_manager.get_scroll_position(id).x;
+            let scroll_x = scroll_metadata.position.x;
             let effective_scroll_x = scroll_x.clamp(0.0, max_scroll_x);
             let progress = if max_scroll_x > 0.0 {
                 effective_scroll_x / max_scroll_x

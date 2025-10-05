@@ -155,16 +155,10 @@ pub struct UncheckedHWND(pub HWND);
 unsafe impl Send for UncheckedHWND {}
 unsafe impl Sync for UncheckedHWND {}
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-enum DragAxis {
-    Horizontal,
-    Vertical,
-}
-
 #[derive(Clone, Copy, Debug)]
 struct ScrollDragState {
     element_id: u64,
-    axis: DragAxis,
+    axis: Axis,
     // Offset within the thumb (along the drag axis) where the pointer grabbed, in DIPs
     grab_offset: f32,
 }
@@ -836,7 +830,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
         }
 
         let root = self.ui_tree.root;
-        let commands = layout::paint(&self.shell, &mut self.ui_tree, root);
+        let commands = layout::paint(&mut self.shell, &mut self.ui_tree, root);
 
         self.clock += dt;
 
@@ -876,19 +870,30 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
 
     // Depth-first traversal: visit children first (post-order for scrollbar z-order),
     // then compute scrollbar thumb rects for hit-testing and return the last (topmost) hit.
-    fn hit_test_scrollbar_thumb(&self, x: f32, y: f32) -> Option<ScrollDragState> {
+    fn hit_test_scrollbar_thumb(
+        &mut self,
+        x: f32,
+        y: f32,
+        only_thumb: bool,
+    ) -> Option<ScrollDragState> {
         fn dfs<State, Message>(
-            state: &ApplicationHandle<State, Message>,
+            state: &mut ApplicationHandle<State, Message>,
             key: DefaultKey,
             x: f32,
             y: f32,
+            only_thumb: bool,
             out: &mut Option<ScrollDragState>,
         ) {
-            let element = &state.ui_tree.slots[key];
-            // Recurse into children first
-            for child in element.children.iter() {
-                dfs(state, *child, x, y, out);
+            {
+                let element = &state.ui_tree.slots[key];
+                // Recurse into children first
+                // TODO: Don't like the clone here
+                for child in element.children.clone().into_iter() {
+                    dfs(state, child, x, y, only_thumb, out);
+                }
             }
+
+            let element = &state.ui_tree.slots[key];
 
             // Then evaluate current element so it overrides children (matches z-order in paint)
             if element.id.is_none() {
@@ -896,29 +901,35 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
             }
 
             // Use centralized geometry helpers for hit-testing
-            if let Some(geom) =
-                compute_scrollbar_geom(element, Axis::Y, &state.shell.scroll_state_manager)
-            {
-                let tr = geom.thumb_rect;
+            if let Some(geom) = compute_scrollbar_geom(&mut state.shell, element, Axis::Y) {
+                let tr = if only_thumb {
+                    geom.thumb_rect
+                } else {
+                    geom.track_rect
+                };
+                let thumb = geom.thumb_rect;
                 if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
-                    let grab_offset = y - tr.y;
+                    let grab_offset = y - thumb.y;
                     *out = Some(ScrollDragState {
                         element_id: element.id.unwrap(),
-                        axis: DragAxis::Vertical,
+                        axis: Axis::Y,
                         grab_offset,
                     });
                 }
             }
 
-            if let Some(geom) =
-                compute_scrollbar_geom(element, Axis::X, &state.shell.scroll_state_manager)
-            {
-                let tr = geom.thumb_rect;
+            if let Some(geom) = compute_scrollbar_geom(&mut state.shell, element, Axis::X) {
+                let tr = if only_thumb {
+                    geom.thumb_rect
+                } else {
+                    geom.track_rect
+                };
+                let thumb = geom.thumb_rect;
                 if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
-                    let grab_offset = x - tr.x;
+                    let grab_offset = x - thumb.x;
                     *out = Some(ScrollDragState {
                         element_id: element.id.unwrap(),
-                        axis: DragAxis::Horizontal,
+                        axis: Axis::X,
                         grab_offset,
                     });
                 }
@@ -927,7 +938,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
 
         let root = self.ui_tree.root;
         let mut result = None;
-        dfs(self, root, x, y, &mut result);
+        dfs(self, root, x, y, only_thumb, &mut result);
         result
     }
 
@@ -1194,7 +1205,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     let y = y_px * to_dip;
                     // First, check scrollbar thumb hit-testing
                     if state.scroll_drag.is_none() {
-                        if let Some(drag) = state.hit_test_scrollbar_thumb(x, y) {
+                        if let Some(drag) = state.hit_test_scrollbar_thumb(x, y, true) {
                             state.scroll_drag = Some(drag);
                             let _ = InvalidateRect(Some(hwnd), None, false);
                             return LRESULT(0);
@@ -1243,13 +1254,12 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     // Current mouse in pixels
                     let xi = (lparam.0 & 0xFFFF) as i16 as i32;
                     let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+                    let to_dip = dips_scale(hwnd);
+                    let x = (xi as f32) * to_dip;
+                    let y = (yi as f32) * to_dip;
 
                     // Handle scrollbar dragging if active
                     if let Some(drag) = state.scroll_drag {
-                        let to_dip = dips_scale(hwnd);
-                        let x = (xi as f32) * to_dip;
-                        let y = (yi as f32) * to_dip;
-
                         // Find element by id
                         let mut found_key: Option<DefaultKey> = None;
                         for k in state.ui_tree.slots.keys() {
@@ -1261,16 +1271,11 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
 
                         if let Some(k) = found_key {
                             let el = &state.ui_tree.slots[k];
-                            let axis = match drag.axis {
-                                DragAxis::Vertical => Axis::Y,
-                                DragAxis::Horizontal => Axis::X,
-                            };
-                            if let Some(geom) =
-                                compute_scrollbar_geom(el, axis, &state.shell.scroll_state_manager)
-                            {
+                            let axis = drag.axis;
+                            if let Some(geom) = compute_scrollbar_geom(&mut state.shell, el, axis) {
                                 let pos_along = match drag.axis {
-                                    DragAxis::Vertical => y,
-                                    DragAxis::Horizontal => x,
+                                    Axis::Y => y,
+                                    Axis::X => x,
                                 };
                                 let rel = (pos_along - geom.track_start - drag.grab_offset)
                                     .clamp(0.0, geom.range);
@@ -1285,7 +1290,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                     .scroll_state_manager
                                     .get_scroll_position(drag.element_id);
                                 match drag.axis {
-                                    DragAxis::Vertical => {
+                                    Axis::Y => {
                                         state.shell.scroll_state_manager.set_scroll_position(
                                             drag.element_id,
                                             ScrollPosition {
@@ -1294,7 +1299,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                             },
                                         );
                                     }
-                                    DragAxis::Horizontal => {
+                                    Axis::X => {
                                         state.shell.scroll_state_manager.set_scroll_position(
                                             drag.element_id,
                                             ScrollPosition {
@@ -1308,6 +1313,18 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             }
                         }
                         return LRESULT(0);
+                    } else {
+                        if let Some(drag) = state.hit_test_scrollbar_thumb(x, y, false) {
+                            state
+                                .shell
+                                .scroll_state_manager
+                                .set_active(drag.element_id, drag.axis);
+                            let _ = InvalidateRect(Some(hwnd), None, false);
+                        } else {
+                            if state.shell.scroll_state_manager.set_inactive() {
+                                let _ = InvalidateRect(Some(hwnd), None, false);
+                            }
+                        }
                     }
 
                     // Continue manual drag (selection or preview drop position)
@@ -1848,6 +1865,10 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
             // Schedule next frame if we have active animations
             if state.smooth_scroll_manager.has_any_active_animations() {
                 state.shell.request_redraw(hwnd, RedrawRequest::Immediate);
+            }
+
+            if state.shell.redraw_request == RedrawRequest::Immediate {
+                let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
             }
 
             let pending_messages = state.shell.pending_messages;

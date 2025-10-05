@@ -1,14 +1,18 @@
 use std::collections::HashMap;
 
+use crate::{Animation, layout::model::Axis};
+
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct ScrollPosition {
     pub x: f32,
     pub y: f32,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Default)]
+#[derive(Clone, Debug, PartialEq, Default)]
 pub struct ScrollMetadata {
-    position: ScrollPosition,
+    pub position: ScrollPosition,
+    /// Whether the scroll-bar is hovered or actively being dragged
+    pub animation: (Animation<bool>, Animation<bool>),
     max_scroll: ScrollPosition,
     was_at_bottom: bool,
     was_at_right: bool,
@@ -19,6 +23,7 @@ pub struct ScrollMetadata {
 #[derive(Clone, Default)]
 pub struct ScrollStateManager {
     scroll_metadata: HashMap<u64, ScrollMetadata>,
+    pub active_scrollbar: Option<(u64, Axis)>,
 }
 
 /// The threshold in pixels (dips) for considering a scroll position to be at the bottom or right of the scrollable area.
@@ -33,6 +38,13 @@ impl ScrollStateManager {
             .position
     }
 
+    pub fn get_scroll_metadata(&self, element_id: u64) -> ScrollMetadata {
+        self.scroll_metadata
+            .get(&element_id)
+            .cloned()
+            .unwrap_or_default()
+    }
+
     pub fn set_scroll_position(&mut self, element_id: u64, position: ScrollPosition) {
         self.scroll_metadata
             .entry(element_id)
@@ -45,6 +57,35 @@ impl ScrollStateManager {
 
                 ..Default::default()
             });
+    }
+
+    pub fn set_active(&mut self, element_id: u64, axis: Axis) {
+        self.scroll_metadata
+            .entry(element_id)
+            .and_modify(|metadata| {
+                match axis {
+                    Axis::X => metadata.animation.0.update(true),
+                    Axis::Y => metadata.animation.1.update(true),
+                }
+
+                self.active_scrollbar = Some((element_id, axis));
+            });
+    }
+
+    pub fn set_inactive(&mut self) -> bool {
+        if let Some((element_id, _axis)) = self.active_scrollbar {
+            self.scroll_metadata
+                .entry(element_id)
+                .and_modify(|metadata| {
+                    metadata.animation.0.update(false);
+                    metadata.animation.1.update(false);
+                });
+
+            self.active_scrollbar = None;
+            return true;
+        }
+
+        false
     }
 
     pub fn update_scroll_position(
@@ -123,6 +164,7 @@ impl ScrollStateManager {
                 was_at_right,
                 previous_content_dimensions: (content_width, content_height),
                 container_dimensions: (container_width, container_height),
+                animation: (Animation::new(false), Animation::new(false)),
             });
     }
 

@@ -158,7 +158,7 @@ impl Interpolate for RectDIP {
     }
 }
 
-#[derive(Clone)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Animation<S: Clone + Copy + PartialEq> {
     active: bool,
     target: S,
@@ -168,26 +168,46 @@ pub struct Animation<S: Clone + Copy + PartialEq> {
     easing: Easing,
 }
 
+impl<S: Clone + Copy + PartialEq> Animation<S> {
+    pub fn new(initial: S) -> Self {
+        Self {
+            active: false,
+            target: initial,
+            last_target: initial,
+            origin_ts: Instant::now(),
+            duration: Duration::from_millis(100),
+            easing: Easing::EaseOut,
+        }
+    }
+
+    pub fn update(&mut self, state: S) {
+        if state != self.target {
+            self.active = true;
+            self.last_target = self.target;
+            self.target = state;
+            self.origin_ts = Instant::now();
+        }
+    }
+
+    pub fn value(&self) -> S {
+        self.target
+    }
+}
+
+impl<S: Clone + Copy + PartialEq + Default> Default for Animation<S> {
+    fn default() -> Self {
+        Self::new(S::default())
+    }
+}
+
 pub fn use_animation<S: Clone + Copy + PartialEq + 'static>(
     hook: &mut HookInstance,
     state: S,
 ) -> Animation<S> {
     // let mut instance = hook.instance(id);
-    let animation = hook.use_hook(|| Animation {
-        active: false,
-        target: state,
-        last_target: state,
-        origin_ts: Instant::now(),
-        duration: Duration::from_millis(100),
-        easing: Easing::EaseOut,
-    });
+    let animation = hook.use_hook(|| Animation::new(state));
 
-    if state != animation.target {
-        animation.active = true;
-        animation.last_target = animation.target;
-        animation.target = state;
-        animation.origin_ts = Instant::now();
-    }
+    animation.update(state);
 
     animation.clone()
 }
@@ -201,9 +221,9 @@ impl<S: Clone + Copy + PartialEq> Animation<S> {
         Self { easing, ..self }
     }
 
-    pub fn interpolate_using<I: Interpolate, Message>(
+    pub fn interpolate_using<I: Interpolate>(
         &self,
-        hook: &mut HookManager<Message>,
+        hook: &mut impl RequestAnimation,
         f: impl Fn(S) -> I,
         at: Instant,
     ) -> I {
@@ -234,10 +254,26 @@ impl<S: Clone + Copy + PartialEq> Animation<S> {
     }
 }
 
+pub trait RequestAnimation {
+    fn request_animation(&mut self);
+}
+
+impl<Message> RequestAnimation for HookManager<'_, Message> {
+    fn request_animation(&mut self) {
+        self.requested_animation = true;
+    }
+}
+
+impl<Message> RequestAnimation for Shell<Message> {
+    fn request_animation(&mut self) {
+        self.redraw_request = RedrawRequest::Immediate;
+    }
+}
+
 impl Animation<bool> {
-    pub fn interpolate<I: Interpolate + Clone, Message>(
+    pub fn interpolate<I: Interpolate + Clone>(
         &self,
-        hook: &mut HookManager<Message>,
+        hook: &mut impl RequestAnimation, //&mut HookManager<Message>,
         start: I,
         end: I,
         at: Instant,

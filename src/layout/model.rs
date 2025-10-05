@@ -512,6 +512,28 @@ impl From<Color> for Border {
 
 // ---------- Scrolling ----------
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ScrollBarSize {
+    Fixed(f32),
+    ThinThick(f32, f32),
+}
+
+impl ScrollBarSize {
+    pub fn thin(&self) -> f32 {
+        match self {
+            ScrollBarSize::Fixed(size) => *size,
+            ScrollBarSize::ThinThick(thin, _) => *thin,
+        }
+    }
+
+    pub fn thick(&self) -> f32 {
+        match self {
+            ScrollBarSize::Fixed(size) => *size,
+            ScrollBarSize::ThinThick(_, thick) => *thick,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScrollConfig {
     pub horizontal: Option<bool>,
@@ -527,7 +549,7 @@ pub struct ScrollConfig {
     pub sticky_right: Option<bool>,  // keep scrolled to right when content width increases
 
     // Scrollbar appearance customization
-    pub scrollbar_size: Option<f32>, // width of the scrollbar track
+    pub scrollbar_size: Option<ScrollBarSize>, // width of the scrollbar track
     pub scrollbar_track_color: Option<Color>,
     pub scrollbar_thumb_color: Option<Color>,
     pub scrollbar_min_thumb_size: Option<f32>, // minimum size of the thumb in pixels

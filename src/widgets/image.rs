@@ -67,10 +67,10 @@ impl ImageWidgetState {
     }
 
     /// Load image from file and create D2D bitmap
-    fn load_image(&mut self, image_path: &str) -> windows::core::Result<()> {
+    fn load_image(&mut self, image_path: &str) -> windows::core::Result<bool> {
         // Only reload if path changed
         if self.cached_image_path == image_path && self.d2d_bitmap.is_some() {
-            return Ok(());
+            return Ok(false);
         }
 
         unsafe {
@@ -121,7 +121,7 @@ impl ImageWidgetState {
             self.d2d_bitmap = Some(d2d_bitmap.into());
             self.cached_image_path = image_path.to_string();
 
-            Ok(())
+            Ok(true)
         }
     }
 }
@@ -178,7 +178,13 @@ impl Default for Image {
 }
 
 impl<Message> Widget<Message> for Image {
-    fn limits_x(&self, _arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX {
+    fn limits_x(&self, arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX {
+        let state = with_state!(mut instance as ImageWidgetState);
+        if let Some(image_path) = self.image_path.resolve(arenas) {
+            // Load image if needed
+            state.load_image(image_path).ok();
+        }
+
         // Use explicit width if set, otherwise use intrinsic width
         if let Some(width) = self.width {
             limit_response::SizingForX {
@@ -186,7 +192,6 @@ impl<Message> Widget<Message> for Image {
                 preferred_width: width,
             }
         } else {
-            let state = with_state!(instance as ImageWidgetState);
             limit_response::SizingForX {
                 min_width: 0.0,
                 preferred_width: state.intrinsic_width,
