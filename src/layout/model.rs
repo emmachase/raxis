@@ -974,13 +974,27 @@ pub fn create_tree<Message>(
 
     tree.slots.clear();
 
+    #[cfg(debug_assertions)]
+    let mut id_set = std::collections::HashSet::new();
+
     while let Some((element, parent)) = queue.pop() {
         let (mut shell, children) = to_shell(element);
         shell.parent = parent;
 
         // Initialize widget state if new
-        if let Some(ref widget) = shell.content {
-            if let Some(id) = shell.id {
+        if let Some(id) = shell.id {
+            #[cfg(debug_assertions)]
+            {
+                if id_set.contains(&id) {
+                    panic!(
+                        "Duplicate ID: {} (source: {:?}), use combine_id when mapping over lists",
+                        id, shell.content
+                    );
+                }
+                id_set.insert(id);
+            }
+
+            if let Some(ref widget) = shell.content {
                 tree.widget_state.entry(id).or_insert_with(|| {
                     Instance::new(id, &**widget, &tree.arenas, device_resources)
                 });
