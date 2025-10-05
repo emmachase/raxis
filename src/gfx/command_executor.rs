@@ -129,6 +129,7 @@ impl CommandExecutor {
 
             // Rectangle-based commands
             DrawCommand::DrawText { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
+            DrawCommand::DrawBitmap { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
             DrawCommand::DrawCircleArc { center, radius, .. } => {
                 // Check if circle intersects with bounds
                 let circle_rect = RectDIP {
@@ -159,7 +160,7 @@ impl CommandExecutor {
                 let min_y = start_y.min(*end_y) - stroke_width / 2.0;
                 let max_x = start_x.max(*end_x) + stroke_width / 2.0;
                 let max_y = start_y.max(*end_y) + stroke_width / 2.0;
-                
+
                 let line_rect = RectDIP {
                     x: min_x,
                     y: min_y,
@@ -390,6 +391,14 @@ impl CommandExecutor {
 
                 DrawCommand::DrawSvg { rect, svg_document } => {
                     renderer.draw_svg(rect, svg_document);
+                }
+
+                DrawCommand::DrawBitmap {
+                    rect,
+                    bitmap,
+                    opacity,
+                } => {
+                    renderer.draw_bitmap(rect, bitmap, *opacity);
                 }
 
                 DrawCommand::FillPathGeometry {

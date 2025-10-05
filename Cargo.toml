@@ -35,7 +35,7 @@ windows = { version = "0.61.3", features = [
     "Win32_Graphics_Dxgi",
     "Win32_Graphics_Dxgi_Common",
     "Win32_Graphics_Dwm",
-    "Win32_Graphics_Gdi",
+    "Win32_Graphics_Imaging",
     "Win32_System_DataExchange",
     "Win32_System_LibraryLoader",
     "Win32_System_Memory",
@@ -56,6 +56,7 @@ raxis-proc-macro = { path = "raxis-proc-macro" }
 lazy_static = "1.5.0"
 trig-const = "0.3.0"
 thiserror = "2.0.17"
+log = "0.4.28"
 
 # Hot-patching
 # dioxus-devtools = "0.7.0-rc.0"

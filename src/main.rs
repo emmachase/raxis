@@ -1,6 +1,11 @@
 // #![windows_subsystem = "windows"]
 
-use std::{cell::RefCell, collections::HashSet, rc::Rc};
+use std::{
+    cell::RefCell,
+    collections::HashSet,
+    rc::Rc,
+    time::{Duration, Instant},
+};
 
 use lazy_static::lazy_static;
 use raxis::{
@@ -14,10 +19,12 @@ use raxis::{
         },
     },
     runtime::{Backdrop, font_manager::FontIdentifier, scroll::ScrollPosition, task::Task},
+    use_animation,
     util::{str::StableString, unique::combine_id},
     w_id,
     widgets::{
         button::Button,
+        image::Image,
         svg::ViewBox,
         svg_path::SvgPath,
         text::{ParagraphAlignment, Text, TextAlignment},
@@ -210,6 +217,30 @@ struct TodoState {
     input_text: String,
 }
 
+fn animated_button(hook: &mut HookManager<Message>) -> Element<Message> {
+    let mut instance = hook.instance(w_id!());
+    let toggled = instance.use_state(|| false);
+    let animation =
+        use_animation(&mut instance, *toggled.borrow()).duration(Duration::from_millis(100));
+    let width = animation.interpolate(hook, 50.0, 100.0, Instant::now());
+
+    Button::new()
+        .with_click_handler(move |_, _| {
+            let mut v = toggled.borrow_mut();
+            *v = !*v;
+        })
+        .as_element(w_id!(), Text::new("Animate"))
+        .with_width(Sizing::fixed(width))
+        .with_height(Sizing::fit())
+    // Element {
+    //     id: Some(w_id!()),
+    //     width: Sizing::fixed(width),
+    //     height: Sizing::fit(),
+    //     content: widget(Text::new("Animated Button").with_font_size(20.0)),
+    //     ..Default::default()
+    // }
+}
+
 fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
     let todo_state = instance
@@ -233,6 +264,8 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
         })
         .clone();
 
+    let pixie = Image::new("assets/pixie.jpg");
+
     Element {
         id: Some(w_id!()),
         background_color: Some(0xF1F5EDFF.into()), // Light gray background
@@ -252,6 +285,8 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
             },
             // Border demos
             border_demos(),
+            animated_button(hook),
+            pixie.as_element(w_id!()),
             // Input section
             Element {
                 id: Some(w_id!()),

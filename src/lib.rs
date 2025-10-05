@@ -1,4 +1,11 @@
-use std::{any::Any, cell::RefCell, sync::mpsc, time::Instant};
+use std::{
+    any::Any,
+    cell::RefCell,
+    marker::PhantomData,
+    rc::Rc,
+    sync::mpsc,
+    time::{Duration, Instant},
+};
 
 use windows::Win32::{
     Foundation::HWND,
@@ -10,11 +17,13 @@ use windows::Win32::{
 };
 
 use crate::{
+    gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree,
         model::Element,
         visitors::{self, VisitAction},
     },
+    math::easing::Easing,
     runtime::{focus::FocusManager, scroll::ScrollStateManager, task::Task},
     widgets::{DragData, DragEvent, DropResult, Event, Operation, dispatch_operation},
 };
@@ -43,6 +52,7 @@ pub struct HookManager<'a, Message> {
     pub focus_manager: &'a FocusManager,
 
     layout_invalidated: bool,
+    requested_animation: bool,
 
     pub window_active: bool,
 }
@@ -64,6 +74,11 @@ impl<'a> HookInstance<'a> {
         self.position += 1;
         hook
     }
+
+    pub fn use_state<T: 'static>(&mut self, initializer: impl FnOnce() -> T) -> Rc<RefCell<T>> {
+        self.use_hook(|| Rc::new(RefCell::new(initializer())))
+            .clone()
+    }
 }
 
 impl<Message> HookManager<'_, Message> {
@@ -78,6 +93,156 @@ impl<Message> HookManager<'_, Message> {
 
     pub fn invalidate_layout(&mut self) {
         self.layout_invalidated = true;
+    }
+
+    pub fn request_animation(&mut self) {
+        self.requested_animation = true;
+    }
+}
+
+// pub trait IntoKeyframe {
+//     fn into_keyframe(&self) -> f32;
+// }
+
+// impl IntoKeyframe for bool {
+//     fn into_keyframe(&self) -> f32 {
+//         if *self { 1.0 } else { 0.0 }
+//     }
+// }
+
+// impl IntoKeyframe for f32 {
+//     fn into_keyframe(&self) -> f32 {
+//         *self
+//     }
+// }
+
+// impl IntoKeyframe for f64 {
+//     fn into_keyframe(&self) -> f32 {
+//         *self as f32
+//     }
+// }
+
+pub trait Interpolate {
+    fn interpolate(&self, other: Self, alpha: f32) -> Self;
+}
+
+impl Interpolate for f32 {
+    fn interpolate(&self, other: Self, alpha: f32) -> Self {
+        self + (other - self) * alpha
+    }
+}
+
+impl Interpolate for f64 {
+    fn interpolate(&self, other: Self, alpha: f32) -> Self {
+        self + (other - self) * alpha as f64
+    }
+}
+
+impl Interpolate for PointDIP {
+    fn interpolate(&self, other: Self, alpha: f32) -> Self {
+        PointDIP {
+            x: self.x.interpolate(other.x, alpha),
+            y: self.y.interpolate(other.y, alpha),
+        }
+    }
+}
+
+impl Interpolate for RectDIP {
+    fn interpolate(&self, other: Self, alpha: f32) -> Self {
+        RectDIP {
+            x: self.x.interpolate(other.x, alpha),
+            y: self.y.interpolate(other.y, alpha),
+            width: self.width.interpolate(other.width, alpha),
+            height: self.height.interpolate(other.height, alpha),
+        }
+    }
+}
+
+#[derive(Clone)]
+pub struct Animation<S: Clone + Copy + PartialEq> {
+    active: bool,
+    target: S,
+    last_target: S,
+    origin_ts: Instant,
+    duration: Duration,
+    easing: Easing,
+}
+
+pub fn use_animation<S: Clone + Copy + PartialEq + 'static>(
+    hook: &mut HookInstance,
+    state: S,
+) -> Animation<S> {
+    // let mut instance = hook.instance(id);
+    let animation = hook.use_hook(|| Animation {
+        active: false,
+        target: state,
+        last_target: state,
+        origin_ts: Instant::now(),
+        duration: Duration::from_millis(100),
+        easing: Easing::EaseOut,
+    });
+
+    if state != animation.target {
+        animation.active = true;
+        animation.last_target = animation.target;
+        animation.target = state;
+        animation.origin_ts = Instant::now();
+    }
+
+    animation.clone()
+}
+
+impl<S: Clone + Copy + PartialEq> Animation<S> {
+    pub fn duration(self, duration: Duration) -> Self {
+        Self { duration, ..self }
+    }
+
+    pub fn easing(self, easing: Easing) -> Self {
+        Self { easing, ..self }
+    }
+
+    pub fn interpolate_using<I: Interpolate, Message>(
+        &self,
+        hook: &mut HookManager<Message>,
+        f: impl Fn(S) -> I,
+        at: Instant,
+    ) -> I {
+        if !self.active {
+            return f(self.target);
+        }
+
+        let alpha = (at.duration_since(self.origin_ts)).as_secs_f32() / self.duration.as_secs_f32();
+        let alpha = alpha.clamp(0.0, 1.0);
+        if alpha < 1.0 {
+            hook.request_animation();
+        }
+
+        // let alpha = self
+        //     .last_target
+        //     .into_keyframe()
+        //     .interpolate(self.target.into_keyframe(), alpha);
+
+        // println!(
+        //     "last: {}, current: {}",
+        //     self.last_target.into_keyframe(),
+        //     self.target.into_keyframe()
+        // );
+
+        let alpha = self.easing.apply(alpha);
+
+        f(self.last_target).interpolate(f(self.target), alpha)
+    }
+}
+
+impl Animation<bool> {
+    pub fn interpolate<I: Interpolate + Clone, Message>(
+        &self,
+        hook: &mut HookManager<Message>,
+        start: I,
+        end: I,
+        at: Instant,
+    ) -> I {
+        self.interpolate_using(hook, |b| if b { end.clone() } else { start.clone() }, at)
     }
 }
 

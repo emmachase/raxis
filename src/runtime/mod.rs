@@ -28,6 +28,7 @@ use crate::{
     DeferredControl, EventMapperFn, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id,
 };
 use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
+use log::warn;
 use slotmap::DefaultKey;
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
@@ -657,6 +658,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                     scroll_state_manager: &mut scroll_state_manager,
                     focus_manager: &mut focus_manager,
                     layout_invalidated: false,
+                    requested_animation: false,
                     window_active: GetForegroundWindow() == hwnd,
                 },
             );
@@ -797,6 +799,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 scroll_state_manager: &mut self.shell.scroll_state_manager,
                 focus_manager: &mut self.shell.focus_manager,
                 layout_invalidated: false,
+                requested_animation: false,
                 window_active,
             };
 
@@ -807,6 +810,9 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 &mut hook,
             );
             let invalidated = hook.layout_invalidated;
+            if hook.requested_animation {
+                self.shell.request_redraw(hwnd, RedrawRequest::Immediate);
+            }
 
             let root = self.ui_tree.root;
 
@@ -2183,7 +2189,7 @@ impl<
 
             // Create window first without user data
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default(), // | WS_EX_NOREDIRECTIONBITMAP,
+                WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
                 class_name,
                 PCWSTR(
                     title
@@ -2233,6 +2239,8 @@ impl<
                 } as *const _ as _,
                 size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
             );
+
+            warn!("Backdrop result: {:?}", backdrop_result);
 
             // Check if backdrop setting succeeded
             let backdrop_supported = backdrop_result.is_ok();

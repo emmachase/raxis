@@ -969,4 +969,32 @@ impl Renderer<'_> {
             );
         }
     }
+
+    /// Draw a bitmap at the specified rectangle
+    pub fn draw_bitmap(
+        &self,
+        rect: &RectDIP,
+        bitmap: &windows::Win32::Graphics::Direct2D::ID2D1Bitmap,
+        opacity: f32,
+    ) {
+        unsafe {
+            use windows::Win32::Graphics::Direct2D::Common::D2D_RECT_F;
+
+            let dest_rect = D2D_RECT_F {
+                left: rect.x,
+                top: rect.y,
+                right: rect.x + rect.width,
+                bottom: rect.y + rect.height,
+            };
+
+            self.render_target.DrawBitmap(
+                bitmap,
+                Some(&dest_rect),
+                opacity,
+                D2D1_INTERPOLATION_MODE_LINEAR,
+                None,  // Draw entire source bitmap
+                None,  // No perspective transform
+            );
+        }
+    }
 }

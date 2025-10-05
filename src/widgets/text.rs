@@ -436,7 +436,7 @@ impl TextWidgetState {
     fn get_preferred_height_for_width(&mut self, text: &str, width: f32) -> Result<f32> {
         if let Some((cached_width, cached_height)) = self.cached_preferred_height_for_width
             && text == self.cached_text
-            && (cached_width - width).abs() < 0.1
+            && (cached_width - width).abs() < 0.0001
         {
             return Ok(cached_height);
         }

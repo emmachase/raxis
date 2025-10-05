@@ -1,7 +1,7 @@
 use crate::gfx::RectDIP;
 use crate::layout::model::{BorderRadius, Color, DropShadow, StrokeLineCap, StrokeLineJoin, StrokeDashStyle};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1PathGeometry, ID2D1SvgDocument};
+use windows::Win32::Graphics::Direct2D::{ID2D1Bitmap, ID2D1PathGeometry, ID2D1SvgDocument};
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
 /// A single drawing command that can be executed later
@@ -104,6 +104,12 @@ pub enum DrawCommand {
         stroke_width: f32,
         dash_style: Option<StrokeDashStyle>,
         stroke_cap: Option<StrokeLineCap>,
+    },
+    /// Draw a bitmap
+    DrawBitmap {
+        rect: RectDIP,
+        bitmap: ID2D1Bitmap,
+        opacity: f32,
     },
 }
 

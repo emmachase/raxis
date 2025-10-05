@@ -19,6 +19,7 @@ pub use dragdrop::{DragData, DragInfo, DropResult, WidgetDragDropTarget};
 pub mod button;
 pub mod dragdrop;
 pub mod drop_target;
+pub mod image;
 pub mod mouse_area;
 pub mod renderer;
 pub mod rule;

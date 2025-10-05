@@ -7,7 +7,7 @@ use crate::{
     layout::model::{StrokeLineCap, StrokeLineJoin},
 };
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
-use windows::Win32::Graphics::Direct2D::{ID2D1PathGeometry, ID2D1SvgDocument};
+use windows::Win32::Graphics::Direct2D::{ID2D1Bitmap, ID2D1PathGeometry, ID2D1SvgDocument};
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
 /// Records drawing operations as commands instead of executing them immediately
@@ -261,6 +261,15 @@ impl CommandRecorder {
             stroke_width,
             dash_style,
             stroke_cap,
+        });
+    }
+
+    /// Record drawing a bitmap
+    pub fn draw_bitmap(&mut self, rect: &RectDIP, bitmap: &ID2D1Bitmap, opacity: f32) {
+        self.commands.push(DrawCommand::DrawBitmap {
+            rect: *rect,
+            bitmap: bitmap.clone(),
+            opacity,
         });
     }
 }
