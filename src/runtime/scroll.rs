@@ -60,6 +60,12 @@ impl ScrollStateManager {
     }
 
     pub fn set_active(&mut self, element_id: u64, axis: Axis) {
+        if let Some((active_element_id, active_axis)) = self.active_scrollbar
+            && (active_element_id != element_id || active_axis != axis)
+        {
+            self.set_inactive();
+        }
+
         self.scroll_metadata
             .entry(element_id)
             .and_modify(|metadata| {

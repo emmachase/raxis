@@ -295,6 +295,14 @@ impl BorderRadius {
             || self.bottom_left != 0.0
     }
 
+    /// Returns true if this a rect drawn with self radius would fully contain a rect drawn with other radius
+    pub const fn contains(&self, other: &Self) -> bool {
+        self.top_left <= other.top_left
+            && self.top_right <= other.top_right
+            && self.bottom_right <= other.bottom_right
+            && self.bottom_left <= other.bottom_left
+    }
+
     pub const fn all(radius: f32) -> Self {
         Self {
             top_left: radius,

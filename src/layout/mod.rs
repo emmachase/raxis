@@ -266,6 +266,12 @@ pub fn generate_paint_commands<Message>(
                             ..
                         }) = compute_scrollbar_geom(&mut shell.borrow_mut(), element, Axis::X)
                         {
+                            let needs_clip = !track_radius.contains(&thumb_radius);
+
+                            if needs_clip {
+                                recorder.push_rounded_clip(&track_rect, &track_radius);
+                            }
+
                             recorder.fill_rounded_rectangle(
                                 &track_rect,
                                 &track_radius,
@@ -276,6 +282,10 @@ pub fn generate_paint_commands<Message>(
                                 &thumb_radius,
                                 scrollbar_thumb_color,
                             );
+
+                            if needs_clip {
+                                recorder.pop_rounded_clip();
+                            }
                         }
 
                         if let Some(ScrollbarGeom {
@@ -284,6 +294,12 @@ pub fn generate_paint_commands<Message>(
                             ..
                         }) = compute_scrollbar_geom(&mut shell.borrow_mut(), element, Axis::Y)
                         {
+                            let needs_clip = !track_radius.contains(&thumb_radius);
+
+                            if needs_clip {
+                                recorder.push_rounded_clip(&track_rect, &track_radius);
+                            }
+
                             recorder.fill_rounded_rectangle(
                                 &track_rect,
                                 &track_radius,
@@ -294,6 +310,10 @@ pub fn generate_paint_commands<Message>(
                                 &thumb_radius,
                                 scrollbar_thumb_color,
                             );
+
+                            if needs_clip {
+                                recorder.pop_rounded_clip();
+                            }
                         }
 
                         if element.border_radius.is_some() {
