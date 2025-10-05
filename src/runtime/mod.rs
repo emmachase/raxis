@@ -27,7 +27,7 @@ use crate::widgets::{Cursor, DragData, DragEvent, Event, Modifiers};
 use crate::{
     DeferredControl, EventMapperFn, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id,
 };
-use crate::{current_dpi, dips_scale, dips_scale_for_dpi, gfx::RectDIP};
+use crate::{current_dpi, dips_scale, gfx::RectDIP};
 use log::warn;
 use slotmap::DefaultKey;
 use std::cell::RefCell;
@@ -41,7 +41,7 @@ use std::sync::{Mutex, OnceLock};
 use std::thread;
 use std::time::Instant;
 use thiserror::Error;
-use windows::Win32::Foundation::{COLORREF, HMODULE, SIZE};
+use windows::Win32::Foundation::{COLORREF, HMODULE};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
@@ -61,7 +61,7 @@ use windows::Win32::Graphics::DirectComposition::{
 };
 use windows::Win32::Graphics::Dwm::{
     DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_NONE,
-    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_CAPTION_COLOR, DWMWA_SYSTEMBACKDROP_TYPE,
+    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
     DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
@@ -74,7 +74,7 @@ use windows::Win32::Graphics::Dxgi::{
     IDXGIFactory7, IDXGISurface, IDXGISwapChain1,
 };
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, ClientToScreen, CreateSolidBrush, DeleteObject, EndPaint, FillRect, HDC, HGDIOBJ,
+    BeginPaint, ClientToScreen, CreateSolidBrush, DeleteObject, EndPaint, FillRect, HDC,
     PAINTSTRUCT,
 };
 use windows::Win32::System::Com::CoUninitialize;
@@ -88,13 +88,12 @@ use windows::Win32::UI::Input::Ime::{
 };
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, DestroyWindow, GCLP_HBRBACKGROUND, GetForegroundWindow, GetWindowRect,
-    HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT,
-    HTTOPRIGHT, IDC_HAND, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER,
-    SM_CYFRAME, SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE,
-    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetClassLongPtrW, SystemParametersInfoW, WM_ACTIVATE,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER,
-    WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
+    AdjustWindowRectEx, DestroyWindow, GetForegroundWindow, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
+    HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
+    NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
+    SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYUP, WM_MOUSEWHEEL,
+    WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -257,7 +256,7 @@ struct ApplicationHandle<State, Message> {
     timing_info: DWM_TIMING_INFO,
     view_fn: ViewFn<State, Message>,
     update_fn: UpdateFn<State, Message>,
-    event_mapper_fn: EventMapperFn<Message>,
+    _event_mapper_fn: EventMapperFn<Message>,
     user_state: State,
 
     ui_tree: OwnedUITree<Message>,
@@ -761,7 +760,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 ui_tree,
                 view_fn,
                 update_fn,
-                event_mapper_fn,
+                _event_mapper_fn: event_mapper_fn,
                 user_state,
                 shell,
                 smooth_scroll_manager: SmoothScrollManager::new(),
@@ -1046,7 +1045,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     }
                 }
                 WM_ERASEBKGND => {
-                    let hdc = HDC(std::mem::transmute(wparam.0));
+                    let hdc = HDC(wparam.0 as _);
                     let mut rc = RECT::default();
                     GetClientRect(hwnd, &mut rc).unwrap();
                     let brush = CreateSolidBrush(COLORREF(0x000000));
@@ -1313,18 +1312,14 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             }
                         }
                         return LRESULT(0);
-                    } else {
-                        if let Some(drag) = state.hit_test_scrollbar_thumb(x, y, false) {
-                            state
-                                .shell
-                                .scroll_state_manager
-                                .set_active(drag.element_id, drag.axis);
-                            let _ = InvalidateRect(Some(hwnd), None, false);
-                        } else {
-                            if state.shell.scroll_state_manager.set_inactive() {
-                                let _ = InvalidateRect(Some(hwnd), None, false);
-                            }
-                        }
+                    } else if let Some(drag) = state.hit_test_scrollbar_thumb(x, y, false) {
+                        state
+                            .shell
+                            .scroll_state_manager
+                            .set_active(drag.element_id, drag.axis);
+                        let _ = InvalidateRect(Some(hwnd), None, false);
+                    } else if state.shell.scroll_state_manager.set_inactive() {
+                        let _ = InvalidateRect(Some(hwnd), None, false);
                     }
 
                     // Continue manual drag (selection or preview drop position)
@@ -2274,8 +2269,6 @@ impl<
                 } as *const _ as _,
                 size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
             );
-
-            warn!("Backdrop result: {:?}", backdrop_result);
 
             // Check if backdrop setting succeeded
             let backdrop_supported = backdrop_result.is_ok();

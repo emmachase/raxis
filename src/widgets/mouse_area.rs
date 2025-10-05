@@ -209,31 +209,28 @@ impl<Message: 'static> MouseArea<Message> {
     ) {
         // if let Event::MouseMove { x, y } = event {
 
-        match event {
-            Event::MouseMove { x, y } => {
-                let point = PointDIP { x: *x, y: *y };
-                let inside = point.within(bounds.border_box);
+        if let Event::MouseMove { x, y } = event {
+            let point = PointDIP { x: *x, y: *y };
+            let inside = point.within(bounds.border_box);
 
-                if inside != state.mouse_inside {
-                    state.mouse_inside = inside;
-                    state.last_mouse_pos = Some((*x, *y));
+            if inside != state.mouse_inside {
+                state.mouse_inside = inside;
+                state.last_mouse_pos = Some((*x, *y));
 
-                    let synthetic_event = if inside {
-                        MouseAreaEvent::MouseEntered { x: *x, y: *y }
-                    } else {
-                        MouseAreaEvent::MouseLeft { x: *x, y: *y }
-                    };
+                let synthetic_event = if inside {
+                    MouseAreaEvent::MouseEntered { x: *x, y: *y }
+                } else {
+                    MouseAreaEvent::MouseLeft { x: *x, y: *y }
+                };
 
-                    if let Some(ref handler) = self.event_handler {
-                        if let Some(message) = handler(synthetic_event, shell) {
-                            shell.publish(message);
-                        }
+                if let Some(ref handler) = self.event_handler {
+                    if let Some(message) = handler(synthetic_event, shell) {
+                        shell.publish(message);
                     }
-                } else if inside {
-                    state.last_mouse_pos = Some((*x, *y));
                 }
+            } else if inside {
+                state.last_mouse_pos = Some((*x, *y));
             }
-            _ => {}
         }
     }
 

@@ -5,10 +5,10 @@ use std::time::Instant;
 use windows::Win32::Foundation::HWND;
 
 use crate::gfx::command_recorder::CommandRecorder;
-use crate::gfx::{PointDIP, RectDIP};
+use crate::gfx::PointDIP;
 use crate::layout::UIArenas;
 use crate::layout::model::{
-    Border, BorderRadius, Color, DropShadow, Element, ElementStyle, WordBreak,
+    Border, BorderRadius, Color, DropShadow, Element, ElementStyle,
 };
 use crate::widgets::{Bounds, widget};
 use crate::widgets::{Instance, Widget};

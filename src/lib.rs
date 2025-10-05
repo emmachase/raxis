@@ -1,7 +1,6 @@
 use std::{
     any::Any,
     cell::RefCell,
-    marker::PhantomData,
     rc::Rc,
     sync::mpsc,
     time::{Duration, Instant},
@@ -539,7 +538,7 @@ impl<Message> Shell<Message> {
                 // Track active element on mouse down/up
                 if matches!(event, Event::MouseButtonDown { .. }) {
                     let key = Self::find_innermost_element_at(ui_tree, x, y);
-                    self.active_element_id = key.map(|key| ui_tree.slots[key].id).flatten();
+                    self.active_element_id = key.and_then(|key| ui_tree.slots[key].id);
                 } else if matches!(event, Event::MouseButtonUp { .. }) {
                     self.active_element_id = None;
                 }
@@ -568,11 +567,9 @@ impl<Message> Shell<Message> {
 
                     if matches!(event, Event::MouseButtonDown { .. })
                         && let Some(id) = self.focus_manager.focused_widget
-                    {
-                        if !current_ancestry_ids.contains(&id) {
+                        && !current_ancestry_ids.contains(&id) {
                             self.focus_manager.release_focus(id);
                         }
-                    }
 
                     // For MouseMove events, generate synthetic enter/leave events
                     if matches!(event, Event::MouseMove { .. }) {
@@ -723,7 +720,7 @@ impl<Message> Shell<Message> {
         // Print the current node
         let id_str = element
             .id
-            .map(|id| format!("id:{}", id))
+            .map(|id| format!("id:{id}"))
             .unwrap_or_else(|| "id:None".to_string());
         let widget_str = element
             .content
@@ -739,13 +736,13 @@ impl<Message> Shell<Message> {
             })
             .unwrap_or_else(|| "Container".to_string());
 
-        println!("{}{} {:?} {} [{}]", prefix, branch, key, id_str, widget_str);
+        println!("{prefix}{branch} {key:?} {id_str} [{widget_str}]");
 
         // Prepare prefix for children
         let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
 
         // Print children
-        let children: Vec<UIKey> = element.children.iter().copied().collect();
+        let children: Vec<UIKey> = element.children.to_vec();
         for (i, &child_key) in children.iter().enumerate() {
             let is_last_child = i == children.len() - 1;
             Self::debug_print_tree_recursive(ui_tree, child_key, &child_prefix, is_last_child);

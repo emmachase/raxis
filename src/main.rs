@@ -431,7 +431,7 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                 },
                 ..Default::default()
             },
-            // virtual_scroll(hook),
+            virtual_scroll(hook),
             // Svg::new(include_str!("../assets/discord.svg")).as_element(w_id!()),
         ],
         ..Default::default()

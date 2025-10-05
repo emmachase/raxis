@@ -24,6 +24,7 @@ macro_rules! back_to_enum {
 
 back_to_enum! {
     #[derive(Debug)]
+    #[allow(non_camel_case_types)]
     pub enum VKey {
         /// VK_LBUTTON 	0x01 	Left mouse button
         LBUTTON = VK_LBUTTON.0 as isize,
