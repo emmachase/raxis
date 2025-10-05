@@ -1,5 +1,5 @@
 pub struct FocusManager {
-    focused_widget: Option<u64>,
+    pub focused_widget: Option<u64>,
 }
 
 impl Default for FocusManager {

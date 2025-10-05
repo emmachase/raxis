@@ -7,7 +7,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LAYER_PARAMETERS1,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, ID2D1Geometry,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, ID2D1Brush,
+    ID2D1Geometry,
 };
 use windows_numerics::{Matrix3x2, Vector2};
 
@@ -92,6 +93,8 @@ impl CommandExecutor {
             DrawCommand::Clear { .. } => true,
             DrawCommand::PopAxisAlignedClip => true,
             DrawCommand::PopRoundedClip => true,
+            DrawCommand::PushLayer { .. } => true,
+            DrawCommand::PopLayer => true,
             DrawCommand::SetBrushColor { .. } => true,
 
             // Commands with rectangles that can be culled
@@ -276,6 +279,34 @@ impl CommandExecutor {
                         .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
                 }
 
+                DrawCommand::PushLayer { opacity } => {
+                    let layer_params = D2D1_LAYER_PARAMETERS1 {
+                        contentBounds: D2D_RECT_F {
+                            left: -f32::MAX,
+                            top: -f32::MAX,
+                            right: f32::MAX,
+                            bottom: f32::MAX,
+                        },
+                        geometricMask: ManuallyDrop::new(None),
+                        maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                        maskTransform: Matrix3x2::identity(),
+                        opacity: *opacity,
+                        opacityBrush: ManuallyDrop::new(None),
+                        layerOptions: Default::default(),
+                    };
+
+                    renderer.render_target.PushLayer(&layer_params, None);
+
+                    // Why did they make it ManuallyDrop in the first place??? idk
+                    drop(ManuallyDrop::<Option<ID2D1Geometry>>::into_inner(
+                        layer_params.geometricMask,
+                    ));
+
+                    drop(ManuallyDrop::<Option<ID2D1Brush>>::into_inner(
+                        layer_params.opacityBrush,
+                    ));
+                }
+
                 DrawCommand::PushRoundedClip {
                     rect,
                     border_radius,
@@ -303,13 +334,15 @@ impl CommandExecutor {
                             layerOptions: Default::default(),
                         };
 
-                        if let Ok(layer) = renderer.render_target.CreateLayer(None) {
-                            renderer.render_target.PushLayer(&layer_params, &layer);
-                        }
+                        renderer.render_target.PushLayer(&layer_params, None);
 
                         // Why did they make it ManuallyDrop in the first place??? idk
                         drop(ManuallyDrop::<Option<ID2D1Geometry>>::into_inner(
                             layer_params.geometricMask,
+                        ));
+
+                        drop(ManuallyDrop::<Option<ID2D1Brush>>::into_inner(
+                            layer_params.opacityBrush,
                         ));
                     }
                 }
@@ -318,7 +351,7 @@ impl CommandExecutor {
                     renderer.render_target.PopAxisAlignedClip();
                 }
 
-                DrawCommand::PopRoundedClip => {
+                DrawCommand::PopRoundedClip | DrawCommand::PopLayer => {
                     renderer.render_target.PopLayer();
                 }
 

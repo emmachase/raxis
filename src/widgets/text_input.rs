@@ -366,7 +366,9 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                 state.has_started_ole_drag = false;
                 state.drag_start_position = None;
             }
-            super::Event::MouseMove { x, y } => {
+            super::Event::MouseMove { x, y }
+            | super::Event::MouseEnter { x, y }
+            | super::Event::MouseLeave { x, y } => {
                 let widget_x = x - x_dip;
                 let widget_y = y - y_dip;
 

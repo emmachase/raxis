@@ -133,8 +133,15 @@ pub fn generate_paint_commands<Message>(
                 let current = *current_z_index.borrow();
                 element_z_index > current
             },
-            |ui_tree, key, _parent| {
+            |ui_tree, key, parent| {
                 let mut recorder = recorder.borrow_mut();
+
+                let inherited_color = if let Some(parent_key) = parent {
+                    ui_tree.slots[parent_key].color
+                } else {
+                    None
+                };
+
                 let element = &mut ui_tree.slots[key];
                 let x = element.x;
                 let y = element.y;
@@ -147,13 +154,28 @@ pub fn generate_paint_commands<Message>(
                     matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
 
                 let bounds = element.bounds();
-                let style = ElementStyle::from(&*element);
+                let mut style = ElementStyle::from(&*element);
+                if let Some(color) = inherited_color {
+                    style.color.get_or_insert(color);
+                }
+
                 let (style, ownership) = if let Some(widget) = element.content.as_mut() {
-                    let state = ui_tree.widget_state.get(&element.id.unwrap()).unwrap();
+                    let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
                     (widget.adjust_style(state, style), widget.paint_ownership())
                 } else {
                     (style, PaintOwnership::Contents)
                 };
+
+                // Back-propagate color
+                if let Some(color) = style.color {
+                    element.color = Some(color);
+                }
+
+                if let Some(opacity) = element.opacity
+                    && opacity < 1.0
+                {
+                    recorder.push_layer(opacity);
+                }
 
                 if matches!(ownership, PaintOwnership::Contents) {
                     // Draw drop shadow first (behind the element)
@@ -323,6 +345,12 @@ pub fn generate_paint_commands<Message>(
                             // Use regular axis-aligned clipping for non-rounded elements
                             recorder.pop_axis_aligned_clip();
                         }
+                    }
+
+                    if let Some(opacity) = element.opacity
+                        && opacity < 1.0
+                    {
+                        recorder.pop_layer();
                     }
                 },
             ),

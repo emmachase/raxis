@@ -1376,9 +1376,10 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
 
                         let root = state.ui_tree.root;
                         visitors::visit_reverse_bfs(&mut state.ui_tree, root, |ui_tree, key, _| {
-                            let element = &mut ui_tree.slots[key];
-                            let bounds = element.bounds();
+                            let bounds = ui_tree.slots[key].bounds();
                             if point.within(bounds.border_box)
+                                && Shell::is_point_visible_in_scroll_ancestors(ui_tree, key, point)
+                                && let element = &mut ui_tree.slots[key]
                                 && element.scroll.is_some()
                                 && let Some(element_id) = element.id
                             {
@@ -1654,18 +1655,30 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         let point = PointDIP { x: x_dip, y: y_dip };
 
                         let mut cursor = None;
-                        let root = state.ui_tree.root;
-                        visitors::visit_reverse_bfs(
-                            &mut state.ui_tree,
-                            root,
-                            |ui_tree, element, _| {
-                                let bounds = ui_tree.slots[element].bounds();
-                                if let Some(ref widget) = ui_tree.slots[element].content {
-                                    if let Some(id) = ui_tree.slots[element].id {
-                                        if let Some(instance) = ui_tree.widget_state.get(&id) {
-                                            if point.within(bounds.border_box) {
+
+                        if let Some(target_key) =
+                            Shell::find_innermost_element_at(&mut state.ui_tree, x_dip, y_dip)
+                        {
+                            let ancestry = Shell::collect_ancestry(&mut state.ui_tree, target_key);
+
+                            for element in ancestry {
+                                let bounds = state.ui_tree.slots[element].bounds();
+
+                                if let Some(id) = state.ui_tree.slots[element].id {
+                                    if point.within(bounds.border_box)
+                                        && Shell::is_point_visible_in_scroll_ancestors(
+                                            &mut state.ui_tree,
+                                            element,
+                                            point,
+                                        )
+                                    {
+                                        if let Some(instance) = state.ui_tree.widget_state.get(&id)
+                                        {
+                                            if let Some(ref widget) =
+                                                state.ui_tree.slots[element].content
+                                            {
                                                 cursor = widget.cursor(
-                                                    &ui_tree.arenas,
+                                                    &state.ui_tree.arenas,
                                                     instance,
                                                     point,
                                                     bounds,
@@ -1676,27 +1689,28 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                                 }
 
                                 if cursor.is_some() {
-                                    VisitAction::Exit
-                                } else {
-                                    VisitAction::Continue
-                                }
-                            },
-                        );
-
-                        if let Some(cursor) = cursor {
-                            match cursor {
-                                Cursor::Arrow => {
-                                    let _ = SetCursor(Some(LoadCursorW(None, IDC_ARROW).unwrap()));
-                                }
-                                Cursor::IBeam => {
-                                    let _ = SetCursor(Some(LoadCursorW(None, IDC_IBEAM).unwrap()));
-                                }
-                                Cursor::Pointer => {
-                                    let _ = SetCursor(Some(LoadCursorW(None, IDC_HAND).unwrap()));
+                                    break;
                                 }
                             }
 
-                            return LRESULT(1);
+                            if let Some(cursor) = cursor {
+                                match cursor {
+                                    Cursor::Arrow => {
+                                        let _ =
+                                            SetCursor(Some(LoadCursorW(None, IDC_ARROW).unwrap()));
+                                    }
+                                    Cursor::IBeam => {
+                                        let _ =
+                                            SetCursor(Some(LoadCursorW(None, IDC_IBEAM).unwrap()));
+                                    }
+                                    Cursor::Pointer => {
+                                        let _ =
+                                            SetCursor(Some(LoadCursorW(None, IDC_HAND).unwrap()));
+                                    }
+                                }
+
+                                return LRESULT(1);
+                            }
                         }
                     }
                 }

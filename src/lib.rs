@@ -20,7 +20,7 @@ use crate::{
     gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree,
-        model::Element,
+        model::{Element, UIKey},
         visitors::{self, VisitAction},
     },
     math::easing::Easing,
@@ -308,6 +308,12 @@ pub struct Shell<Message> {
     /// Track which widget currently has drag focus for proper drag_leave handling
     current_drag_widget: Option<layout::model::UIKey>,
 
+    /// Track which element is currently active (from mouse down) for event dispatching
+    active_element_id: Option<u64>,
+
+    /// Track the ancestry of element IDs under the mouse from the previous event
+    previous_mouse_ancestry: Vec<u64>,
+
     operation_queue: Vec<Box<dyn Operation>>,
 
     // requested_next_redraw: bool,
@@ -353,6 +359,8 @@ impl<Message> Shell<Message> {
 
             event_captured: false,
             current_drag_widget: None,
+            active_element_id: None,
+            previous_mouse_ancestry: Vec::new(),
             operation_queue: Vec::new(),
             redraw_request: RedrawRequest::Wait,
             deferred_controls: Vec::new(),
@@ -419,10 +427,228 @@ impl<Message> Shell<Message> {
         }
     }
 
+    /// Find a UIKey by element ID
+    fn find_key_by_id(
+        ui_tree: BorrowedUITree<Message>,
+        target_id: u64,
+    ) -> Option<layout::model::UIKey> {
+        let mut found_key = None;
+        visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
+            let element = &ui_tree.slots[key];
+            if let Some(id) = element.id {
+                if id == target_id {
+                    found_key = Some(key);
+                    return VisitAction::Exit;
+                }
+            }
+            VisitAction::Continue
+        });
+        found_key
+    }
+
+    /// Find the innermost element at a given position
+    fn find_innermost_element_at(
+        ui_tree: BorrowedUITree<Message>,
+        x: f32,
+        y: f32,
+    ) -> Option<UIKey> {
+        let point = gfx::PointDIP { x, y };
+        let mut innermost_id = None;
+
+        // Use reverse DFS to find the innermost element (last leaf that contains the point)
+        visitors::visit_reverse_dfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
+            let element = &ui_tree.slots[key];
+            let bounds = element.bounds();
+
+            // Check if point is within the border box (the full element including padding)
+            if point.within(bounds.border_box) {
+                // Additionally check if the point is within all scrollable ancestor viewports
+                if Self::is_point_visible_in_scroll_ancestors(ui_tree, key, point) {
+                    innermost_id = Some(key);
+                    return VisitAction::Exit;
+                }
+            }
+
+            VisitAction::Continue
+        });
+
+        innermost_id
+    }
+
+    /// Check if a point is visible within all scrollable ancestor viewports
+    fn is_point_visible_in_scroll_ancestors(
+        ui_tree: BorrowedUITree<Message>,
+        element_key: UIKey,
+        point: gfx::PointDIP,
+    ) -> bool {
+        let mut current_key = element_key;
+
+        // Walk up the parent chain
+        loop {
+            let element = &ui_tree.slots[current_key];
+
+            if let Some(parent_key) = element.parent {
+                let parent = &ui_tree.slots[parent_key];
+
+                // If parent is scrollable, check if point is within its content box (viewport)
+                if parent.scroll.is_some() {
+                    let parent_bounds = parent.bounds();
+                    if !point.within(parent_bounds.content_box) {
+                        return false;
+                    }
+                }
+
+                current_key = parent_key;
+            } else {
+                break;
+            }
+        }
+
+        true
+    }
+
+    /// Collect all ancestor keys from a given element ID up to the root
+    fn collect_ancestry(
+        ui_tree: BorrowedUITree<Message>,
+        target_key: UIKey,
+    ) -> Vec<layout::model::UIKey> {
+        let mut ancestry = Vec::new();
+
+        // Walk up the parent chain using UIElement.parent
+        let mut current_key = target_key;
+        loop {
+            ancestry.push(current_key);
+
+            let element = &ui_tree.slots[current_key];
+            if let Some(parent_key) = element.parent {
+                current_key = parent_key;
+            } else {
+                break;
+            }
+        }
+
+        ancestry
+    }
+
     pub fn dispatch_event(&mut self, hwnd: HWND, ui_tree: BorrowedUITree<Message>, event: Event) {
         self.event_captured = false;
 
-        // Handle regular events with reverse BFS traversal
+        // For mouse events, use targeted dispatching
+        if event.is_mouse_event() {
+            if let Some((x, y)) = event.mouse_position() {
+                // Track active element on mouse down/up
+                if matches!(event, Event::MouseButtonDown { .. }) {
+                    let key = Self::find_innermost_element_at(ui_tree, x, y);
+                    self.active_element_id = key.map(|key| ui_tree.slots[key].id).flatten();
+                } else if matches!(event, Event::MouseButtonUp { .. }) {
+                    self.active_element_id = None;
+                }
+
+                // Determine target element ID
+                let target_key = if let Some(active_id) = self.active_element_id {
+                    // If there's an active element, use it
+                    Self::find_key_by_id(ui_tree, active_id)
+                        .or_else(|| Self::find_innermost_element_at(ui_tree, x, y))
+                } else {
+                    // Otherwise, find the innermost element at the mouse position
+                    Self::find_innermost_element_at(ui_tree, x, y)
+                };
+
+                // Dispatch to target and its ancestry
+                if let Some(target_key) = target_key {
+                    let ancestry_keys = Self::collect_ancestry(ui_tree, target_key);
+
+                    // Collect current ancestry IDs for enter/leave tracking
+                    let mut current_ancestry_ids = Vec::new();
+                    for &key in &ancestry_keys {
+                        if let Some(id) = ui_tree.slots[key].id {
+                            current_ancestry_ids.push(id);
+                        }
+                    }
+
+                    if matches!(event, Event::MouseButtonDown { .. })
+                        && let Some(id) = self.focus_manager.focused_widget
+                    {
+                        if !current_ancestry_ids.contains(&id) {
+                            self.focus_manager.release_focus(id);
+                        }
+                    }
+
+                    // For MouseMove events, generate synthetic enter/leave events
+                    if matches!(event, Event::MouseMove { .. }) {
+                        // Find elements that were left (in previous but not in current)
+                        // TODO: I don't like cloning here...
+                        for &prev_id in &self.previous_mouse_ancestry.clone() {
+                            if !current_ancestry_ids.contains(&prev_id) {
+                                self.dispatch_event_to(
+                                    hwnd,
+                                    ui_tree,
+                                    Event::MouseLeave { x, y },
+                                    prev_id,
+                                );
+                            }
+                        }
+
+                        // Find elements that were entered (in current but not in previous)
+                        for &curr_id in &current_ancestry_ids {
+                            if !self.previous_mouse_ancestry.contains(&curr_id) {
+                                self.dispatch_event_to(
+                                    hwnd,
+                                    ui_tree,
+                                    Event::MouseEnter { x, y },
+                                    curr_id,
+                                );
+                            }
+                        }
+                    }
+
+                    // Dispatch the main event from innermost to outermost
+                    for key in ancestry_keys {
+                        let element = &mut ui_tree.slots[key];
+                        let bounds = element.bounds();
+
+                        if let Some(ref mut widget) = element.content {
+                            if let Some(id) = element.id {
+                                let instance = ui_tree.widget_state.get_mut(&id).unwrap();
+                                // println!("info h ev: {:?} | ev: {:?}", widget, event);
+                                widget.update(
+                                    &mut ui_tree.arenas,
+                                    instance,
+                                    hwnd,
+                                    self,
+                                    &event,
+                                    bounds,
+                                );
+
+                                // println!("info cap: {}", self.event_captured);
+                                if self.event_captured {
+                                    break;
+                                }
+                            }
+                        }
+                    }
+
+                    // Update previous ancestry for next event
+                    if matches!(event, Event::MouseMove { .. }) {
+                        self.previous_mouse_ancestry = current_ancestry_ids;
+                    }
+                } else if matches!(event, Event::MouseMove { .. }) {
+                    // Mouse is outside all elements - send leave events to all previously hovered elements
+                    // TODO: I don't like cloning here...
+                    for &prev_id in &self.previous_mouse_ancestry.clone() {
+                        self.dispatch_event_to(hwnd, ui_tree, Event::MouseLeave { x, y }, prev_id);
+                    }
+                    self.previous_mouse_ancestry.clear();
+                }
+
+                if let Some(message) = (self.event_mapper)(event, self.event_captured) {
+                    self.publish(message);
+                }
+                return;
+            }
+        }
+
+        // For non-mouse events, use the original broadcast behavior
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
             let element = &mut ui_tree.slots[key];
             let bounds = element.bounds();
@@ -454,27 +680,15 @@ impl<Message> Shell<Message> {
     ) {
         self.event_captured = false;
 
-        // TODO: Make some map for id to avoid a traversal
-
-        // Handle regular events with reverse BFS traversal
-        visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
+        // Find the element and dispatch directly
+        if let Some(key) = Self::find_key_by_id(ui_tree, target_id) {
             let element = &mut ui_tree.slots[key];
             let bounds = element.bounds();
             if let Some(ref mut widget) = element.content {
-                if let Some(id) = element.id
-                    && target_id == id
-                {
-                    let instance = ui_tree.widget_state.get_mut(&id).unwrap();
-                    widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
-                }
-
-                if self.event_captured {
-                    return VisitAction::Exit;
-                }
+                let instance = ui_tree.widget_state.get_mut(&target_id).unwrap();
+                widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
             }
-
-            VisitAction::Continue
-        });
+        }
     }
 
     pub fn publish(&mut self, message: Message) {
@@ -485,6 +699,56 @@ impl<Message> Shell<Message> {
     pub fn dispatch_operations(&mut self, ui_tree: BorrowedUITree<Message>) {
         for operation in self.operation_queue.drain(..) {
             dispatch_operation(ui_tree, &*operation);
+        }
+    }
+
+    /// Debug function to print the UI tree structure
+    pub fn debug_print_tree(ui_tree: BorrowedUITree<Message>) {
+        println!("\n┌─ UI Tree ─────────────────────────────────────");
+        Self::debug_print_tree_recursive(ui_tree, ui_tree.root, "", true);
+        println!("└───────────────────────────────────────────────\n");
+    }
+
+    fn debug_print_tree_recursive(
+        ui_tree: BorrowedUITree<Message>,
+        key: UIKey,
+        prefix: &str,
+        is_last: bool,
+    ) {
+        let element = &ui_tree.slots[key];
+
+        // Determine the branch character
+        let branch = if is_last { "└──" } else { "├──" };
+
+        // Print the current node
+        let id_str = element
+            .id
+            .map(|id| format!("id:{}", id))
+            .unwrap_or_else(|| "id:None".to_string());
+        let widget_str = element
+            .content
+            .as_ref()
+            .map(|w| {
+                let type_name = w.type_name();
+                // Simplify the type name by taking only the last part after ::
+                type_name
+                    .split("::")
+                    .last()
+                    .unwrap_or(type_name)
+                    .to_string()
+            })
+            .unwrap_or_else(|| "Container".to_string());
+
+        println!("{}{} {:?} {} [{}]", prefix, branch, key, id_str, widget_str);
+
+        // Prepare prefix for children
+        let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
+
+        // Print children
+        let children: Vec<UIKey> = element.children.iter().copied().collect();
+        for (i, &child_key) in children.iter().enumerate() {
+            let is_last_child = i == children.len() - 1;
+            Self::debug_print_tree_recursive(ui_tree, child_key, &child_prefix, is_last_child);
         }
     }
 
@@ -507,10 +771,13 @@ impl<Message> Shell<Message> {
 
             // Quick check to see if we're still over the same widget or moved to a new one
             visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
-                let element = &ui_tree.slots[key];
-                let bounds = element.bounds();
+                let bounds = ui_tree.slots[key].bounds();
 
-                if position.within(bounds.border_box) && element.content.is_some() {
+                if position.within(bounds.border_box)
+                    && Shell::is_point_visible_in_scroll_ancestors(ui_tree, key, position)
+                    && let element = &mut ui_tree.slots[key]
+                    && element.content.is_some()
+                {
                     if key != prev_drag_widget.unwrap() {
                         should_call_drag_leave = true;
                     }
@@ -537,11 +804,14 @@ impl<Message> Shell<Message> {
 
         // Now find the widget under the current position and handle the event
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
-            let element = &mut ui_tree.slots[key];
-            let bounds = element.bounds();
+            let bounds = ui_tree.slots[key].bounds();
 
             // Check if point is within widget bounds (except for DragLeave, which should be handled by all)
-            if position.within(bounds.border_box) || matches!(event, DragEvent::DragLeave) {
+            if (position.within(bounds.border_box)
+                && Shell::is_point_visible_in_scroll_ancestors(ui_tree, key, position))
+                || matches!(event, DragEvent::DragLeave)
+            {
+                let element = &mut ui_tree.slots[key];
                 if let Some(ref mut widget) = element.content {
                     if let Some(text_input) = widget.as_drop_target()
                         && let Some(id) = element.id
@@ -576,6 +846,9 @@ impl<Message> Shell<Message> {
                             }
                             DragEvent::Drop { drag_info } => {
                                 result = Some(text_input.drop(instance, self, drag_info, bounds));
+
+                                // Make sure to reset active element after drop as we dont get mouse-up for this.
+                                self.active_element_id = None;
                             }
                             DragEvent::DragLeave => {
                                 text_input.drag_leave(instance, bounds);

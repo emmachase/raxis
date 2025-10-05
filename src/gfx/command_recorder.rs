@@ -125,6 +125,16 @@ impl CommandRecorder {
         self.commands.push(DrawCommand::PopRoundedClip);
     }
 
+    /// Record pushing a layer
+    pub fn push_layer(&mut self, opacity: f32) {
+        self.commands.push(DrawCommand::PushLayer { opacity });
+    }
+
+    /// Record popping the current layer
+    pub fn pop_layer(&mut self) {
+        self.commands.push(DrawCommand::PopLayer);
+    }
+
     /// Record a rectangle outline drawing command
     pub fn draw_rectangle(&mut self, rect: &RectDIP, color: impl Into<Color>, thickness: f32) {
         self.commands.push(DrawCommand::DrawRectangleOutline {

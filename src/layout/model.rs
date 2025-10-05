@@ -608,6 +608,7 @@ pub type UIKey = slotmap::DefaultKey;
 #[derive(Debug)]
 pub struct UIElement<Message> {
     pub children: Vec<UIKey>,
+    pub parent: Option<UIKey>,
 
     pub content: Option<WidgetContent<Message>>,
 
@@ -643,6 +644,7 @@ pub struct UIElement<Message> {
     pub drop_shadow: Option<DropShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
+    pub opacity: Option<f32>,
     pub snap: bool,
 
     // Wrapping support
@@ -657,6 +659,7 @@ impl<Message> Default for UIElement<Message> {
     fn default() -> Self {
         Self {
             children: Vec::new(),
+            parent: None,
             content: None,
             direction: Direction::LeftToRight,
             horizontal_alignment: HorizontalAlignment::Left,
@@ -683,6 +686,7 @@ impl<Message> Default for UIElement<Message> {
             drop_shadow: None,
             border: None,
             z_index: None,
+            opacity: None,
             snap: false,
             wrap: false,
             wrap_breaks: Vec::new(),
@@ -758,6 +762,7 @@ pub struct Element<Message> {
     pub drop_shadow: Option<DropShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
+    pub opacity: Option<f32>,
     pub snap: bool,
 
     // Wrapping support
@@ -918,6 +923,7 @@ impl<Message> Default for Element<Message> {
             drop_shadow: None,
             border: None,
             z_index: None,
+            opacity: None,
             snap: false,
             wrap: false,
             id: None,
@@ -947,6 +953,7 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             drop_shadow: element.drop_shadow,
             border: element.border,
             z_index: element.z_index,
+            opacity: element.opacity,
             snap: element.snap,
             wrap: element.wrap,
             wrap_breaks: Vec::new(),
@@ -968,7 +975,8 @@ pub fn create_tree<Message>(
     tree.slots.clear();
 
     while let Some((element, parent)) = queue.pop() {
-        let (shell, children) = to_shell(element);
+        let (mut shell, children) = to_shell(element);
+        shell.parent = parent;
 
         // Initialize widget state if new
         if let Some(ref widget) = shell.content {

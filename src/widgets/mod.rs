@@ -51,6 +51,7 @@ pub struct Modifiers {
 }
 
 #[non_exhaustive]
+#[derive(Debug)]
 pub enum Event {
     ImeStartComposition,
     ImeComposition {
@@ -77,6 +78,14 @@ pub enum Event {
         x: f32,
         y: f32,
     },
+    MouseEnter {
+        x: f32,
+        y: f32,
+    },
+    MouseLeave {
+        x: f32,
+        y: f32,
+    },
     MouseWheel {
         x: f32,
         y: f32,
@@ -100,6 +109,32 @@ pub enum Event {
     DragFinish {
         effect: DROPEFFECT,
     },
+}
+
+impl Event {
+    pub fn is_mouse_event(&self) -> bool {
+        matches!(
+            self,
+            Event::MouseButtonDown { .. }
+                | Event::MouseButtonUp { .. }
+                | Event::MouseMove { .. }
+                | Event::MouseEnter { .. }
+                | Event::MouseLeave { .. }
+                | Event::MouseWheel { .. }
+        )
+    }
+
+    pub fn mouse_position(&self) -> Option<(f32, f32)> {
+        match self {
+            Event::MouseButtonDown { x, y, .. } => Some((*x, *y)),
+            Event::MouseButtonUp { x, y, .. } => Some((*x, *y)),
+            Event::MouseMove { x, y } => Some((*x, *y)),
+            Event::MouseEnter { x, y } => Some((*x, *y)),
+            Event::MouseLeave { x, y } => Some((*x, *y)),
+            Event::MouseWheel { x, y, .. } => Some((*x, *y)),
+            _ => None,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -166,6 +201,10 @@ pub enum PaintOwnership {
 
 #[allow(unused)]
 pub trait Widget<Message>: std::fmt::Debug {
+    fn type_name(&self) -> &'static str {
+        std::any::type_name::<Self>()
+    }
+
     fn limits_x(&self, arenas: &UIArenas, instance: &mut Instance) -> limit_response::SizingForX {
         limit_response::SizingForX::default()
     }
@@ -188,7 +227,7 @@ pub trait Widget<Message>: std::fmt::Debug {
         PaintOwnership::Contents
     }
 
-    fn adjust_style(&self, instance: &Instance, style: ElementStyle) -> ElementStyle {
+    fn adjust_style(&mut self, instance: &mut Instance, style: ElementStyle) -> ElementStyle {
         style
     }
 

@@ -1,5 +1,7 @@
 use crate::gfx::RectDIP;
-use crate::layout::model::{BorderRadius, Color, DropShadow, StrokeLineCap, StrokeLineJoin, StrokeDashStyle};
+use crate::layout::model::{
+    BorderRadius, Color, DropShadow, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
+};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1Bitmap, ID2D1PathGeometry, ID2D1SvgDocument};
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
@@ -8,9 +10,14 @@ use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 #[derive(Debug)]
 pub enum DrawCommand {
     /// Clear the entire render target with a color
-    Clear { color: Color },
+    Clear {
+        color: Color,
+    },
     /// Fill a rectangle with a solid color
-    FillRectangle { rect: RectDIP, color: Color },
+    FillRectangle {
+        rect: RectDIP,
+        color: Color,
+    },
     /// Fill a rounded rectangle with a solid color
     FillRoundedRectangle {
         rect: RectDIP,
@@ -58,7 +65,9 @@ pub enum DrawCommand {
         color: Color,
     },
     /// Push an axis-aligned clip rectangle
-    PushAxisAlignedClip { rect: RectDIP },
+    PushAxisAlignedClip {
+        rect: RectDIP,
+    },
     /// Push a layer with rounded rectangle clipping
     PushRoundedClip {
         rect: RectDIP,
@@ -68,8 +77,14 @@ pub enum DrawCommand {
     PopAxisAlignedClip,
     /// Pop the current rounded clip
     PopRoundedClip,
+    PushLayer {
+        opacity: f32,
+    },
+    PopLayer,
     /// Set brush color for subsequent operations
-    SetBrushColor { color: D2D1_COLOR_F },
+    SetBrushColor {
+        color: D2D1_COLOR_F,
+    },
     /// Draw SVG document
     DrawSvg {
         rect: RectDIP,

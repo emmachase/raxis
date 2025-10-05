@@ -57,6 +57,31 @@ pub fn visit_reverse_bfs<Message, F, R>(
     }
 }
 
+pub fn visit_reverse_dfs<Message, F, R>(
+    ui_tree: BorrowedUITree<'_, Message>,
+    element: UIKey,
+    mut visitor: F,
+) where
+    F: FnMut(BorrowedUITree<'_, Message>, UIKey, Option<UIKey>) -> R,
+    R: Into<VisitAction>,
+{
+    let mut queue: Vec<(UIKey, Option<UIKey>)> = vec![(element, None)];
+    let mut stack: Vec<(UIKey, Option<UIKey>)> = Vec::new();
+
+    while let Some((current, parent)) = queue.pop() {
+        stack.push((current, parent));
+        for &child in ui_tree.slots[current].children.iter().rev() {
+            queue.push((child, Some(current)));
+        }
+    }
+
+    while let Some((current, parent)) = stack.pop() {
+        if visitor(ui_tree, current, parent).into().is_exit() {
+            break;
+        }
+    }
+}
+
 /// Standard breadth-first traversal.
 pub fn visit_bfs<Message, F, R>(
     ui_tree: BorrowedUITree<'_, Message>,

@@ -7,7 +7,9 @@ use windows::Win32::Foundation::HWND;
 use crate::gfx::command_recorder::CommandRecorder;
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::{Border, BorderRadius, Color, DropShadow, Element, ElementStyle};
+use crate::layout::model::{
+    Border, BorderRadius, Color, DropShadow, Element, ElementStyle, WordBreak,
+};
 use crate::widgets::{Bounds, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
@@ -24,8 +26,8 @@ pub enum ButtonState {
 /// Style configuration for a button in a specific state
 #[derive(Debug, Clone)]
 pub struct ButtonStyle {
-    pub bg_color: Color,
-    pub text_color: Color,
+    pub bg_color: Option<Color>,
+    pub text_color: Option<Color>,
     pub border: Option<Border>,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
@@ -34,18 +36,18 @@ pub struct ButtonStyle {
 impl Default for ButtonStyle {
     fn default() -> Self {
         Self {
-            bg_color: Color {
+            bg_color: Some(Color {
                 r: 0.9,
                 g: 0.9,
                 b: 0.9,
                 a: 1.0,
-            },
-            text_color: Color {
+            }),
+            text_color: Some(Color {
                 r: 0.0,
                 g: 0.0,
                 b: 0.0,
                 a: 1.0,
-            },
+            }),
             border: Some(Border {
                 width: 1.0,
                 color: Color::from(0x00000033),
@@ -71,18 +73,18 @@ impl Default for ButtonStyleSet {
         Self {
             normal: ButtonStyle::default(),
             hover: ButtonStyle {
-                bg_color: Color {
+                bg_color: Some(Color {
                     r: 0.85,
                     g: 0.85,
                     b: 0.85,
                     a: 1.0,
-                },
-                text_color: Color {
+                }),
+                text_color: Some(Color {
                     r: 0.0,
                     g: 0.0,
                     b: 0.0,
                     a: 1.0,
-                },
+                }),
                 border: Some(Border {
                     width: 1.0,
                     color: Color::from(0x00000033),
@@ -92,18 +94,18 @@ impl Default for ButtonStyleSet {
                 drop_shadow: None,
             },
             pressed: ButtonStyle {
-                bg_color: Color {
+                bg_color: Some(Color {
                     r: 0.75,
                     g: 0.75,
                     b: 0.75,
                     a: 1.0,
-                },
-                text_color: Color {
+                }),
+                text_color: Some(Color {
                     r: 0.0,
                     g: 0.0,
                     b: 0.0,
                     a: 1.0,
-                },
+                }),
                 border: Some(Border {
                     width: 1.0,
                     color: Color::from(0x00000033),
@@ -113,18 +115,18 @@ impl Default for ButtonStyleSet {
                 drop_shadow: None,
             },
             disabled: ButtonStyle {
-                bg_color: Color {
+                bg_color: Some(Color {
                     r: 0.95,
                     g: 0.95,
                     b: 0.95,
                     a: 1.0,
-                },
-                text_color: Color {
+                }),
+                text_color: Some(Color {
                     r: 0.6,
                     g: 0.6,
                     b: 0.6,
                     a: 1.0,
-                },
+                }),
                 border: None,
                 border_radius: None,
                 drop_shadow: None,
@@ -183,10 +185,18 @@ impl<Message: 'static + Send> Button<Message> {
     }
 
     pub fn with_bg_color(mut self, color: Color) -> Self {
-        self.styles.normal.bg_color = color;
-        self.styles.hover.bg_color = color.deviate(0.05);
-        self.styles.pressed.bg_color = color.deviate(0.1);
-        self.styles.disabled.bg_color = color.darken(0.4).desaturate(0.3);
+        self.styles.normal.bg_color = Some(color);
+        self.styles.hover.bg_color = Some(color.deviate(0.05));
+        self.styles.pressed.bg_color = Some(color.deviate(0.1));
+        self.styles.disabled.bg_color = Some(color.darken(0.4).desaturate(0.3));
+        self
+    }
+
+    pub fn with_no_bg_color(mut self) -> Self {
+        self.styles.normal.bg_color = None;
+        self.styles.hover.bg_color = None;
+        self.styles.pressed.bg_color = None;
+        self.styles.disabled.bg_color = None;
         self
     }
 
@@ -292,30 +302,6 @@ impl ButtonWidgetState {
             ButtonState::Disabled => &styles.disabled,
         }
     }
-
-    fn draw_button_background(
-        &self,
-        recorder: &mut crate::gfx::command_recorder::CommandRecorder,
-        bounds: RectDIP,
-        style: &ButtonStyle,
-    ) {
-        // Draw drop shadow first (behind everything)
-        if let Some(drop_shadow) = &style.drop_shadow {
-            recorder.draw_blurred_shadow(&bounds, drop_shadow, style.border_radius.as_ref());
-        }
-
-        // Draw button background with border radius support
-        if let Some(border_radius) = &style.border_radius {
-            recorder.fill_rounded_rectangle(&bounds, border_radius, style.bg_color);
-        } else {
-            recorder.fill_rectangle(&bounds, style.bg_color);
-        }
-
-        // Draw button border
-        if let Some(border) = &style.border {
-            recorder.draw_border(&bounds, style.border_radius.as_ref(), border);
-        }
-    }
 }
 
 impl<Message> Widget<Message> for Button<Message> {
@@ -351,6 +337,20 @@ impl<Message> Widget<Message> for Button<Message> {
         }
     }
 
+    fn adjust_style(&mut self, instance: &mut Instance, style: ElementStyle) -> ElementStyle {
+        let state = with_state!(mut instance as ButtonWidgetState);
+        state.update_state(self.enabled);
+        let cur_style = state.get_current_style(&self.styles);
+        ElementStyle {
+            background_color: cur_style.bg_color,
+            color: cur_style.text_color,
+            border_radius: cur_style.border_radius,
+            drop_shadow: cur_style.drop_shadow,
+            border: cur_style.border,
+            ..style
+        }
+    }
+
     fn update(
         &mut self,
         arenas: &mut UIArenas,
@@ -376,11 +376,11 @@ impl<Message> Widget<Message> for Button<Message> {
                 let point = PointDIP { x: *x, y: *y };
                 let was_pressed = state.is_mouse_down && state.is_mouse_over;
 
+                // Trigger click if mouse was released over the button
                 state.is_mouse_down = false;
                 state.is_mouse_over = point.within(bounds.border_box);
                 state.update_state(self.enabled);
 
-                // Trigger click if mouse was released over the button
                 if was_pressed && point.within(bounds.border_box) && self.enabled {
                     if let Some(handler) = self.on_click.as_ref() {
                         handler(arenas, shell);
@@ -389,7 +389,9 @@ impl<Message> Widget<Message> for Button<Message> {
 
                 shell.request_redraw(hwnd, RedrawRequest::Immediate);
             }
-            super::Event::MouseMove { x, y } => {
+            super::Event::MouseMove { x, y }
+            | super::Event::MouseEnter { x, y }
+            | super::Event::MouseLeave { x, y } => {
                 let point = PointDIP { x: *x, y: *y };
                 let was_over = state.is_mouse_over;
                 state.is_mouse_over = point.within(bounds.border_box);
@@ -406,23 +408,13 @@ impl<Message> Widget<Message> for Button<Message> {
     fn paint(
         &mut self,
         _arenas: &UIArenas,
-        instance: &mut Instance,
+        _instance: &mut Instance,
         _shell: &Shell<Message>,
-        recorder: &mut CommandRecorder,
+        _recorder: &mut CommandRecorder,
         _style: ElementStyle,
-        bounds: Bounds,
+        _bounds: Bounds,
         _now: Instant,
     ) {
-        let state = with_state!(mut instance as ButtonWidgetState);
-
-        // Update visual state
-        state.update_state(self.enabled);
-
-        // Get current style based on button state
-        let current_style = state.get_current_style(&self.styles);
-
-        // Draw button background and border
-        state.draw_button_background(recorder, bounds.border_box, current_style);
     }
 
     fn cursor(

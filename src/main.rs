@@ -11,13 +11,14 @@ use lazy_static::lazy_static;
 use raxis::{
     HookManager,
     layout::{
-        helpers::center,
+        helpers::{center, spacer},
         model::{
             Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
-            Element, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
-            VerticalAlignment,
+            Element, FloatingConfig, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap,
+            StrokeLineJoin, VerticalAlignment,
         },
     },
+    row,
     runtime::{Backdrop, font_manager::FontIdentifier, scroll::ScrollPosition, task::Task},
     use_animation,
     util::{str::StableString, unique::combine_id},
@@ -38,7 +39,14 @@ use raxis_proc_macro::svg_path;
 #[global_allocator]
 static ALLOC: dhat::Alloc = dhat::Alloc;
 
-enum Message {}
+#[derive(Default)]
+struct State {
+    modal_open: bool,
+}
+
+enum Message {
+    ToggleModal,
+}
 
 fn demo_box(label: &'static str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
     Element {
@@ -276,13 +284,21 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
         child_gap: 15.0,
         children: vec![
             // Header
-            Element {
-                id: Some(w_id!()),
-                width: Sizing::grow(),
-                height: Sizing::fit(),
-                content: widget(Text::new("Todo List").with_font_size(32.0)),
-                ..Default::default()
-            },
+            // Element {
+            //     id: Some(w_id!()),
+            //     width: Sizing::grow(),
+            //     height: Sizing::fit(),
+            //     content: widget(Text::new("Todo List").with_font_size(32.0)),
+            //     ..Default::default()
+            // },
+            row![
+                Text::new("Todo List").with_font_size(24.0).as_element(),
+                spacer(),
+                Button::new()
+                    .with_click_handler(|_, s| s.publish(Message::ToggleModal))
+                    .as_element(w_id!(), Text::new("Settings"))
+            ]
+            .with_width(Sizing::grow()),
             // Border demos
             border_demos(),
             animated_button(hook),
@@ -415,7 +431,7 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                 },
                 ..Default::default()
             },
-            virtual_scroll(hook),
+            // virtual_scroll(hook),
             // Svg::new(include_str!("../assets/discord.svg")).as_element(w_id!()),
         ],
         ..Default::default()
@@ -706,7 +722,7 @@ fn todo_item(
                             .with_stroke_width(2.0)
                             .with_stroke_cap(StrokeLineCap::Round)
                             .with_stroke_join(StrokeLineJoin::Round)
-                            .as_element(w_id!()), // Explicitly re-use id to re-use path geometry
+                            .as_element(combine_id(w_id!(), item.id)),
                     )]
                 } else {
                     vec![]
@@ -777,7 +793,51 @@ fn todo_item(
     }
 }
 
-fn view(_state: &(), hook: &mut HookManager<Message>) -> Element<Message> {
+fn modal(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
+    let mut instance = hook.instance(w_id!());
+    let opacity = use_animation(&mut instance, state.modal_open);
+    let opacity = opacity.interpolate(hook, 0.0, 1.0, Instant::now());
+
+    if !state.modal_open && opacity == 0.0 {
+        return Element::default();
+    }
+
+    Element {
+        id: Some(w_id!()),
+        width: Sizing::percent(1.0),
+        height: Sizing::percent(1.0),
+        opacity: Some(opacity),
+        background_color: Some(Color::from(0x00000080)),
+        floating: Some(FloatingConfig {
+            ..Default::default()
+        }),
+
+        children: vec![center(Element {
+            id: Some(w_id!()),
+            // width: Sizing::grow(),
+            // height: Sizing::grow(),
+            background_color: Some(Color::from(0xFFFFFFFF)),
+            border_radius: Some(BorderRadius::all(4.0)),
+            border: Some(Border {
+                width: 1.0,
+                color: Color::from(0x00000080),
+                ..Default::default()
+            }),
+
+            children: vec![
+                Text::new("Modal")
+                    .with_text_alignment(TextAlignment::Center)
+                    .with_color(Color::BLACK)
+                    .as_element(),
+            ],
+            ..Default::default()
+        })],
+
+        ..Default::default()
+    }
+}
+
+fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
     Element {
         direction: Direction::TopToBottom,
         width: Sizing::grow(),
@@ -813,7 +873,7 @@ fn view(_state: &(), hook: &mut HookManager<Message>) -> Element<Message> {
                     ..Default::default()
                 }),
 
-                children: vec![todo_app(hook)],
+                children: vec![todo_app(hook), modal(state, hook)],
                 ..Default::default()
             },
         ],
@@ -834,15 +894,20 @@ fn view(_state: &(), hook: &mut HookManager<Message>) -> Element<Message> {
     // todo_app(hook)
 }
 
-fn update(_state: &mut (), _message: Message) -> Option<Task<Message>> {
-    None
+fn update(state: &mut State, message: Message) -> Option<Task<Message>> {
+    match message {
+        Message::ToggleModal => {
+            state.modal_open = !state.modal_open;
+            None
+        }
+    }
 }
 
 fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
-    raxis::Application::new((), view, update, |_state| None)
+    raxis::Application::new(State::default(), view, update, |_state| None)
         .with_title("Raxis Demo")
         .with_backdrop(Backdrop::Mica)
         .run()
