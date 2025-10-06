@@ -867,66 +867,67 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
         Ok(())
     }
 
-    // Depth-first traversal: visit children first (post-order for scrollbar z-order),
-    // then compute scrollbar thumb rects for hit-testing and return the last (topmost) hit.
+    // Hit test scrollbar thumbs following the same visibility logic as event dispatch.
+    // This prevents scrolling through obscuring elements by checking:
+    // 1. If the point is within an innermost element
+    // 2. If the point is visible within all scroll ancestors
+    // 3. If any element in the ancestry chain has a scrollbar at the hit point
     fn hit_test_scrollbar_thumb(
         &mut self,
         x: f32,
         y: f32,
         only_thumb: bool,
     ) -> Option<ScrollDragState> {
-        fn dfs<State, Message>(
-            state: &mut ApplicationHandle<State, Message>,
-            key: DefaultKey,
-            x: f32,
-            y: f32,
-            only_thumb: bool,
-            out: &mut Option<ScrollDragState>,
-        ) {
-            {
-                let element = &state.ui_tree.slots[key];
-                // Recurse into children first
-                // TODO: Don't like the clone here
-                for child in element.children.clone().into_iter() {
-                    dfs(state, child, x, y, only_thumb, out);
-                }
-            }
-
-            let element = &state.ui_tree.slots[key];
-
-            // Then evaluate current element so it overrides children (matches z-order in paint)
+        let point = PointDIP { x, y };
+        
+        // First, find the innermost element at this position (respecting scroll clipping)
+        let innermost_key = Shell::find_innermost_element_at(&mut self.ui_tree, x, y)?;
+        
+        // Collect the ancestry from innermost to root
+        let ancestry = Shell::collect_ancestry(&mut self.ui_tree, innermost_key);
+        
+        // Check scrollbars from innermost to outermost (matching event dispatch order)
+        // This ensures that overlapping elements block scrollbars behind them
+        for &key in &ancestry {
+            let element = &self.ui_tree.slots[key];
+            
             if element.id.is_none() {
-                return;
+                continue;
             }
-
-            // Use centralized geometry helpers for hit-testing
-            if let Some(geom) = compute_scrollbar_geom(&mut state.shell, element, Axis::Y) {
+            
+            // Check Y-axis scrollbar
+            if let Some(geom) = compute_scrollbar_geom(&mut self.shell, element, Axis::Y) {
                 let tr = if only_thumb {
                     geom.thumb_rect
                 } else {
                     geom.track_rect
                 };
                 let thumb = geom.thumb_rect;
-                if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
+                
+                // Check if point is within the track/thumb rect
+                if point.within(tr) {
                     let grab_offset = y - thumb.y;
-                    *out = Some(ScrollDragState {
+                    return Some(ScrollDragState {
                         element_id: element.id.unwrap(),
                         axis: Axis::Y,
                         grab_offset,
                     });
                 }
             }
-
-            if let Some(geom) = compute_scrollbar_geom(&mut state.shell, element, Axis::X) {
+            
+            // Check X-axis scrollbar
+            if let Some(geom) = compute_scrollbar_geom(&mut self.shell, element, Axis::X) {
                 let tr = if only_thumb {
                     geom.thumb_rect
                 } else {
                     geom.track_rect
                 };
                 let thumb = geom.thumb_rect;
-                if x >= tr.x && x < tr.x + tr.width && y >= tr.y && y < tr.y + tr.height {
+                
+                // Check if point is within the track/thumb rect
+                if point.within(tr) {
                     let grab_offset = x - thumb.x;
-                    *out = Some(ScrollDragState {
+                    return Some(ScrollDragState {
                         element_id: element.id.unwrap(),
                         axis: Axis::X,
                         grab_offset,
@@ -934,11 +935,8 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 }
             }
         }
-
-        let root = self.ui_tree.root;
-        let mut result = None;
-        dfs(self, root, x, y, only_thumb, &mut result);
-        result
+        
+        None
     }
 
     fn update_smooth_scroll_animations(&mut self) {
@@ -1367,76 +1365,76 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     );
 
                     if state.shell.capture_event() {
-                        let point = PointDIP { x: x_dip, y: y_dip };
+                        // Use the same visibility logic as event dispatch:
+                        // 1. Find innermost element at position
+                        // 2. Walk up ancestry to find first scrollable element
+                        // This prevents scrolling through obscuring elements
+                        if let Some(innermost_key) = Shell::find_innermost_element_at(&mut state.ui_tree, x_dip, y_dip) {
+                            let ancestry = Shell::collect_ancestry(&mut state.ui_tree, innermost_key);
+                            
+                            // Walk up the ancestry from innermost to outermost
+                            for &key in &ancestry {
+                                let element = &state.ui_tree.slots[key];
+                                
+                                if element.scroll.is_some() && let Some(element_id) = element.id {
+                                    // Check if this element can scroll in the requested direction
+                                    if can_scroll_further(
+                                        element,
+                                        axis,
+                                        if wheel_delta > 0.0 {
+                                            ScrollDirection::Positive
+                                        } else {
+                                            ScrollDirection::Negative
+                                        },
+                                        &state.shell.scroll_state_manager,
+                                    ) {
+                                        let mut scroll_lines = 3;
+                                        let _ = SystemParametersInfoW(
+                                            SPI_GETWHEELSCROLLLINES,
+                                            0,
+                                            Some(&mut scroll_lines as *mut i32 as *mut _),
+                                            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+                                        );
 
-                        let root = state.ui_tree.root;
-                        visitors::visit_reverse_bfs(&mut state.ui_tree, root, |ui_tree, key, _| {
-                            let bounds = ui_tree.slots[key].bounds();
-                            if point.within(bounds.border_box)
-                                && Shell::is_point_visible_in_scroll_ancestors(ui_tree, key, point)
-                                && let element = &mut ui_tree.slots[key]
-                                && element.scroll.is_some()
-                                && let Some(element_id) = element.id
-                            {
-                                // If the point is within the scrollable area, scroll
-                                if can_scroll_further(
-                                    element,
-                                    axis,
-                                    if wheel_delta > 0.0 {
-                                        ScrollDirection::Positive
-                                    } else {
-                                        ScrollDirection::Negative
-                                    },
-                                    &state.shell.scroll_state_manager,
-                                ) {
-                                    let mut scroll_lines = 3;
-                                    let _ = SystemParametersInfoW(
-                                        SPI_GETWHEELSCROLLLINES,
-                                        0,
-                                        Some(&mut scroll_lines as *mut i32 as *mut _),
-                                        SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
-                                    );
+                                        let wheel_delta =
+                                            wheel_delta * LINE_HEIGHT as f32 * scroll_lines as f32;
 
-                                    let wheel_delta =
-                                        wheel_delta * LINE_HEIGHT as f32 * scroll_lines as f32;
+                                        let (delta_x, delta_y) = if axis == Axis::Y {
+                                            (0.0, wheel_delta)
+                                        } else {
+                                            (wheel_delta, 0.0)
+                                        };
 
-                                    let (delta_x, delta_y) = if axis == Axis::Y {
-                                        (0.0, wheel_delta)
-                                    } else {
-                                        (wheel_delta, 0.0)
-                                    };
+                                        // Get current scroll position (either from active animation or actual position)
+                                        let current_pos = state
+                                            .shell
+                                            .scroll_state_manager
+                                            .get_scroll_position(element_id);
+                                        let current_animated_pos = state
+                                            .smooth_scroll_manager
+                                            .get_current_position(element_id, current_pos);
 
-                                    // Get current scroll position (either from active animation or actual position)
-                                    let current_pos = state
-                                        .shell
-                                        .scroll_state_manager
-                                        .get_scroll_position(element_id);
-                                    let current_animated_pos = state
-                                        .smooth_scroll_manager
-                                        .get_current_position(element_id, current_pos);
+                                        // Use accumulate_scroll_delta for fast scrolling support
+                                        let delta = ScrollPosition {
+                                            x: delta_x,
+                                            y: delta_y,
+                                        };
 
-                                    // Use accumulate_scroll_delta for fast scrolling support
-                                    let delta = ScrollPosition {
-                                        x: delta_x,
-                                        y: delta_y,
-                                    };
+                                        state.smooth_scroll_manager.accumulate_scroll_delta(
+                                            element_id,
+                                            current_animated_pos,
+                                            delta,
+                                        );
 
-                                    state.smooth_scroll_manager.accumulate_scroll_delta(
-                                        element_id,
-                                        current_animated_pos,
-                                        delta,
-                                    );
+                                        state
+                                            .shell
+                                            .request_redraw(hwnd, crate::RedrawRequest::Immediate);
 
-                                    state
-                                        .shell
-                                        .request_redraw(hwnd, crate::RedrawRequest::Immediate);
-
-                                    return VisitAction::Exit;
+                                        break;
+                                    }
                                 }
                             }
-
-                            VisitAction::Continue
-                        });
+                        }
                     }
                 }
                 LRESULT(0)
