@@ -4,13 +4,11 @@ use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
 
-use crate::gfx::command_recorder::CommandRecorder;
 use crate::gfx::PointDIP;
+use crate::gfx::command_recorder::CommandRecorder;
 use crate::layout::UIArenas;
-use crate::layout::model::{
-    Border, BorderRadius, Color, DropShadow, Element, ElementStyle,
-};
-use crate::widgets::{Bounds, widget};
+use crate::layout::model::{Border, BorderRadius, Color, DropShadow, Element, ElementStyle};
+use crate::widgets::{Bounds, Cursor, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
 
@@ -53,6 +51,18 @@ impl Default for ButtonStyle {
                 color: Color::from(0x00000033),
                 ..Default::default()
             }),
+            border_radius: None,
+            drop_shadow: None,
+        }
+    }
+}
+
+impl ButtonStyle {
+    pub fn clear() -> Self {
+        Self {
+            bg_color: None,
+            text_color: None,
+            border: None,
             border_radius: None,
             drop_shadow: None,
         }
@@ -135,6 +145,17 @@ impl Default for ButtonStyleSet {
     }
 }
 
+impl ButtonStyleSet {
+    pub fn clear() -> Self {
+        Self {
+            normal: ButtonStyle::clear(),
+            hover: ButtonStyle::clear(),
+            pressed: ButtonStyle::clear(),
+            disabled: ButtonStyle::clear(),
+        }
+    }
+}
+
 pub type OnClickFn<Message> = dyn Fn(&mut UIArenas, &mut Shell<Message>);
 
 /// Button widget with text label and click handling
@@ -142,6 +163,7 @@ pub struct Button<Message> {
     pub enabled: bool,
     pub on_click: Option<Box<OnClickFn<Message>>>,
     pub styles: ButtonStyleSet,
+    pub cursor: Option<Cursor>,
 }
 
 impl<Message> Debug for Button<Message> {
@@ -158,6 +180,7 @@ impl<Message: 'static + Send> Button<Message> {
             enabled: true,
             on_click: None,
             styles: ButtonStyleSet::default(),
+            cursor: Some(Cursor::Pointer),
         }
     }
 
@@ -176,6 +199,17 @@ impl<Message: 'static + Send> Button<Message> {
 
     pub fn enabled(mut self, enabled: bool) -> Self {
         self.enabled = enabled;
+        self
+    }
+
+    pub fn with_cursor(mut self, cursor: Cursor) -> Self {
+        self.cursor = Some(cursor);
+        self
+    }
+
+    pub fn clear(mut self) -> Self {
+        self.styles = ButtonStyleSet::clear();
+        self.cursor = None;
         self
     }
 
@@ -342,11 +376,11 @@ impl<Message> Widget<Message> for Button<Message> {
         state.update_state(self.enabled);
         let cur_style = state.get_current_style(&self.styles);
         ElementStyle {
-            background_color: cur_style.bg_color,
-            color: cur_style.text_color,
-            border_radius: cur_style.border_radius,
-            drop_shadow: cur_style.drop_shadow,
-            border: cur_style.border,
+            background_color: cur_style.bg_color.or(style.background_color),
+            color: cur_style.text_color.or(style.color),
+            border_radius: cur_style.border_radius.or(style.border_radius),
+            drop_shadow: cur_style.drop_shadow.or(style.drop_shadow),
+            border: cur_style.border.or(style.border),
             ..style
         }
     }
@@ -369,6 +403,7 @@ impl<Message> Widget<Message> for Button<Message> {
                     state.is_mouse_down = true;
                     state.is_mouse_over = true;
                     state.update_state(self.enabled);
+                    shell.capture_event(instance.id);
                     shell.request_redraw(hwnd, RedrawRequest::Immediate);
                 }
             }
@@ -425,7 +460,7 @@ impl<Message> Widget<Message> for Button<Message> {
         bounds: Bounds,
     ) -> Option<super::Cursor> {
         if point.within(bounds.border_box) && self.enabled {
-            Some(super::Cursor::Pointer)
+            self.cursor
         } else {
             None
         }

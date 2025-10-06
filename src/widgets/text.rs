@@ -18,7 +18,7 @@ use crate::runtime::font_manager::{
     FontAxes, FontIdentifier, FontStyle, FontWeight, FontWidth, GlobalFontManager, LineSpacing,
 };
 use crate::util::str::StableString;
-use crate::util::unique::id_from_location;
+use crate::util::unique::{combine_id, id_from_location};
 use crate::widgets::{Bounds, Instance, Widget, widget};
 use crate::{Shell, with_state};
 
@@ -53,6 +53,7 @@ pub struct Text {
     pub caller: &'static Location<'static>,
 
     pub assisted_width: Option<f32>,
+    pub assisted_id: Option<u64>,
 }
 
 impl Text {
@@ -71,6 +72,7 @@ impl Text {
             caller: Location::caller(),
 
             assisted_width: None,
+            assisted_id: None,
         }
     }
 
@@ -114,6 +116,11 @@ impl Text {
         self
     }
 
+    pub fn with_assisted_id(mut self, id: u64) -> Self {
+        self.assisted_id = Some(id);
+        self
+    }
+
     pub fn with_font_axes(mut self, font_axes: FontAxes) -> Self {
         self.font_axes = font_axes;
         self
@@ -147,7 +154,7 @@ impl Text {
     pub fn as_element<Message>(self) -> Element<Message> {
         let id = id_from_location(self.caller);
         Element {
-            id: Some(id),
+            id: Some(combine_id(combine_id(id, &self.text), self.assisted_id)),
             content: widget(self),
             ..Default::default()
         }

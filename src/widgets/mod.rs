@@ -146,6 +146,7 @@ pub enum DragEvent {
 }
 
 #[non_exhaustive]
+#[derive(Debug, Clone, Copy)]
 pub enum Cursor {
     Arrow,
     IBeam,

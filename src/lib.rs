@@ -279,7 +279,7 @@ impl Animation<bool> {
 pub type ViewFn<State, Message> = fn(&State, &mut HookManager<Message>) -> Element<Message>;
 pub type UpdateFn<State, Message> =
     fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
-pub type EventMapperFn<Message> = fn(Event, bool) -> Option<Message>;
+pub type EventMapperFn<Message> = fn(Event, Option<u64>) -> Option<Message>;
 
 pub use runtime::Application;
 
@@ -297,7 +297,7 @@ pub struct Shell<Message> {
     scroll_state_manager: ScrollStateManager,
     input_method: InputMethod,
 
-    event_captured: bool,
+    event_captured_by: Option<u64>,
 
     /// Track which widget currently has drag focus for proper drag_leave handling
     current_drag_widget: Option<layout::model::UIKey>,
@@ -351,7 +351,7 @@ impl<Message> Shell<Message> {
             scroll_state_manager,
             input_method: InputMethod::Disabled,
 
-            event_captured: false,
+            event_captured_by: None,
             current_drag_widget: None,
             active_element_id: None,
             previous_mouse_ancestry: Vec::new(),
@@ -524,33 +524,67 @@ impl<Message> Shell<Message> {
         ancestry
     }
 
+    /// If the target_key's ancestry converges with `shared_ancestry`, merge the children elements up to the divergence point
+    fn try_extend_ancestry_to(
+        ui_tree: BorrowedUITree<Message>,
+        shared_ancestry: Vec<UIKey>,
+        target_key: Option<UIKey>,
+    ) -> Vec<UIKey> {
+        let Some(first) = shared_ancestry.first() else {
+            return shared_ancestry;
+        };
+
+        if target_key.is_none() {
+            return shared_ancestry;
+        }
+
+        let mut ancestry = Vec::new();
+
+        // Walk up the parent chain using UIElement.parent
+        let mut current_key = target_key.unwrap();
+        loop {
+            if current_key == *first {
+                ancestry.extend_from_slice(&shared_ancestry);
+                return ancestry;
+            }
+
+            ancestry.push(current_key);
+
+            let element = &ui_tree.slots[current_key];
+            if let Some(parent_key) = element.parent {
+                current_key = parent_key;
+            } else {
+                break;
+            }
+        }
+
+        shared_ancestry
+    }
+
     pub fn dispatch_event(&mut self, hwnd: HWND, ui_tree: BorrowedUITree<Message>, event: Event) {
-        self.event_captured = false;
+        self.event_captured_by = None;
 
         // For mouse events, use targeted dispatching
         if event.is_mouse_event() {
             if let Some((x, y)) = event.mouse_position() {
-                // Track active element on mouse down/up
-                if matches!(event, Event::MouseButtonDown { .. }) {
-                    let key = Self::find_innermost_element_at(ui_tree, x, y);
-                    self.active_element_id = key.and_then(|key| ui_tree.slots[key].id);
-                } else if matches!(event, Event::MouseButtonUp { .. }) {
-                    self.active_element_id = None;
-                }
-
                 // Determine target element ID
+                let innermost_key = Self::find_innermost_element_at(ui_tree, x, y);
                 let target_key = if let Some(active_id) = self.active_element_id {
                     // If there's an active element, use it
-                    Self::find_key_by_id(ui_tree, active_id)
-                        .or_else(|| Self::find_innermost_element_at(ui_tree, x, y))
+                    Self::find_key_by_id(ui_tree, active_id).or(innermost_key)
                 } else {
                     // Otherwise, find the innermost element at the mouse position
-                    Self::find_innermost_element_at(ui_tree, x, y)
+                    innermost_key
                 };
 
                 // Dispatch to target and its ancestry
                 if let Some(target_key) = target_key {
                     let ancestry_keys = Self::collect_ancestry(ui_tree, target_key);
+
+                    // Merge in any inner children if we share common ancestry
+                    // This way child elements still receive mouse events if only the container is actually capturing the event
+                    let ancestry_keys =
+                        Self::try_extend_ancestry_to(ui_tree, ancestry_keys, innermost_key);
 
                     // Collect current ancestry IDs for enter/leave tracking
                     let mut current_ancestry_ids = Vec::new();
@@ -612,7 +646,7 @@ impl<Message> Shell<Message> {
                                     bounds,
                                 );
 
-                                if self.event_captured {
+                                if self.event_captured_by.is_some() {
                                     break;
                                 }
                             }
@@ -632,7 +666,18 @@ impl<Message> Shell<Message> {
                     self.previous_mouse_ancestry.clear();
                 }
 
-                if let Some(message) = (self.event_mapper)(event, self.event_captured) {
+                // Track active element on mouse down/up
+                if matches!(event, Event::MouseButtonDown { .. }) {
+                    // let key = Self::find_innermost_element_at(ui_tree, x, y);
+                    // if let Some(id) = self.event_captured_by {
+                    //     self.active_element_id = Some(id); //target_key.and_then(|key| ui_tree.slots[key].id); // key.and_then(|key| ui_tree.slots[key].id);
+                    // }
+                    self.active_element_id = self.event_captured_by;
+                } else if matches!(event, Event::MouseButtonUp { .. }) {
+                    self.active_element_id = None;
+                }
+
+                if let Some(message) = (self.event_mapper)(event, self.event_captured_by) {
                     self.publish(message);
                 }
                 return;
@@ -649,7 +694,7 @@ impl<Message> Shell<Message> {
                     widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
                 }
 
-                if self.event_captured {
+                if self.event_captured_by.is_some() {
                     return VisitAction::Exit;
                 }
             }
@@ -657,7 +702,7 @@ impl<Message> Shell<Message> {
             VisitAction::Continue
         });
 
-        if let Some(message) = (self.event_mapper)(event, self.event_captured) {
+        if let Some(message) = (self.event_mapper)(event, self.event_captured_by) {
             self.publish(message);
         }
     }
@@ -669,7 +714,7 @@ impl<Message> Shell<Message> {
         event: Event,
         target_id: u64,
     ) {
-        self.event_captured = false;
+        self.event_captured_by = None;
 
         // Find the element and dispatch directly
         if let Some(key) = Self::find_key_by_id(ui_tree, target_id) {
@@ -866,12 +911,12 @@ impl<Message> Shell<Message> {
     /// No ancestor widget will receive the event.
     ///
     /// Returns true if the event was captured.
-    pub fn capture_event(&mut self) -> bool {
-        if self.event_captured {
+    pub fn capture_event(&mut self, id: u64) -> bool {
+        if self.event_captured_by.is_some() {
             return false;
         }
 
-        self.event_captured = true;
+        self.event_captured_by = Some(id);
         true
     }
 

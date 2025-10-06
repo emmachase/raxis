@@ -812,6 +812,12 @@ fn modal(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
             ..Default::default()
         }),
 
+        content: widget(
+            Button::new()
+                .clear()
+                .with_click_handler(|_, s| s.publish(Message::ToggleModal)),
+        ),
+
         children: vec![center(Element {
             id: Some(w_id!()),
             // width: Sizing::grow(),
@@ -873,9 +879,10 @@ fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
                     ..Default::default()
                 }),
 
-                children: vec![todo_app(hook), modal(state, hook)],
+                children: vec![todo_app(hook)],
                 ..Default::default()
             },
+            modal(state, hook),
         ],
         ..Default::default()
     }

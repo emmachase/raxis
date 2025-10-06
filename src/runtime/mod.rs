@@ -11,9 +11,8 @@ use crate::gfx::PointDIP;
 use crate::gfx::command_executor::CommandExecutor;
 use crate::gfx::draw_commands::DrawCommandList;
 use crate::layout::model::{Axis, Direction, Element, Sizing, create_tree};
-use crate::layout::visitors::VisitAction;
 use crate::layout::{
-    self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom, visitors,
+    self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom,
 };
 use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::focus::FocusManager;
@@ -1364,7 +1363,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         },
                     );
 
-                    if state.shell.capture_event() {
+                    if state.shell.capture_event(0) {
                         // Use the same visibility logic as event dispatch:
                         // 1. Find innermost element at position
                         // 2. Walk up ancestry to find first scrollable element
