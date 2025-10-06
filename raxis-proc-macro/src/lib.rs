@@ -467,7 +467,7 @@ fn generate_path_geometry(svg_path: &SvgPathCommands) -> TokenStream {
             const COMMANDS: &'static [raxis::PathCommand] = &[
                 #(#command_tokens),*
             ];
-            raxis::SvgPathCommands { commands: COMMANDS }
+            raxis::SvgPathCommands::Path(COMMANDS)
         }
     };
 

@@ -24,6 +24,27 @@ use windows::Win32::{
     System::Com::{CLSCTX_INPROC_SERVER, CoCreateInstance},
 };
 
+/// Image fit modes similar to CSS object-fit
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum ImageFit {
+    /// Stretch to fill the container (default)
+    Fill,
+    /// Scale to fit inside the container while maintaining aspect ratio
+    Contain,
+    /// Scale to cover the container while maintaining aspect ratio (may crop)
+    Cover,
+    /// Like contain but never scale up beyond intrinsic size
+    ScaleDown,
+    /// Display at intrinsic size with no scaling
+    None,
+}
+
+impl Default for ImageFit {
+    fn default() -> Self {
+        ImageFit::Fill
+    }
+}
+
 /// Image widget for displaying bitmap images using WIC
 #[derive(Debug)]
 pub struct Image {
@@ -35,6 +56,8 @@ pub struct Image {
     height: Option<f32>,
     /// Opacity for rendering (0.0 - 1.0)
     opacity: f32,
+    /// Image fit mode
+    fit: ImageFit,
 }
 
 /// State for Image widget that caches the WIC bitmap and D2D bitmap
@@ -134,6 +157,7 @@ impl Image {
             width: None,
             height: None,
             opacity: 1.0,
+            fit: ImageFit::default(),
         }
     }
 
@@ -159,6 +183,12 @@ impl Image {
     /// Set opacity for rendering (0.0 - 1.0)
     pub fn with_opacity(mut self, opacity: f32) -> Self {
         self.opacity = opacity.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set image fit mode
+    pub fn with_fit(mut self, fit: ImageFit) -> Self {
+        self.fit = fit;
         self
     }
 
@@ -253,7 +283,12 @@ impl<Message> Widget<Message> for Image {
             // Load image if needed
             if state.load_image(image_path).is_ok() {
                 if let Some(ref bitmap) = state.d2d_bitmap {
-                    recorder.draw_bitmap(&bounds.content_box, bitmap, self.opacity);
+                    let dest_rect = self.calculate_dest_rect(
+                        &bounds.content_box,
+                        state.intrinsic_width,
+                        state.intrinsic_height,
+                    );
+                    recorder.draw_bitmap(&dest_rect, bitmap, self.opacity);
                 }
             }
         }
@@ -279,5 +314,102 @@ impl<Message> Widget<Message> for Image {
         _bounds: Bounds,
     ) -> Option<Cursor> {
         None
+    }
+}
+
+impl Image {
+    /// Calculate destination rectangle based on fit mode
+    fn calculate_dest_rect(
+        &self,
+        container: &crate::gfx::RectDIP,
+        intrinsic_width: f32,
+        intrinsic_height: f32,
+    ) -> crate::gfx::RectDIP {
+        use crate::gfx::RectDIP;
+
+        if intrinsic_width <= 0.0 || intrinsic_height <= 0.0 {
+            return *container;
+        }
+
+        match self.fit {
+            ImageFit::Fill => {
+                // Stretch to fill entire container
+                *container
+            }
+            ImageFit::Contain => {
+                // Scale to fit inside container while maintaining aspect ratio
+                let container_ratio = container.width / container.height;
+                let image_ratio = intrinsic_width / intrinsic_height;
+
+                let (width, height) = if image_ratio > container_ratio {
+                    // Image is wider, fit to width
+                    (container.width, container.width / image_ratio)
+                } else {
+                    // Image is taller, fit to height
+                    (container.height * image_ratio, container.height)
+                };
+
+                // Center in container
+                RectDIP {
+                    x: container.x + (container.width - width) / 2.0,
+                    y: container.y + (container.height - height) / 2.0,
+                    width,
+                    height,
+                }
+            }
+            ImageFit::Cover => {
+                // Scale to cover entire container while maintaining aspect ratio
+                let container_ratio = container.width / container.height;
+                let image_ratio = intrinsic_width / intrinsic_height;
+
+                let (width, height) = if image_ratio > container_ratio {
+                    // Image is wider, fit to height
+                    (container.height * image_ratio, container.height)
+                } else {
+                    // Image is taller, fit to width
+                    (container.width, container.width / image_ratio)
+                };
+
+                // Center in container (parts may be clipped)
+                RectDIP {
+                    x: container.x + (container.width - width) / 2.0,
+                    y: container.y + (container.height - height) / 2.0,
+                    width,
+                    height,
+                }
+            }
+            ImageFit::ScaleDown => {
+                // Like contain but never scale up
+                let container_ratio = container.width / container.height;
+                let image_ratio = intrinsic_width / intrinsic_height;
+
+                let (width, height) = if image_ratio > container_ratio {
+                    // Image is wider, fit to width
+                    let scaled_width = container.width.min(intrinsic_width);
+                    (scaled_width, scaled_width / image_ratio)
+                } else {
+                    // Image is taller, fit to height
+                    let scaled_height = container.height.min(intrinsic_height);
+                    (scaled_height * image_ratio, scaled_height)
+                };
+
+                // Center in container
+                RectDIP {
+                    x: container.x + (container.width - width) / 2.0,
+                    y: container.y + (container.height - height) / 2.0,
+                    width,
+                    height,
+                }
+            }
+            ImageFit::None => {
+                // Display at intrinsic size, centered
+                RectDIP {
+                    x: container.x + (container.width - intrinsic_width) / 2.0,
+                    y: container.y + (container.height - intrinsic_height) / 2.0,
+                    width: intrinsic_width,
+                    height: intrinsic_height,
+                }
+            }
+        }
     }
 }

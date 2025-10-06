@@ -36,7 +36,7 @@ pub mod runtime;
 pub mod util;
 pub mod widgets;
 
-pub use raxis_core::{PathCommand, SvgPathCommands};
+pub use raxis_core::{PathCommand, SvgPathCommands, SvgPathList, svg};
 pub use raxis_proc_macro::svg_path;
 
 #[derive(Default)]

@@ -154,6 +154,47 @@ impl ButtonStyleSet {
             disabled: ButtonStyle::clear(),
         }
     }
+
+    pub fn ghost() -> Self {
+        Self {
+            normal: ButtonStyle::clear(),
+            hover: ButtonStyle {
+                bg_color: Some(Color {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.1,
+                }),
+                text_color: Some(Color {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.9,
+                }),
+                border: None,
+                border_radius: None,
+                drop_shadow: None,
+            },
+            pressed: ButtonStyle {
+                bg_color: Some(Color {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.2,
+                }),
+                text_color: Some(Color {
+                    r: 1.0,
+                    g: 1.0,
+                    b: 1.0,
+                    a: 0.9,
+                }),
+                border: None,
+                border_radius: None,
+                drop_shadow: None,
+            },
+            disabled: ButtonStyle::clear(),
+        }
+    }
 }
 
 pub type OnClickFn<Message> = dyn Fn(&mut UIArenas, &mut Shell<Message>);
@@ -204,6 +245,11 @@ impl<Message: 'static + Send> Button<Message> {
 
     pub fn with_cursor(mut self, cursor: Cursor) -> Self {
         self.cursor = Some(cursor);
+        self
+    }
+
+    pub fn ghost(mut self) -> Self {
+        self.styles = ButtonStyleSet::ghost();
         self
     }
 
@@ -424,14 +470,21 @@ impl<Message> Widget<Message> for Button<Message> {
 
                 shell.request_redraw(hwnd, RedrawRequest::Immediate);
             }
-            super::Event::MouseMove { x, y }
-            | super::Event::MouseEnter { x, y }
-            | super::Event::MouseLeave { x, y } => {
+            super::Event::MouseMove { x, y } | super::Event::MouseEnter { x, y } => {
                 let point = PointDIP { x: *x, y: *y };
                 let was_over = state.is_mouse_over;
                 state.is_mouse_over = point.within(bounds.border_box);
 
                 if was_over != state.is_mouse_over {
+                    state.update_state(self.enabled);
+                    shell.request_redraw(hwnd, RedrawRequest::Immediate);
+                }
+            }
+            super::Event::MouseLeave { .. } => {
+                let was_over = state.is_mouse_over;
+                state.is_mouse_over = false;
+
+                if was_over {
                     state.update_state(self.enabled);
                     shell.request_redraw(hwnd, RedrawRequest::Immediate);
                 }

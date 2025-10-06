@@ -11,24 +11,53 @@ use crate::{
     },
     with_state,
 };
-use raxis_core::SvgPathCommands;
+use raxis_core::SvgPathList;
 use std::{any::Any, time::Instant};
 use windows::Win32::{
     Foundation::HWND,
     Graphics::Direct2D::{ID2D1Factory7, ID2D1PathGeometry},
 };
 
+#[derive(Debug, Clone, Copy)]
+pub enum ColorChoice {
+    None,
+    Color(Color),
+    CurrentColor,
+}
+
+impl ColorChoice {
+    pub fn or_current_color(self, current_color: Option<Color>) -> Option<Color> {
+        match self {
+            ColorChoice::CurrentColor => current_color,
+            ColorChoice::Color(color) => Some(color),
+            ColorChoice::None => None,
+        }
+    }
+}
+
+impl From<Color> for ColorChoice {
+    fn from(color: Color) -> Self {
+        ColorChoice::Color(color)
+    }
+}
+
+impl From<()> for ColorChoice {
+    fn from(_: ()) -> Self {
+        ColorChoice::None
+    }
+}
+
 /// SVG Path widget for rendering procedurally generated SVG paths
 #[derive(Debug)]
 pub struct SvgPath {
     /// The SVG path to render
-    svg_path: SvgPathCommands,
+    svg_path: SvgPathList, //&'static [SvgPathCommands],
     /// ViewBox defining the intrinsic coordinate system and size
     viewbox: ViewBox,
     /// Stroke color
-    stroke_color: Option<Color>,
+    stroke_color: ColorChoice,
     /// Fill color (optional)
-    fill_color: Option<Color>,
+    fill_color: ColorChoice,
     /// Stroke width
     stroke_width: f32,
     /// Stroke cap style
@@ -52,7 +81,7 @@ struct SvgPathWidgetState {
 }
 
 impl SvgPathWidgetState {
-    pub fn new(d2d_factory: ID2D1Factory7, svg_path: &SvgPathCommands) -> Self {
+    pub fn new(d2d_factory: ID2D1Factory7, svg_path: &SvgPathList) -> Self {
         // Create the geometry immediately during state creation
         let path_geometry = svg_path.create_geometry(&d2d_factory).ok();
 
@@ -68,7 +97,7 @@ impl SvgPathWidgetState {
     }
 
     /// Ensure path geometry is created
-    fn ensure_path_geometry(&mut self, svg_path: &SvgPathCommands) -> windows::core::Result<()> {
+    fn ensure_path_geometry(&mut self, svg_path: &SvgPathList) -> windows::core::Result<()> {
         if self.geometry_dirty || self.path_geometry.is_none() {
             let geometry = svg_path.create_geometry(&self.d2d_factory)?;
             self.path_geometry = Some(geometry);
@@ -80,12 +109,12 @@ impl SvgPathWidgetState {
 
 impl SvgPath {
     /// Create a new SVG Path widget
-    pub fn new(svg_path: SvgPathCommands, viewbox: ViewBox) -> Self {
+    pub fn new(svg_path: SvgPathList, viewbox: ViewBox) -> Self {
         Self {
             svg_path,
             viewbox,
-            stroke_color: None,
-            fill_color: None,
+            stroke_color: ColorChoice::None,
+            fill_color: ColorChoice::None,
             stroke_width: 1.0,
             stroke_cap: None,
             stroke_join: None,
@@ -95,8 +124,8 @@ impl SvgPath {
     }
 
     /// Set fill color
-    pub fn with_fill(mut self, fill_color: impl Into<Color>) -> Self {
-        self.fill_color = Some(fill_color.into());
+    pub fn with_fill(mut self, fill_color: impl Into<ColorChoice>) -> Self {
+        self.fill_color = fill_color.into();
         self
     }
 
@@ -107,8 +136,8 @@ impl SvgPath {
     }
 
     /// Set stroke color
-    pub fn with_stroke(mut self, stroke_color: impl Into<Color>) -> Self {
-        self.stroke_color = Some(stroke_color.into());
+    pub fn with_stroke(mut self, stroke_color: impl Into<ColorChoice>) -> Self {
+        self.stroke_color = stroke_color.into();
         self
     }
 
@@ -209,7 +238,7 @@ impl<Message> Widget<Message> for SvgPath {
         instance: &mut Instance,
         _shell: &Shell<Message>,
         recorder: &mut CommandRecorder,
-        _style: ElementStyle,
+        style: ElementStyle,
         bounds: Bounds,
         _now: Instant,
     ) {
@@ -225,7 +254,7 @@ impl<Message> Widget<Message> for SvgPath {
         if state.ensure_path_geometry(&self.svg_path).is_ok()
             && let Some(ref geometry) = state.path_geometry
         {
-            if let Some(fill_color) = self.fill_color {
+            if let Some(fill_color) = self.fill_color.or_current_color(style.color) {
                 recorder.fill_path_geometry(
                     &bounds.content_box,
                     geometry,
@@ -235,7 +264,7 @@ impl<Message> Widget<Message> for SvgPath {
                 );
             }
 
-            if let Some(stroke_color) = self.stroke_color {
+            if let Some(stroke_color) = self.stroke_color.or_current_color(style.color) {
                 recorder.stroke_path_geometry(
                     &bounds.content_box,
                     geometry,

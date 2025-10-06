@@ -9,7 +9,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use raxis::{
-    HookManager,
+    HookManager, SvgPathCommands,
     layout::{
         helpers::{center, spacer},
         model::{
@@ -33,6 +33,7 @@ use raxis::{
         widget,
     },
 };
+use raxis_core::svg;
 use raxis_proc_macro::svg_path;
 
 #[cfg(feature = "dhat-heap")]
@@ -716,7 +717,7 @@ fn todo_item(
 
                 children: if item.completed {
                     vec![center(
-                        SvgPath::new(svg_path!("M20 6 9 17l-5-5"), ViewBox::new(24.0, 24.0))
+                        SvgPath::new(svg![svg_path!("M20 6 9 17l-5-5")], ViewBox::new(24.0, 24.0))
                             .with_size(16.0, 16.0)
                             .with_stroke(Color::WHITE)
                             .with_stroke_width(2.0)
