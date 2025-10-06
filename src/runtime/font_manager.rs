@@ -1,10 +1,11 @@
+use log::debug;
 use std::path::Path;
 use windows::Win32::Graphics::DirectWrite::{
-    DWRITE_FONT_FAMILY_MODEL_TYPOGRAPHIC, DWRITE_LINE_SPACING,
-    DWRITE_LINE_SPACING_METHOD_PROPORTIONAL, IDWriteFactory6, IDWriteFontCollection,
-    IDWriteFontSetBuilder1, IDWriteInMemoryFontFileLoader, IDWriteTextFormat3,
-    DWRITE_FONT_AXIS_VALUE, DWRITE_FONT_AXIS_TAG_WEIGHT, DWRITE_FONT_AXIS_TAG_WIDTH,
-    DWRITE_FONT_AXIS_TAG_ITALIC, DWRITE_FONT_AXIS_TAG_SLANT,
+    DWRITE_FONT_AXIS_TAG_ITALIC, DWRITE_FONT_AXIS_TAG_SLANT, DWRITE_FONT_AXIS_TAG_WEIGHT,
+    DWRITE_FONT_AXIS_TAG_WIDTH, DWRITE_FONT_AXIS_VALUE, DWRITE_FONT_FAMILY_MODEL_TYPOGRAPHIC,
+    DWRITE_LINE_SPACING, DWRITE_LINE_SPACING_METHOD_PROPORTIONAL, IDWriteFactory6,
+    IDWriteFontCollection, IDWriteFontSetBuilder1, IDWriteInMemoryFontFileLoader,
+    IDWriteTextFormat3,
 };
 use windows::core::{PCWSTR, Result};
 
@@ -58,19 +59,18 @@ pub struct FontManager {
 }
 
 /// Font weight values (100-900, where 400 is normal, 700 is bold)
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontWeight {
-    Thin,        // 100
-    ExtraLight,  // 200
-    Light,       // 300
+    Thin,       // 100
+    ExtraLight, // 200
+    Light,      // 300
     #[default]
-    Normal,      // 400
-    Medium,      // 500
-    SemiBold,    // 600
-    Bold,        // 700
-    ExtraBold,   // 800
-    Black,       // 900
+    Normal, // 400
+    Medium,     // 500
+    SemiBold,   // 600
+    Bold,       // 700
+    ExtraBold,  // 800
+    Black,      // 900
     Custom(f32), // Custom weight value
 }
 
@@ -91,10 +91,8 @@ impl FontWeight {
     }
 }
 
-
 /// Font style (italic/oblique)
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontStyle {
     #[default]
     Normal,
@@ -110,7 +108,7 @@ impl FontStyle {
             FontStyle::Oblique(_) => 1.0,
         }
     }
-    
+
     pub fn slant_value(&self) -> f32 {
         match self {
             FontStyle::Normal => 0.0,
@@ -120,17 +118,15 @@ impl FontStyle {
     }
 }
 
-
 /// Font width/stretch values
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontWidth {
     UltraCondensed, // 50%
     ExtraCondensed, // 62.5%
     Condensed,      // 75%
     SemiCondensed,  // 87.5%
     #[default]
-    Normal,         // 100%
+    Normal, // 100%
     SemiExpanded,   // 112.5%
     Expanded,       // 125%
     ExtraExpanded,  // 150%
@@ -155,32 +151,29 @@ impl FontWidth {
     }
 }
 
-
 /// Collection of font axes for variable font support
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub struct FontAxes {
     pub weight: FontWeight,
     pub style: FontStyle,
     pub width: FontWidth,
 }
 
-
 impl FontAxes {
     pub fn new() -> Self {
         Self::default()
     }
-    
+
     pub fn with_weight(mut self, weight: FontWeight) -> Self {
         self.weight = weight;
         self
     }
-    
+
     pub fn with_style(mut self, style: FontStyle) -> Self {
         self.style = style;
         self
     }
-    
+
     pub fn with_width(mut self, width: FontWidth) -> Self {
         self.width = width;
         self
@@ -386,7 +379,7 @@ impl FontManager {
                         )?
                         .into(),
                 );
-                println!("Rebuilt custom font collection");
+                debug!("Rebuilt custom font collection");
             }
         }
         Ok(())
@@ -437,7 +430,9 @@ impl GlobalFontManager {
         line_spacing: Option<LineSpacing>,
         locale: &str,
     ) -> Result<IDWriteTextFormat3> {
-        Self::with(|manager| manager.create_text_format(font_id, font_size, font_axes, line_spacing, locale))
+        Self::with(|manager| {
+            manager.create_text_format(font_id, font_size, font_axes, line_spacing, locale)
+        })
     }
 }
 

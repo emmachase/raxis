@@ -28,7 +28,7 @@ use crate::{
     DeferredControl, EventMapperFn, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id,
 };
 use crate::{current_dpi, dips_scale, gfx::RectDIP};
-use log::warn;
+use log::{error, warn};
 use slotmap::DefaultKey;
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
@@ -879,22 +879,22 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
         only_thumb: bool,
     ) -> Option<ScrollDragState> {
         let point = PointDIP { x, y };
-        
+
         // First, find the innermost element at this position (respecting scroll clipping)
         let innermost_key = Shell::find_innermost_element_at(&mut self.ui_tree, x, y)?;
-        
+
         // Collect the ancestry from innermost to root
         let ancestry = Shell::collect_ancestry(&mut self.ui_tree, innermost_key);
-        
+
         // Check scrollbars from innermost to outermost (matching event dispatch order)
         // This ensures that overlapping elements block scrollbars behind them
         for &key in &ancestry {
             let element = &self.ui_tree.slots[key];
-            
+
             if element.id.is_none() {
                 continue;
             }
-            
+
             // Check Y-axis scrollbar
             if let Some(geom) = compute_scrollbar_geom(&mut self.shell, element, Axis::Y) {
                 let tr = if only_thumb {
@@ -903,7 +903,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                     geom.track_rect
                 };
                 let thumb = geom.thumb_rect;
-                
+
                 // Check if point is within the track/thumb rect
                 if point.within(tr) {
                     let grab_offset = y - thumb.y;
@@ -914,7 +914,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                     });
                 }
             }
-            
+
             // Check X-axis scrollbar
             if let Some(geom) = compute_scrollbar_geom(&mut self.shell, element, Axis::X) {
                 let tr = if only_thumb {
@@ -923,7 +923,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                     geom.track_rect
                 };
                 let thumb = geom.thumb_rect;
-                
+
                 // Check if point is within the track/thumb rect
                 if point.within(tr) {
                     let grab_offset = x - thumb.x;
@@ -935,7 +935,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 }
             }
         }
-        
+
         None
     }
 
@@ -1369,14 +1369,19 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         // 1. Find innermost element at position
                         // 2. Walk up ancestry to find first scrollable element
                         // This prevents scrolling through obscuring elements
-                        if let Some(innermost_key) = Shell::find_innermost_element_at(&mut state.ui_tree, x_dip, y_dip) {
-                            let ancestry = Shell::collect_ancestry(&mut state.ui_tree, innermost_key);
-                            
+                        if let Some(innermost_key) =
+                            Shell::find_innermost_element_at(&mut state.ui_tree, x_dip, y_dip)
+                        {
+                            let ancestry =
+                                Shell::collect_ancestry(&mut state.ui_tree, innermost_key);
+
                             // Walk up the ancestry from innermost to outermost
                             for &key in &ancestry {
                                 let element = &state.ui_tree.slots[key];
-                                
-                                if element.scroll.is_some() && let Some(element_id) = element.id {
+
+                                if element.scroll.is_some()
+                                    && let Some(element_id) = element.id
+                                {
                                     // Check if this element can scroll in the requested direction
                                     if can_scroll_further(
                                         element,
@@ -1584,7 +1589,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     let width = (lparam.0 & 0xFFFF) as u32;
                     let height = ((lparam.0 >> 16) & 0xFFFF) as u32;
                     if let Err(e) = state.on_resize(width, height) {
-                        eprintln!("Failed to resize: {e}");
+                        error!("Failed to resize: {e}");
                     }
                     // let _ = InvalidateRect(Some(hwnd), None, true);
                 }
@@ -1730,7 +1735,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             Some((commands, device_resources, redraw_request))
                         }
                         Err(e) => {
-                            eprintln!("Failed to paint: {e}");
+                            error!("Failed to paint: {e}");
                             None
                         }
                     }
@@ -1794,7 +1799,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                         let end = rt.EndDraw(None, None);
                         if let Err(e) = end {
                             if e.code() == D2DERR_RECREATE_TARGET {
-                                println!("Recreating D2D target");
+                                warn!("Recreating D2D target");
                                 device_resources.discard_device_resources();
                                 device_resources
                                     .create_device_resources(hwnd, device_width, device_height)

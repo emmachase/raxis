@@ -6,6 +6,7 @@ use std::{
     time::{Duration, Instant},
 };
 
+use log::{debug, trace};
 use windows::Win32::{
     Foundation::HWND,
     Graphics::Gdi::InvalidateRect,
@@ -83,7 +84,7 @@ impl<'a> HookInstance<'a> {
 impl<Message> HookManager<'_, Message> {
     pub fn instance(&mut self, id: u64) -> HookInstance {
         let state = self.ui_tree.hook_state.entry(id).or_insert_with(|| {
-            println!("Creating hook state for {id}");
+            debug!("Creating hook state for {id}");
             HookState::default()
         });
 
@@ -240,12 +241,6 @@ impl<S: Clone + Copy + PartialEq> Animation<S> {
         //     .last_target
         //     .into_keyframe()
         //     .interpolate(self.target.into_keyframe(), alpha);
-
-        // println!(
-        //     "last: {}, current: {}",
-        //     self.last_target.into_keyframe(),
-        //     self.target.into_keyframe()
-        // );
 
         let alpha = self.easing.apply(alpha);
 
@@ -567,9 +562,10 @@ impl<Message> Shell<Message> {
 
                     if matches!(event, Event::MouseButtonDown { .. })
                         && let Some(id) = self.focus_manager.focused_widget
-                        && !current_ancestry_ids.contains(&id) {
-                            self.focus_manager.release_focus(id);
-                        }
+                        && !current_ancestry_ids.contains(&id)
+                    {
+                        self.focus_manager.release_focus(id);
+                    }
 
                     // For MouseMove events, generate synthetic enter/leave events
                     if matches!(event, Event::MouseMove { .. }) {
@@ -607,7 +603,6 @@ impl<Message> Shell<Message> {
                         if let Some(ref mut widget) = element.content {
                             if let Some(id) = element.id {
                                 let instance = ui_tree.widget_state.get_mut(&id).unwrap();
-                                // println!("info h ev: {:?} | ev: {:?}", widget, event);
                                 widget.update(
                                     &mut ui_tree.arenas,
                                     instance,
@@ -617,7 +612,6 @@ impl<Message> Shell<Message> {
                                     bounds,
                                 );
 
-                                // println!("info cap: {}", self.event_captured);
                                 if self.event_captured {
                                     break;
                                 }
@@ -701,9 +695,9 @@ impl<Message> Shell<Message> {
 
     /// Debug function to print the UI tree structure
     pub fn debug_print_tree(ui_tree: BorrowedUITree<Message>) {
-        println!("\n┌─ UI Tree ─────────────────────────────────────");
+        trace!("\n┌─ UI Tree ─────────────────────────────────────");
         Self::debug_print_tree_recursive(ui_tree, ui_tree.root, "", true);
-        println!("└───────────────────────────────────────────────\n");
+        trace!("└───────────────────────────────────────────────\n");
     }
 
     fn debug_print_tree_recursive(
@@ -736,7 +730,7 @@ impl<Message> Shell<Message> {
             })
             .unwrap_or_else(|| "Container".to_string());
 
-        println!("{prefix}{branch} {key:?} {id_str} [{widget_str}]");
+        trace!("{prefix}{branch} {key:?} {id_str} [{widget_str}]");
 
         // Prepare prefix for children
         let child_prefix = format!("{}{}", prefix, if is_last { "    " } else { "│   " });
