@@ -26,6 +26,7 @@ use raxis::{
     widgets::{
         button::Button,
         image::Image,
+        slider::Slider,
         svg::ViewBox,
         svg_path::SvgPath,
         text::{ParagraphAlignment, Text, TextAlignment},
@@ -250,6 +251,230 @@ fn animated_button(hook: &mut HookManager<Message>) -> Element<Message> {
     // }
 }
 
+fn slider_demos(hook: &mut HookManager<Message>) -> Element<Message> {
+    let mut instance = hook.instance(w_id!());
+    let volume = instance.use_state(|| 50.0);
+    let brightness = instance.use_state(|| 75.0);
+    let temperature = instance.use_state(|| 20.5);
+    let steps = instance.use_state(|| 5.0);
+
+    Element {
+        id: Some(w_id!()),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::fit(),
+        background_color: Some(Color::WHITE),
+        padding: BoxAmount::all(12.0),
+        border: Some(Border {
+            width: 1.0,
+            color: Color {
+                r: 0.85,
+                g: 0.85,
+                b: 0.85,
+                a: 1.0,
+            },
+            ..Default::default()
+        }),
+        border_radius: Some(BorderRadius::all(8.0)),
+        child_gap: 16.0,
+        children: vec![
+            // Title
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(Text::new("Slider demos").with_font_size(20.0)),
+                ..Default::default()
+            },
+            // Volume slider
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::TopToBottom,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 8.0,
+                children: vec![
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!("Volume: {:.0}", *volume.borrow()))
+                                .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        padding: BoxAmount::vertical(4.0),
+                        content: widget(
+                            Slider::new(0.0, 100.0, *volume.borrow()).with_value_change_handler({
+                                let volume = volume.clone();
+                                move |value, _, _| {
+                                    *volume.borrow_mut() = value;
+                                }
+                            }),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Brightness slider with custom colors
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::TopToBottom,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 8.0,
+                children: vec![
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!("Brightness: {:.0}%", *brightness.borrow()))
+                                .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        padding: BoxAmount::vertical(4.0),
+                        content: widget(
+                            Slider::new(0.0, 100.0, *brightness.borrow())
+                                .with_filled_track_color(Color::from(0xFBBF24FF)) // Amber
+                                .with_thumb_color(Color::from(0xFBBF24FF))
+                                .with_thumb_border_color(Color::from(0xFBBF24FF).deviate(0.1))
+                                .with_value_change_handler({
+                                    let brightness = brightness.clone();
+                                    move |value, _, _| {
+                                        *brightness.borrow_mut() = value;
+                                    }
+                                }),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Temperature slider with step
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::TopToBottom,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 8.0,
+                children: vec![
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!("Temperature: {:.1}°C", *temperature.borrow()))
+                                .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        padding: BoxAmount::vertical(4.0),
+                        content: widget(
+                            Slider::new(15.0, 30.0, *temperature.borrow())
+                                .with_step(0.5)
+                                .with_filled_track_color(Color::from(0xEF4444FF)) // Red
+                                .with_thumb_color(Color::from(0xEF4444FF))
+                                .with_thumb_border_color(Color::from(0xEF4444FF).deviate(0.1))
+                                .with_value_change_handler({
+                                    let temperature = temperature.clone();
+                                    move |value, _, _| {
+                                        *temperature.borrow_mut() = value;
+                                    }
+                                }),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Stepped slider (discrete values)
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::TopToBottom,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 8.0,
+                children: vec![
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!("Steps: {:.0}", *steps.borrow()))
+                                .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        padding: BoxAmount::vertical(4.0),
+                        content: widget(
+                            Slider::new(0.0, 10.0, *steps.borrow())
+                                .with_step(1.0)
+                                .with_filled_track_color(Color::from(0x8B5CF6FF)) // Purple
+                                .with_thumb_color(Color::from(0x8B5CF6FF))
+                                .with_thumb_border_color(Color::from(0x8B5CF6FF).deviate(0.1))
+                                .with_value_change_handler({
+                                    let steps = steps.clone();
+                                    move |value, _, _| {
+                                        *steps.borrow_mut() = value;
+                                    }
+                                }),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Disabled slider
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::TopToBottom,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 8.0,
+                children: vec![
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(Text::new("Disabled slider").with_font_size(14.0)),
+                        ..Default::default()
+                    },
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        padding: BoxAmount::vertical(4.0),
+                        content: widget(Slider::new(0.0, 100.0, 30.0).disabled()),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
 fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
     let todo_state = instance
@@ -300,6 +525,8 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                     .as_element(w_id!(), Text::new("Settings"))
             ]
             .with_width(Sizing::grow()),
+            // Slider demos
+            slider_demos(hook),
             // Border demos
             border_demos(),
             animated_button(hook),

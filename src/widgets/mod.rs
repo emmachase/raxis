@@ -1,7 +1,13 @@
 use std::{any::Any, time::Instant};
 
 use smol_str::SmolStr;
-use windows::Win32::{Foundation::HWND, System::Ole::DROPEFFECT};
+use windows::Win32::{
+    Foundation::HWND,
+    System::Ole::DROPEFFECT,
+    UI::WindowsAndMessaging::{
+        IDC_ARROW, IDC_HAND, IDC_IBEAM, IDC_SIZEALL, LoadCursorW, SetCursor,
+    },
+};
 
 use crate::{
     Shell,
@@ -23,6 +29,7 @@ pub mod image;
 pub mod mouse_area;
 pub mod renderer;
 pub mod rule;
+pub mod slider;
 pub mod spinner;
 pub mod svg;
 pub mod svg_path;
@@ -151,6 +158,28 @@ pub enum Cursor {
     Arrow,
     IBeam,
     Pointer,
+    Grabbing,
+}
+
+impl Cursor {
+    pub fn set(self) {
+        unsafe {
+            match self {
+                Cursor::Arrow => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_ARROW).unwrap()));
+                }
+                Cursor::IBeam => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_IBEAM).unwrap()));
+                }
+                Cursor::Pointer => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_HAND).unwrap()));
+                }
+                Cursor::Grabbing => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_SIZEALL).unwrap()));
+                }
+            }
+        }
+    }
 }
 
 pub type State = Option<Box<dyn Any>>;

@@ -89,7 +89,7 @@ use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, DestroyWindow, GetForegroundWindow, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
     HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
-    NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
+    IDC_SIZEALL, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
     SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYUP, WM_MOUSEWHEEL,
     WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
@@ -1691,21 +1691,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             }
 
                             if let Some(cursor) = cursor {
-                                match cursor {
-                                    Cursor::Arrow => {
-                                        let _ =
-                                            SetCursor(Some(LoadCursorW(None, IDC_ARROW).unwrap()));
-                                    }
-                                    Cursor::IBeam => {
-                                        let _ =
-                                            SetCursor(Some(LoadCursorW(None, IDC_IBEAM).unwrap()));
-                                    }
-                                    Cursor::Pointer => {
-                                        let _ =
-                                            SetCursor(Some(LoadCursorW(None, IDC_HAND).unwrap()));
-                                    }
-                                }
-
+                                cursor.set();
                                 return LRESULT(1);
                             }
                         }
