@@ -504,7 +504,7 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
         id: Some(w_id!()),
         background_color: Some(0xF1F5EDFF.into()), // Light gray background
         direction: Direction::TopToBottom,
-        width: Sizing::percent(1.0),
+        width: Sizing::grow(),
         height: Sizing::grow(),
         padding: BoxAmount::all(20.0),
         child_gap: 15.0,
@@ -1074,8 +1074,14 @@ fn modal(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
 fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
     Element {
         direction: Direction::TopToBottom,
-        width: Sizing::grow(),
-        height: Sizing::grow(),
+        width: Sizing::Grow {
+            min: 600.0,
+            max: f32::MAX,
+        },
+        height: Sizing::Grow {
+            min: 400.0,
+            max: f32::MAX,
+        },
         children: vec![
             // Element {
             //     height: Sizing::fixed(28.0),

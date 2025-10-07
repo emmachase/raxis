@@ -22,7 +22,7 @@ use crate::runtime::task::{Action, ClipboardAction, Task, into_stream};
 use crate::runtime::vkey::VKey;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::renderer::{Renderer, ShadowCache};
-use crate::widgets::{Cursor, DragData, DragEvent, Event, Modifiers};
+use crate::widgets::{DragData, DragEvent, Event, Modifiers};
 use crate::{
     DeferredControl, EventMapperFn, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id,
 };
@@ -88,11 +88,12 @@ use windows::Win32::UI::Input::Ime::{
 use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, DestroyWindow, GetForegroundWindow, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
-    HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, IDC_HAND,
-    IDC_SIZEALL, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
+    HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, MINMAXINFO,
+    NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
     SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_KEYUP, WM_MOUSEWHEEL,
-    WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
+    SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
+    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION,
+    WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -128,13 +129,13 @@ use windows::{
             WindowsAndMessaging::{
                 self as WAM, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
-                GetMessageTime, GetMessageW, GetSystemMetrics, HTCLIENT, IDC_ARROW, IDC_IBEAM,
-                LoadCursorW, MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK, SW_SHOW,
-                SWP_NOACTIVATE, SWP_NOZORDER, SetCursor, SetWindowLongPtrW, SetWindowPos,
-                ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY,
-                WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
-                WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE,
-                WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                GetMessageTime, GetMessageW, GetSystemMetrics, HTCLIENT, IDC_ARROW, LoadCursorW,
+                MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK, SW_SHOW, SWP_NOACTIVATE,
+                SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
+                WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION,
+                WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN,
+                WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW,
+                WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -994,7 +995,15 @@ fn create_tree_root<State: 'static, Message>(
         Element {
             id: Some(w_id!()),
             direction: Direction::TopToBottom,
-            children: vec![children],
+            children: vec![Element {
+                id: Some(w_id!()),
+                direction: Direction::TopToBottom,
+                children: vec![children],
+                width: Sizing::grow(),
+                height: Sizing::grow(),
+
+                ..Default::default()
+            }],
 
             ..Default::default()
         },
@@ -1699,6 +1708,29 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                 }
 
                 DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+            WM_GETMINMAXINFO => {
+                if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                    let state = state.deref_mut();
+
+                    let min_max_info = lparam.0 as *mut MINMAXINFO;
+
+                    // Calculate the min size from the layout
+                    let root_node = state.ui_tree.slots[state.ui_tree.root].children[0];
+                    let sentinel_node = &state.ui_tree.slots[root_node];
+
+                    let dpi_scale = dips_scale(hwnd);
+
+                    // Set the minimum size of the window
+                    (*min_max_info).ptMinTrackSize.x = (sentinel_node.min_width / dpi_scale).floor()
+                        as i32
+                        + (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER)) * 2;
+                    (*min_max_info).ptMinTrackSize.y = (sentinel_node.min_height / dpi_scale)
+                        .floor() as i32
+                        + GetSystemMetrics(SM_CYFRAME)
+                        + GetSystemMetrics(SM_CXPADDEDBORDER);
+                }
+                LRESULT(0)
             }
             WM_PAINT => {
                 // println!("WM_PAINT");
