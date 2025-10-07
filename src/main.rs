@@ -9,7 +9,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use raxis::{
-    HookManager, SvgPathCommands,
+    HookManager,
     layout::{
         helpers::{center, spacer},
         model::{

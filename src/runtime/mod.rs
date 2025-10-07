@@ -31,7 +31,6 @@ use log::{error, warn};
 use slotmap::DefaultKey;
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
-use std::ops::Deref;
 use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};

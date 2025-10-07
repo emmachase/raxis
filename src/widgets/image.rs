@@ -26,8 +26,10 @@ use windows::Win32::{
 
 /// Image fit modes similar to CSS object-fit
 #[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Default)]
 pub enum ImageFit {
     /// Stretch to fill the container (default)
+    #[default]
     Fill,
     /// Scale to fit inside the container while maintaining aspect ratio
     Contain,
@@ -39,11 +41,6 @@ pub enum ImageFit {
     None,
 }
 
-impl Default for ImageFit {
-    fn default() -> Self {
-        ImageFit::Fill
-    }
-}
 
 /// Image widget for displaying bitmap images using WIC
 #[derive(Debug)]
