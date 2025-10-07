@@ -45,7 +45,7 @@ pub struct Text {
     pub font_size: f32,
     pub line_spacing: Option<LineSpacing>,
     pub color: Option<Color>,
-    pub text_shadow: Option<TextShadow>,
+    pub text_shadows: Vec<TextShadow>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_id: FontIdentifier,
@@ -65,7 +65,7 @@ impl Text {
             font_size: 14.0,
             line_spacing: None,
             color: None,
-            text_shadow: None,
+            text_shadows: Vec::new(),
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_id: FontIdentifier::system("Segoe UI"),
@@ -94,7 +94,12 @@ impl Text {
     }
 
     pub fn with_text_shadow(mut self, text_shadow: TextShadow) -> Self {
-        self.text_shadow = Some(text_shadow);
+        self.text_shadows = vec![text_shadow];
+        self
+    }
+
+    pub fn with_text_shadows(mut self, text_shadows: Vec<TextShadow>) -> Self {
+        self.text_shadows = text_shadows;
         self
     }
 
@@ -162,7 +167,7 @@ impl Text {
         let id = id_from_location(self.caller);
         Element {
             id: Some(combine_id(combine_id(id, &self.text), self.assisted_id)),
-            text_shadow: self.text_shadow,
+            text_shadows: self.text_shadows.clone(),
             content: widget(self),
             ..Default::default()
         }
@@ -595,11 +600,18 @@ impl<Message> Widget<Message> for Text {
 
         // Draw the text
         if let Some(layout) = &state.text_layout {
+            // Combine widget shadows with style shadows (widget shadows have priority)
+            let shadows = if !self.text_shadows.is_empty() {
+                &self.text_shadows
+            } else {
+                &style.text_shadows
+            };
+            
             recorder.draw_text(
                 &bounds.content_box,
                 layout,
                 self.color.unwrap_or(style.color.unwrap_or_default()),
-                self.text_shadow.or(style.text_shadow).as_ref(),
+                shadows,
             );
         }
     }

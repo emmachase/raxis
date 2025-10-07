@@ -93,13 +93,13 @@ impl CommandRecorder {
         rect: &RectDIP,
         layout: &IDWriteTextLayout,
         color: impl Into<Color>,
-        text_shadow: Option<&TextShadow>,
+        text_shadows: &[TextShadow],
     ) {
         self.commands.push(DrawCommand::DrawText {
             rect: *rect,
             layout: layout.clone(),
             color: color.into(),
-            text_shadow: text_shadow.copied(),
+            text_shadows: text_shadows.to_vec(),
         });
     }
 

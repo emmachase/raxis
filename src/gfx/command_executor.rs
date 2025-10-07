@@ -246,10 +246,10 @@ impl CommandExecutor {
                     rect,
                     layout,
                     color,
-                    text_shadow,
+                    text_shadows,
                 } => {
-                    // Draw text shadow first if present
-                    if let Some(shadow) = text_shadow {
+                    // Draw text shadows first (in order, so first shadow is bottom-most)
+                    for shadow in text_shadows.iter() {
                         let shadow_position = Vector2 {
                             X: rect.x + shadow.offset_x,
                             Y: rect.y + shadow.offset_y,

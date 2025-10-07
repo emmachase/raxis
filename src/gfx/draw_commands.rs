@@ -35,7 +35,7 @@ pub enum DrawCommand {
         rect: RectDIP,
         layout: IDWriteTextLayout,
         color: Color,
-        text_shadow: Option<TextShadow>,
+        text_shadows: Vec<TextShadow>,
     },
     /// Draw a rectangle outline (stroke)
     DrawRectangleOutline {

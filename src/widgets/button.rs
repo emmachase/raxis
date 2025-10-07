@@ -31,7 +31,7 @@ pub struct ButtonStyle {
     pub border: Option<Border>,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
-    pub text_shadow: Option<TextShadow>,
+    pub text_shadows: Vec<TextShadow>,
 }
 
 impl Default for ButtonStyle {
@@ -56,7 +56,7 @@ impl Default for ButtonStyle {
             }),
             border_radius: None,
             drop_shadow: None,
-            text_shadow: None,
+            text_shadows: Vec::new(),
         }
     }
 }
@@ -69,7 +69,7 @@ impl ButtonStyle {
             border: None,
             border_radius: None,
             drop_shadow: None,
-            text_shadow: None,
+            text_shadows: Vec::new(),
         }
     }
 }
@@ -107,7 +107,7 @@ impl Default for ButtonStyleSet {
                 }),
                 border_radius: None,
                 drop_shadow: None,
-                text_shadow: None,
+                text_shadows: Vec::new(),
             },
             pressed: ButtonStyle {
                 bg_color: Some(Color {
@@ -129,7 +129,7 @@ impl Default for ButtonStyleSet {
                 }),
                 border_radius: None,
                 drop_shadow: None,
-                text_shadow: None,
+                text_shadows: Vec::new(),
             },
             disabled: ButtonStyle {
                 bg_color: Some(Color {
@@ -147,7 +147,7 @@ impl Default for ButtonStyleSet {
                 border: None,
                 border_radius: None,
                 drop_shadow: None,
-                text_shadow: None,
+                text_shadows: Vec::new(),
             },
         }
     }
@@ -190,7 +190,7 @@ impl ButtonStyleSet {
                 border: None,
                 border_radius: None,
                 drop_shadow: None,
-                text_shadow: None,
+                text_shadows: Vec::new(),
             },
             pressed: ButtonStyle {
                 bg_color: Some(Color {
@@ -208,7 +208,7 @@ impl ButtonStyleSet {
                 border: None,
                 border_radius: None,
                 drop_shadow: None,
-                text_shadow: None,
+                text_shadows: Vec::new(),
             },
             disabled: ButtonStyle::clear(),
         }
@@ -345,18 +345,26 @@ impl<Message: 'static + Send> Button<Message> {
     }
 
     pub fn with_text_shadow(mut self, shadow: TextShadow) -> Self {
-        self.styles.normal.text_shadow = Some(shadow);
-        self.styles.hover.text_shadow = Some(shadow);
-        self.styles.pressed.text_shadow = Some(shadow);
-        self.styles.disabled.text_shadow = Some(shadow);
+        self.styles.normal.text_shadows = vec![shadow];
+        self.styles.hover.text_shadows = vec![shadow];
+        self.styles.pressed.text_shadows = vec![shadow];
+        self.styles.disabled.text_shadows = vec![shadow];
+        self
+    }
+
+    pub fn with_text_shadows(mut self, shadows: Vec<TextShadow>) -> Self {
+        self.styles.normal.text_shadows = shadows.clone();
+        self.styles.hover.text_shadows = shadows.clone();
+        self.styles.pressed.text_shadows = shadows.clone();
+        self.styles.disabled.text_shadows = shadows;
         self
     }
 
     pub fn with_no_text_shadow(mut self) -> Self {
-        self.styles.normal.text_shadow = None;
-        self.styles.hover.text_shadow = None;
-        self.styles.pressed.text_shadow = None;
-        self.styles.disabled.text_shadow = None;
+        self.styles.normal.text_shadows = Vec::new();
+        self.styles.hover.text_shadows = Vec::new();
+        self.styles.pressed.text_shadows = Vec::new();
+        self.styles.disabled.text_shadows = Vec::new();
         self
     }
 
@@ -460,7 +468,11 @@ impl<Message> Widget<Message> for Button<Message> {
             color: cur_style.text_color.or(style.color),
             border_radius: cur_style.border_radius.or(style.border_radius),
             drop_shadow: cur_style.drop_shadow.or(style.drop_shadow),
-            text_shadow: cur_style.text_shadow.or(style.text_shadow),
+            text_shadows: if !cur_style.text_shadows.is_empty() {
+                cur_style.text_shadows.clone()
+            } else {
+                style.text_shadows
+            },
             border: cur_style.border.or(style.border),
             ..style
         }

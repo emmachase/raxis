@@ -649,7 +649,7 @@ pub struct ElementStyle {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
-    pub text_shadow: Option<TextShadow>,
+    pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
     pub snap: bool,
 }
@@ -663,7 +663,7 @@ impl<Message> From<&UIElement<Message>> for ElementStyle {
             padding: value.padding,
             border_radius: value.border_radius,
             drop_shadow: value.drop_shadow,
-            text_shadow: value.text_shadow,
+            text_shadows: value.text_shadows.clone(),
             border: value.border,
             snap: value.snap,
         }
@@ -711,7 +711,7 @@ pub struct UIElement<Message> {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
-    pub text_shadow: Option<TextShadow>,
+    pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
     pub opacity: Option<f32>,
@@ -754,7 +754,7 @@ impl<Message> Default for UIElement<Message> {
             padding: BoxAmount::default(),
             border_radius: None,
             drop_shadow: None,
-            text_shadow: None,
+            text_shadows: Vec::new(),
             border: None,
             z_index: None,
             opacity: None,
@@ -831,7 +831,7 @@ pub struct Element<Message> {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
-    pub text_shadow: Option<TextShadow>,
+    pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
     pub opacity: Option<f32>,
@@ -944,9 +944,16 @@ impl<Message> Element<Message> {
         }
     }
 
-    pub fn with_text_shadow(self, text_shadow: Option<TextShadow>) -> Self {
+    pub fn with_text_shadow(self, text_shadow: TextShadow) -> Self {
         Self {
-            text_shadow,
+            text_shadows: vec![text_shadow],
+            ..self
+        }
+    }
+
+    pub fn with_text_shadows(self, text_shadows: Vec<TextShadow>) -> Self {
+        Self {
+            text_shadows,
             ..self
         }
     }
@@ -1000,7 +1007,7 @@ impl<Message> Default for Element<Message> {
             padding: BoxAmount::default(),
             border_radius: None,
             drop_shadow: None,
-            text_shadow: None,
+            text_shadows: Vec::new(),
             border: None,
             z_index: None,
             opacity: None,
@@ -1031,7 +1038,7 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             padding: element.padding,
             border_radius: element.border_radius,
             drop_shadow: element.drop_shadow,
-            text_shadow: element.text_shadow,
+            text_shadows: element.text_shadows,
             border: element.border,
             z_index: element.z_index,
             opacity: element.opacity,

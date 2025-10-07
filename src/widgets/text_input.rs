@@ -1011,7 +1011,7 @@ impl<Message> WidgetState<Message> {
 
             // Draw text using command recorder
             let color = style.color.unwrap_or_default();
-            recorder.draw_text(&bounds, layout, color, style.text_shadow.as_ref());
+            recorder.draw_text(&bounds, layout, color, &style.text_shadows);
 
             // OLE drag-over preview caret
             if let Some(drop) = self.ole_drop_preview16 {

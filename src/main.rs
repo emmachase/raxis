@@ -288,12 +288,20 @@ fn slider_demos(hook: &mut HookManager<Message>) -> Element<Message> {
                 content: widget(
                     Text::new("Slider demos")
                         .with_font_size(20.0)
-                        .with_text_shadow(TextShadow {
-                            offset_x: 2.0,
-                            offset_y: 2.0,
-                            blur_radius: 2.0,
-                            color: Color::from(0xFF00FFFF),
-                        }),
+                        .with_text_shadows(vec![
+                            TextShadow {
+                                offset_x: 2.0,
+                                offset_y: 2.0,
+                                blur_radius: 2.0,
+                                color: Color::from(0xFF00FFFF),
+                            },
+                            TextShadow {
+                                offset_x: -2.0,
+                                offset_y: -2.0,
+                                blur_radius: 2.0,
+                                color: Color::from(0xFFFF00FF),
+                            },
+                        ]),
                 ),
                 ..Default::default()
             },
