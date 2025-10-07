@@ -35,8 +35,8 @@ use std::ops::Deref;
 use std::ops::DerefMut;
 use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::mpsc;
 use std::sync::{Mutex, OnceLock};
+use std::sync::{MutexGuard, mpsc};
 use std::thread;
 use std::time::Instant;
 use thiserror::Error;
@@ -162,64 +162,23 @@ struct ScrollDragState {
     grab_offset: f32,
 }
 
-struct MaybeGuard<State: 'static, Message: 'static> {
-    #[cfg(debug_assertions)]
-    guard: std::sync::MutexGuard<'static, ApplicationHandle<State, Message>>,
-
-    #[cfg(not(debug_assertions))]
-    guard: &'static mut ApplicationHandle<State, Message>,
-}
-
-impl<State: 'static, Message> Deref for MaybeGuard<State, Message> {
-    type Target = ApplicationHandle<State, Message>;
-
-    fn deref(&self) -> &Self::Target {
-        #[cfg(debug_assertions)]
-        return self.guard.deref();
-
-        #[cfg(not(debug_assertions))]
-        return self.guard;
-    }
-}
-
-impl<State: 'static, Message> DerefMut for MaybeGuard<State, Message> {
-    fn deref_mut(&mut self) -> &mut Self::Target {
-        #[cfg(debug_assertions)]
-        return self.guard.deref_mut();
-
-        #[cfg(not(debug_assertions))]
-        return self.guard;
-    }
-}
-
 type WinUserData<State, Message> = Mutex<ApplicationHandle<State, Message>>;
 
 // Small helpers to reduce duplication and centralize Win32/DPI logic.
-fn state_mut_from_hwnd<State, Message>(hwnd: HWND) -> Option<MaybeGuard<State, Message>> {
+fn state_mut_from_hwnd<State, Message>(
+    hwnd: HWND,
+) -> Option<MutexGuard<'static, ApplicationHandle<State, Message>>> {
     unsafe {
         let ptr = WAM::GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
-        #[cfg(debug_assertions)]
         if ptr != 0 {
             let mutex = &*(ptr as *const WinUserData<State, Message>);
             if mutex.try_lock().is_err() {
-                panic!("mutex is locked");
+                warn!("event-loop mutex was locked, skipping event");
+                return None;
             }
 
-            Some(MaybeGuard {
-                guard: mutex.lock().unwrap(),
-            })
-        } else {
-            None
-        }
-
-        #[cfg(not(debug_assertions))]
-        if ptr != 0 {
-            Some(MaybeGuard {
-                guard: (&mut *(ptr as *mut WinUserData<State, Message>))
-                    .get_mut()
-                    .unwrap(),
-            })
+            Some(mutex.lock().unwrap())
         } else {
             None
         }
@@ -1066,6 +1025,8 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                 return l_ret;
             }
         }
+
+        // println!("msg: {}", msg);
 
         match msg {
             WM_ACTIVATE => {
