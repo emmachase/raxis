@@ -246,7 +246,42 @@ impl CommandExecutor {
                     rect,
                     layout,
                     color,
+                    text_shadow,
                 } => {
+                    // Draw text shadow first if present
+                    if let Some(shadow) = text_shadow {
+                        let shadow_position = Vector2 {
+                            X: rect.x + shadow.offset_x,
+                            Y: rect.y + shadow.offset_y,
+                        };
+                        
+                        if shadow.blur_radius > 0.0 {
+                            // Use Direct2D shadow effect for blurred shadows
+                            renderer.draw_text_with_blurred_shadow(
+                                &shadow_position,
+                                layout,
+                                shadow,
+                            );
+                        } else {
+                            // Simple unblurred shadow - just draw text with offset
+                            renderer.brush.SetColor(&D2D1_COLOR_F {
+                                r: shadow.color.r,
+                                g: shadow.color.g,
+                                b: shadow.color.b,
+                                a: shadow.color.a,
+                            });
+                            renderer.render_target.DrawTextLayout(
+                                shadow_position,
+                                layout,
+                                renderer.brush,
+                                None,
+                                0,
+                                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+                            );
+                        }
+                    }
+                    
+                    // Draw the actual text
                     renderer.brush.SetColor(&D2D1_COLOR_F {
                         r: color.r,
                         g: color.g,

@@ -452,6 +452,72 @@ impl DropShadow {
     }
 }
 
+// ---------- Text Shadow ----------
+
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct TextShadow {
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur_radius: f32,
+    pub color: Color,
+}
+
+impl TextShadow {
+    pub const fn default() -> Self {
+        Self {
+            offset_x: 0.0,
+            offset_y: 0.0,
+            blur_radius: 0.0,
+            color: Color::default(),
+        }
+    }
+
+    pub fn new(
+        offset_x: f32,
+        offset_y: f32,
+        blur_radius: f32,
+        color: u32, // RGBA packed
+    ) -> Self {
+        Self {
+            offset_x,
+            offset_y,
+            blur_radius,
+            color: Color::from(color),
+        }
+    }
+
+    pub fn simple(offset_x: f32, offset_y: f32) -> Self {
+        Self {
+            offset_x,
+            offset_y,
+            blur_radius: 0.0,
+            color: Color::from(0x000000AA),
+        }
+    }
+
+    pub fn offset(self, offset_x: f32, offset_y: f32) -> Self {
+        Self {
+            offset_x,
+            offset_y,
+            ..self
+        }
+    }
+
+    pub fn blur_radius(self, blur_radius: f32) -> Self {
+        Self {
+            blur_radius,
+            ..self
+        }
+    }
+
+    pub fn color(self, color: impl Into<Color>) -> Self {
+        Self {
+            color: color.into(),
+            ..self
+        }
+    }
+}
+
 // ---------- Border ----------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -583,6 +649,7 @@ pub struct ElementStyle {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
+    pub text_shadow: Option<TextShadow>,
     pub border: Option<Border>,
     pub snap: bool,
 }
@@ -596,6 +663,7 @@ impl<Message> From<&UIElement<Message>> for ElementStyle {
             padding: value.padding,
             border_radius: value.border_radius,
             drop_shadow: value.drop_shadow,
+            text_shadow: value.text_shadow,
             border: value.border,
             snap: value.snap,
         }
@@ -643,6 +711,7 @@ pub struct UIElement<Message> {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
+    pub text_shadow: Option<TextShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
     pub opacity: Option<f32>,
@@ -685,6 +754,7 @@ impl<Message> Default for UIElement<Message> {
             padding: BoxAmount::default(),
             border_radius: None,
             drop_shadow: None,
+            text_shadow: None,
             border: None,
             z_index: None,
             opacity: None,
@@ -761,6 +831,7 @@ pub struct Element<Message> {
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
+    pub text_shadow: Option<TextShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
     pub opacity: Option<f32>,
@@ -922,6 +993,7 @@ impl<Message> Default for Element<Message> {
             padding: BoxAmount::default(),
             border_radius: None,
             drop_shadow: None,
+            text_shadow: None,
             border: None,
             z_index: None,
             opacity: None,

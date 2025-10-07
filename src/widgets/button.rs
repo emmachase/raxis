@@ -7,7 +7,7 @@ use windows::Win32::Foundation::HWND;
 use crate::gfx::PointDIP;
 use crate::gfx::command_recorder::CommandRecorder;
 use crate::layout::UIArenas;
-use crate::layout::model::{Border, BorderRadius, Color, DropShadow, Element, ElementStyle};
+use crate::layout::model::{Border, BorderRadius, Color, DropShadow, TextShadow, Element, ElementStyle};
 use crate::widgets::{Bounds, Cursor, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
@@ -29,6 +29,7 @@ pub struct ButtonStyle {
     pub border: Option<Border>,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadow: Option<DropShadow>,
+    pub text_shadow: Option<TextShadow>,
 }
 
 impl Default for ButtonStyle {
@@ -53,6 +54,7 @@ impl Default for ButtonStyle {
             }),
             border_radius: None,
             drop_shadow: None,
+            text_shadow: None,
         }
     }
 }
@@ -65,6 +67,7 @@ impl ButtonStyle {
             border: None,
             border_radius: None,
             drop_shadow: None,
+            text_shadow: None,
         }
     }
 }
@@ -102,6 +105,7 @@ impl Default for ButtonStyleSet {
                 }),
                 border_radius: None,
                 drop_shadow: None,
+                text_shadow: None,
             },
             pressed: ButtonStyle {
                 bg_color: Some(Color {
@@ -123,6 +127,7 @@ impl Default for ButtonStyleSet {
                 }),
                 border_radius: None,
                 drop_shadow: None,
+                text_shadow: None,
             },
             disabled: ButtonStyle {
                 bg_color: Some(Color {
@@ -140,6 +145,7 @@ impl Default for ButtonStyleSet {
                 border: None,
                 border_radius: None,
                 drop_shadow: None,
+                text_shadow: None,
             },
         }
     }
@@ -182,6 +188,7 @@ impl ButtonStyleSet {
                 border: None,
                 border_radius: None,
                 drop_shadow: None,
+                text_shadow: None,
             },
             pressed: ButtonStyle {
                 bg_color: Some(Color {
@@ -199,6 +206,7 @@ impl ButtonStyleSet {
                 border: None,
                 border_radius: None,
                 drop_shadow: None,
+                text_shadow: None,
             },
             disabled: ButtonStyle::clear(),
         }
@@ -334,6 +342,22 @@ impl<Message: 'static + Send> Button<Message> {
         self
     }
 
+    pub fn with_text_shadow(mut self, shadow: TextShadow) -> Self {
+        self.styles.normal.text_shadow = Some(shadow);
+        self.styles.hover.text_shadow = Some(shadow);
+        self.styles.pressed.text_shadow = Some(shadow);
+        self.styles.disabled.text_shadow = Some(shadow);
+        self
+    }
+
+    pub fn with_no_text_shadow(mut self) -> Self {
+        self.styles.normal.text_shadow = None;
+        self.styles.hover.text_shadow = None;
+        self.styles.pressed.text_shadow = None;
+        self.styles.disabled.text_shadow = None;
+        self
+    }
+
     pub fn as_element(self, id: u64, children: impl Into<Element<Message>>) -> Element<Message> {
         Element {
             id: Some(id),
@@ -434,6 +458,7 @@ impl<Message> Widget<Message> for Button<Message> {
             color: cur_style.text_color.or(style.color),
             border_radius: cur_style.border_radius.or(style.border_radius),
             drop_shadow: cur_style.drop_shadow.or(style.drop_shadow),
+            text_shadow: cur_style.text_shadow.or(style.text_shadow),
             border: cur_style.border.or(style.border),
             ..style
         }

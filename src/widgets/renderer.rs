@@ -37,6 +37,7 @@ struct ShadowCacheKey {
     spread_radius: u32,              // Rounded to avoid precision issues
     color: [u8; 4],                  // RGBA as bytes for exact comparison
     border_radius: Option<[u32; 4]>, // [tl, tr, br, bl] rounded
+    text_hash: Option<u64>,          // Hash of text content for text shadows
 }
 
 impl ShadowCacheKey {
@@ -69,6 +70,31 @@ impl ShadowCacheKey {
             spread_radius: (shadow.spread_radius * 100.0) as u32,
             color: color_bytes,
             border_radius: border_radius_key,
+            text_hash: None, // Box shadows don't have text content
+        }
+    }
+
+    fn from_text_shadow(
+        width: f32,
+        height: f32,
+        text_shadow: &crate::layout::model::TextShadow,
+        text_hash: u64,
+    ) -> Self {
+        let color_bytes = [
+            (text_shadow.color.r * 255.0) as u8,
+            (text_shadow.color.g * 255.0) as u8,
+            (text_shadow.color.b * 255.0) as u8,
+            (text_shadow.color.a * 255.0) as u8,
+        ];
+
+        Self {
+            width: width as u32,
+            height: height as u32,
+            blur_radius: (text_shadow.blur_radius * 100.0) as u32, // Sub-pixel precision
+            spread_radius: 0,
+            color: color_bytes,
+            border_radius: None,
+            text_hash: Some(text_hash), // Include text content hash
         }
     }
 }
@@ -992,9 +1018,164 @@ impl Renderer<'_> {
                 Some(&dest_rect),
                 opacity,
                 D2D1_INTERPOLATION_MODE_LINEAR,
-                None,  // Draw entire source bitmap
-                None,  // No perspective transform
+                None, // Draw entire source bitmap
+                None, // No perspective transform
             );
+        }
+    }
+
+    /// Draw text with a blurred shadow effect
+    pub fn draw_text_with_blurred_shadow(
+        &self,
+        position: &Vector2,
+        layout: &windows::Win32::Graphics::DirectWrite::IDWriteTextLayout,
+        text_shadow: &crate::layout::model::TextShadow,
+    ) {
+        unsafe {
+            use std::collections::hash_map::DefaultHasher;
+            use std::hash::{Hash, Hasher};
+
+            // Get text metrics for sizing
+            let mut metrics = windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
+            if layout.GetMetrics(&mut metrics).is_err() {
+                return;
+            }
+
+            let expanded_width = metrics.width.ceil() + text_shadow.blur_radius * 4.0;
+            let expanded_height = metrics.height.ceil() + text_shadow.blur_radius * 4.0;
+
+            // Compute hash of text content from the layout pointer
+            // Note: We use the layout pointer as a proxy for text content identity
+            // This assumes layouts are recreated when text changes
+            let mut hasher = DefaultHasher::new();
+            let layout_ptr = layout as *const _ as usize;
+            layout_ptr.hash(&mut hasher);
+            let text_hash = hasher.finish();
+
+            // Create cache key for this text shadow
+            let cache_key = ShadowCacheKey::from_text_shadow(
+                expanded_width,
+                expanded_height,
+                text_shadow,
+                text_hash,
+            );
+
+            // Try to get cached shadow effect or create new one
+            let mut shadow_cache = self.shadow_cache.borrow_mut();
+            let cached_effect = shadow_cache.get_or_create_shadow(&cache_key, || {
+                self.create_text_shadow_effect(layout, text_shadow, &metrics)
+            });
+
+            // Draw the cached shadow effect
+            if let Some(effect) = cached_effect {
+                self.render_target.DrawImage(
+                    &effect.cast::<ID2D1Image>().unwrap(),
+                    Some(&Vector2::new(
+                        position.X - text_shadow.blur_radius * 2.0,
+                        position.Y - text_shadow.blur_radius * 2.0,
+                    )),
+                    None,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    D2D1_COMPOSITE_MODE_SOURCE_OVER,
+                );
+            }
+        }
+    }
+
+    /// Create a text shadow effect for caching
+    fn create_text_shadow_effect(
+        &self,
+        layout: &windows::Win32::Graphics::DirectWrite::IDWriteTextLayout,
+        text_shadow: &crate::layout::model::TextShadow,
+        metrics: &windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS,
+    ) -> Option<ID2D1Effect> {
+        unsafe {
+            use windows::Win32::Graphics::Direct2D::D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT;
+
+            // Create shadow effect
+            let shadow_effect = self.render_target.CreateEffect(&CLSID_D2D1Shadow).ok()?;
+
+            // Set shadow properties
+            let blur_value = text_shadow.blur_radius;
+            shadow_effect
+                .SetValue(
+                    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
+                    D2D1_PROPERTY_TYPE_FLOAT,
+                    std::slice::from_raw_parts(
+                        &blur_value as *const f32 as *const u8,
+                        std::mem::size_of::<f32>(),
+                    ),
+                )
+                .ok();
+
+            let shadow_color = Vector4::new(
+                text_shadow.color.r,
+                text_shadow.color.g,
+                text_shadow.color.b,
+                text_shadow.color.a,
+            );
+            shadow_effect
+                .SetValue(
+                    D2D1_SHADOW_PROP_COLOR.0 as u32,
+                    D2D1_PROPERTY_TYPE_VECTOR4,
+                    std::slice::from_raw_parts(
+                        &shadow_color as *const Vector4 as *const u8,
+                        std::mem::size_of::<Vector4>(),
+                    ),
+                )
+                .ok();
+
+            // Create a compatible render target for the text
+            let size = D2D_SIZE_F {
+                width: metrics.width.ceil() + text_shadow.blur_radius * 4.0,
+                height: metrics.height.ceil() + text_shadow.blur_radius * 4.0,
+            };
+
+            let bitmap_rt = self
+                .render_target
+                .CreateCompatibleRenderTarget(
+                    Some(&size),
+                    None,
+                    None,
+                    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+                )
+                .ok()?;
+
+            // Draw text to the bitmap render target
+            bitmap_rt.BeginDraw();
+            bitmap_rt.Clear(Some(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            }));
+
+            self.brush.SetColor(&D2D1_COLOR_F {
+                r: 1.0,
+                g: 1.0,
+                b: 1.0,
+                a: 1.0,
+            });
+
+            let text_pos =
+                Vector2::new(text_shadow.blur_radius * 2.0, text_shadow.blur_radius * 2.0);
+
+            bitmap_rt.DrawTextLayout(
+                text_pos,
+                layout,
+                self.brush,
+                D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+            );
+
+            bitmap_rt.EndDraw(None, None).ok();
+
+            // Get the bitmap from the render target
+            let bitmap = bitmap_rt.GetBitmap().ok()?;
+
+            // Set the bitmap as input to the shadow effect
+            shadow_effect.SetInput(0, Some(&bitmap.cast::<ID2D1Image>().unwrap()), true);
+
+            Some(shadow_effect)
         }
     }
 }

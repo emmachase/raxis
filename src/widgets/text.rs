@@ -13,7 +13,7 @@ use windows::core::Result;
 use crate::gfx::RectDIP;
 use crate::gfx::command_recorder::CommandRecorder;
 use crate::layout::UIArenas;
-use crate::layout::model::{Color, Element, ElementStyle};
+use crate::layout::model::{Color, Element, ElementStyle, TextShadow};
 use crate::runtime::font_manager::{
     FontAxes, FontIdentifier, FontStyle, FontWeight, FontWidth, GlobalFontManager, LineSpacing,
 };
@@ -45,6 +45,7 @@ pub struct Text {
     pub font_size: f32,
     pub line_spacing: Option<LineSpacing>,
     pub color: Option<Color>,
+    pub text_shadow: Option<TextShadow>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_id: FontIdentifier,
@@ -64,6 +65,7 @@ impl Text {
             font_size: 14.0,
             line_spacing: None,
             color: None,
+            text_shadow: None,
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
             font_id: FontIdentifier::system("Segoe UI"),
@@ -88,6 +90,11 @@ impl Text {
 
     pub fn with_color(mut self, color: Color) -> Self {
         self.color = Some(color);
+        self
+    }
+
+    pub fn with_text_shadow(mut self, text_shadow: TextShadow) -> Self {
+        self.text_shadow = Some(text_shadow);
         self
     }
 
@@ -155,6 +162,7 @@ impl Text {
         let id = id_from_location(self.caller);
         Element {
             id: Some(combine_id(combine_id(id, &self.text), self.assisted_id)),
+            text_shadow: self.text_shadow,
             content: widget(self),
             ..Default::default()
         }
@@ -591,6 +599,7 @@ impl<Message> Widget<Message> for Text {
                 &bounds.content_box,
                 layout,
                 self.color.unwrap_or(style.color.unwrap_or_default()),
+                self.text_shadow.or(style.text_shadow).as_ref(),
             );
         }
     }

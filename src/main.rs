@@ -15,7 +15,7 @@ use raxis::{
         model::{
             Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
             Element, FloatingConfig, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap,
-            StrokeLineJoin, VerticalAlignment,
+            StrokeLineJoin, TextShadow, VerticalAlignment,
         },
     },
     row,
@@ -283,7 +283,16 @@ fn slider_demos(hook: &mut HookManager<Message>) -> Element<Message> {
                 id: Some(w_id!()),
                 width: Sizing::grow(),
                 height: Sizing::fit(),
-                content: widget(Text::new("Slider demos").with_font_size(20.0)),
+                content: widget(
+                    Text::new("Slider demos")
+                        .with_font_size(20.0)
+                        .with_text_shadow(TextShadow {
+                            offset_x: 2.0,
+                            offset_y: 2.0,
+                            blur_radius: 2.0,
+                            color: Color::from(0xFF00FFFF),
+                        }),
+                ),
                 ..Default::default()
             },
             // Volume slider

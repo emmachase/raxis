@@ -1,4 +1,4 @@
-use crate::layout::model::{Border, BorderRadius, Color, DropShadow, StrokeDashStyle};
+use crate::layout::model::{Border, BorderRadius, Color, DropShadow, TextShadow, StrokeDashStyle};
 use crate::{
     gfx::{
         RectDIP,
@@ -93,11 +93,13 @@ impl CommandRecorder {
         rect: &RectDIP,
         layout: &IDWriteTextLayout,
         color: impl Into<Color>,
+        text_shadow: Option<&TextShadow>,
     ) {
         self.commands.push(DrawCommand::DrawText {
             rect: *rect,
             layout: layout.clone(),
             color: color.into(),
+            text_shadow: text_shadow.copied(),
         });
     }
 
