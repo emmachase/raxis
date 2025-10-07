@@ -158,6 +158,12 @@ impl Interpolate for RectDIP {
     }
 }
 
+impl Interpolate for layout::model::Color {
+    fn interpolate(&self, other: Self, alpha: f32) -> Self {
+        layout::model::Color::mix(*self, other, alpha)
+    }
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct Animation<S: Clone + Copy + PartialEq> {
     active: bool,

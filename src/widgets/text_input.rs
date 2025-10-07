@@ -572,7 +572,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         &mut self,
         _arenas: &UIArenas,
         instance: &mut Instance,
-        shell: &Shell<Message>,
+        shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
         style: ElementStyle,
         bounds: Bounds,

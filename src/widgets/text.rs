@@ -558,7 +558,7 @@ impl<Message> Widget<Message> for Text {
         &mut self,
         arenas: &UIArenas,
         instance: &mut Instance,
-        _shell: &Shell<Message>,
+        _shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
         style: ElementStyle,
         bounds: Bounds,

@@ -108,7 +108,7 @@ impl<Message> Widget<Message> for Spinner {
         &mut self,
         _arenas: &UIArenas,
         instance: &mut Instance,
-        _shell: &Shell<Message>,
+        _shell: &mut Shell<Message>,
         recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         _style: ElementStyle,
         bounds: Bounds,

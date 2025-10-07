@@ -236,7 +236,7 @@ impl<Message> Widget<Message> for SvgPath {
         &mut self,
         _arenas: &UIArenas,
         instance: &mut Instance,
-        _shell: &Shell<Message>,
+        _shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
         style: ElementStyle,
         bounds: Bounds,

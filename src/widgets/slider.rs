@@ -405,7 +405,7 @@ impl<Message> Widget<Message> for Slider<Message> {
         &mut self,
         _arenas: &UIArenas,
         instance: &mut Instance,
-        _shell: &Shell<Message>,
+        _shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
         _style: crate::layout::model::ElementStyle,
         bounds: Bounds,

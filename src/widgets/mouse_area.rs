@@ -280,7 +280,7 @@ where
         &mut self,
         _arenas: &UIArenas,
         _instance: &mut Instance,
-        _shell: &Shell<Message>,
+        _shell: &mut Shell<Message>,
         _recorder: &mut crate::gfx::command_recorder::CommandRecorder,
         _style: ElementStyle,
         _bounds: Bounds,

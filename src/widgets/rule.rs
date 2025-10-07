@@ -7,14 +7,12 @@ use crate::layout::model::{Color, Element, ElementStyle, Sizing, StrokeDashStyle
 use crate::widgets::{Bounds, Event, Instance, Widget};
 
 /// Orientation of the rule/divider
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum RuleOrientation {
     #[default]
     Horizontal,
     Vertical,
 }
-
 
 /// A Rule (divider line) widget for creating horizontal or vertical separators
 #[derive(Debug, Clone)]
@@ -194,7 +192,7 @@ impl<Message> Widget<Message> for Rule {
         &mut self,
         _arenas: &UIArenas,
         _instance: &mut Instance,
-        _shell: &crate::Shell<Message>,
+        _shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
         _style: ElementStyle,
         bounds: Bounds,

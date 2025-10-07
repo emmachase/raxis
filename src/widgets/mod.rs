@@ -35,6 +35,7 @@ pub mod svg;
 pub mod svg_path;
 pub mod text;
 pub mod text_input;
+pub mod toggle;
 
 pub mod limit_response {
     #[derive(Debug, Default, Clone, Copy)]
@@ -265,7 +266,7 @@ pub trait Widget<Message>: std::fmt::Debug {
         &mut self,
         arenas: &UIArenas,
         instance: &mut Instance,
-        shell: &Shell<Message>,
+        shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
         style: ElementStyle,
         bounds: Bounds,

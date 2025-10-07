@@ -18,6 +18,7 @@ use raxis::{
             StrokeLineJoin, TextShadow, VerticalAlignment,
         },
     },
+    math::easing::Easing,
     row,
     runtime::{Backdrop, font_manager::FontIdentifier, scroll::ScrollPosition, task::Task},
     use_animation,
@@ -31,6 +32,7 @@ use raxis::{
         svg_path::SvgPath,
         text::{ParagraphAlignment, Text, TextAlignment},
         text_input::TextInput,
+        toggle::Toggle,
         widget,
     },
 };
@@ -484,6 +486,224 @@ fn slider_demos(hook: &mut HookManager<Message>) -> Element<Message> {
     }
 }
 
+fn toggle_demos(hook: &mut HookManager<Message>) -> Element<Message> {
+    let mut instance = hook.instance(w_id!());
+    let wifi = instance.use_state(|| true);
+    let bluetooth = instance.use_state(|| false);
+    let notifications = instance.use_state(|| true);
+    let dark_mode = instance.use_state(|| false);
+
+    Element {
+        id: Some(w_id!()),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::fit(),
+        background_color: Some(Color::WHITE),
+        padding: BoxAmount::all(12.0),
+        border: Some(Border {
+            width: 1.0,
+            color: Color {
+                r: 0.85,
+                g: 0.85,
+                b: 0.85,
+                a: 1.0,
+            },
+            ..Default::default()
+        }),
+        border_radius: Some(BorderRadius::all(8.0)),
+        child_gap: 16.0,
+        children: vec![
+            // Title
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(Text::new("Toggle/Switch demos").with_font_size(20.0)),
+                ..Default::default()
+            },
+            // WiFi toggle
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 12.0,
+                children: vec![
+                    Toggle::new(*wifi.borrow())
+                        .with_toggle_handler({
+                            let wifi = wifi.clone();
+                            move |checked, _, _| {
+                                *wifi.borrow_mut() = checked;
+                            }
+                        })
+                        .as_element(w_id!()),
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!(
+                                "WiFi: {}",
+                                if *wifi.borrow() { "On" } else { "Off" }
+                            ))
+                            .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Bluetooth toggle with custom colors
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 12.0,
+                children: vec![
+                    Toggle::new(*bluetooth.borrow())
+                        .with_track_colors(
+                            Color::from(0xE2E8F0FF), // Off: Neutral-200
+                            Color::from(0x3B82F6FF), // On: Blue
+                        )
+                        .with_toggle_handler({
+                            let bluetooth = bluetooth.clone();
+                            move |checked, _, _| {
+                                *bluetooth.borrow_mut() = checked;
+                            }
+                        })
+                        .as_element(w_id!()),
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!(
+                                "Bluetooth: {}",
+                                if *bluetooth.borrow() {
+                                    "Connected"
+                                } else {
+                                    "Disconnected"
+                                }
+                            ))
+                            .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Notifications toggle with green accent
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 12.0,
+                children: vec![
+                    Toggle::new(*notifications.borrow())
+                        .with_track_colors(
+                            Color::from(0xE2E8F0FF), // Off: Neutral-200
+                            Color::from(0x10B981FF), // On: Green
+                        )
+                        .with_toggle_handler({
+                            let notifications = notifications.clone();
+                            move |checked, _, _| {
+                                *notifications.borrow_mut() = checked;
+                            }
+                        })
+                        .as_element(w_id!()),
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!(
+                                "Notifications: {}",
+                                if *notifications.borrow() {
+                                    "Enabled"
+                                } else {
+                                    "Disabled"
+                                }
+                            ))
+                            .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Dark mode toggle with custom size and animation
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 12.0,
+                children: vec![
+                    Toggle::new(*dark_mode.borrow())
+                        .with_size(52.0, 28.0) // Larger toggle
+                        .with_track_colors(
+                            Color::from(0xE2E8F0FF), // Off: Neutral-200
+                            Color::from(0x8B5CF6FF), // On: Purple
+                        )
+                        .with_animation_duration(Duration::from_millis(400)) // Slower animation
+                        .with_animation_easing(Easing::EaseInOutCubic)
+                        .with_toggle_handler({
+                            let dark_mode = dark_mode.clone();
+                            move |checked, _, _| {
+                                *dark_mode.borrow_mut() = checked;
+                            }
+                        })
+                        .as_element(w_id!()),
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new(format!(
+                                "Dark Mode: {}",
+                                if *dark_mode.borrow() {
+                                    "🌙 Night"
+                                } else {
+                                    "☀️ Day"
+                                }
+                            ))
+                            .with_font_size(14.0),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+            // Disabled toggle
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::LeftToRight,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                child_gap: 12.0,
+                children: vec![
+                    Toggle::new(false).disabled().as_element(w_id!()),
+                    Element {
+                        id: Some(w_id!()),
+                        width: Sizing::grow(),
+                        height: Sizing::fit(),
+                        content: widget(
+                            Text::new("Disabled Toggle")
+                                .with_font_size(14.0)
+                                .with_color(Color::from(0x94A3B8FF)),
+                        ),
+                        ..Default::default()
+                    },
+                ],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
 fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
     let todo_state = instance
@@ -534,6 +754,8 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                     .as_element(w_id!(), Text::new("Settings"))
             ]
             .with_width(Sizing::grow()),
+            // Toggle demos
+            toggle_demos(hook),
             // Slider demos
             slider_demos(hook),
             // Border demos

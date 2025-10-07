@@ -7,7 +7,9 @@ use windows::Win32::Foundation::HWND;
 use crate::gfx::PointDIP;
 use crate::gfx::command_recorder::CommandRecorder;
 use crate::layout::UIArenas;
-use crate::layout::model::{Border, BorderRadius, Color, DropShadow, TextShadow, Element, ElementStyle};
+use crate::layout::model::{
+    Border, BorderRadius, Color, DropShadow, Element, ElementStyle, TextShadow,
+};
 use crate::widgets::{Bounds, Cursor, widget};
 use crate::widgets::{Instance, Widget};
 use crate::{RedrawRequest, Shell, with_state};
@@ -530,7 +532,7 @@ impl<Message> Widget<Message> for Button<Message> {
         &mut self,
         _arenas: &UIArenas,
         _instance: &mut Instance,
-        _shell: &Shell<Message>,
+        _shell: &mut Shell<Message>,
         _recorder: &mut CommandRecorder,
         _style: ElementStyle,
         _bounds: Bounds,

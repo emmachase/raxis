@@ -944,6 +944,13 @@ impl<Message> Element<Message> {
         }
     }
 
+    pub fn with_text_shadow(self, text_shadow: Option<TextShadow>) -> Self {
+        Self {
+            text_shadow,
+            ..self
+        }
+    }
+
     pub fn with_border(self, border: impl Into<Border>) -> Self {
         Self {
             border: Some(border.into()),
@@ -1024,6 +1031,7 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             padding: element.padding,
             border_radius: element.border_radius,
             drop_shadow: element.drop_shadow,
+            text_shadow: element.text_shadow,
             border: element.border,
             z_index: element.z_index,
             opacity: element.opacity,

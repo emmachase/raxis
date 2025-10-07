@@ -271,7 +271,7 @@ impl<Message> Widget<Message> for Image {
         &mut self,
         arenas: &UIArenas,
         instance: &mut Instance,
-        _shell: &Shell<Message>,
+        _shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
         _style: ElementStyle,
         bounds: Bounds,

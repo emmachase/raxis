@@ -248,7 +248,7 @@ pub fn generate_paint_commands<Message>(
                     widget.paint(
                         &ui_tree.arenas,
                         state,
-                        &shell.borrow(),
+                        &mut shell.borrow_mut(),
                         &mut recorder,
                         style,
                         bounds,
