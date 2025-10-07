@@ -112,6 +112,7 @@ pub enum Direction {
     #[default]
     LeftToRight,
     TopToBottom,
+    ZStack,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]

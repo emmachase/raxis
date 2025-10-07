@@ -62,7 +62,37 @@ pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey
             .filter(|child| ui_tree.slots[*child].floating.is_none())
             .collect();
 
-        if element!().direction == axis_direction {
+        // For ZStack, always use max of children (like cross-axis)
+        if element!().direction == Direction::ZStack {
+            // Cross-axis sizing: max of child sizes + padding
+            let (children_max_size, children_max_min_size) = if non_floating_children.is_empty()
+            {
+                (0.0_f32, 0.0_f32)
+            } else {
+                non_floating_children
+                    .iter()
+                    .fold((0.0_f32, 0.0_f32), |acc, child| {
+                        let c = &ui_tree.slots[*child];
+                        if x_axis {
+                            (acc.0.max(c.computed_width), acc.1.max(c.min_width))
+                        } else {
+                            (acc.0.max(c.computed_height), acc.1.max(c.min_height))
+                        }
+                    })
+            };
+
+            if x_axis {
+                element!().computed_width = children_max_size + axis_padding;
+                if !is_scroll_enabled(&element!(), Axis::X) {
+                    element!().min_width = children_max_min_size + axis_padding;
+                }
+            } else {
+                element!().computed_height = children_max_size + axis_padding;
+                if !is_scroll_enabled(&element!(), Axis::Y) {
+                    element!().min_height = children_max_min_size + axis_padding;
+                }
+            }
+        } else if element!().direction == axis_direction {
             // Check if wrapping is enabled for LeftToRight direction
             let use_wrapping = x_axis && element!().wrap;
 

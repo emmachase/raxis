@@ -994,10 +994,10 @@ fn create_tree_root<State: 'static, Message>(
         hook_manager.ui_tree,
         Element {
             id: Some(w_id!()),
-            direction: Direction::TopToBottom,
+            direction: Direction::ZStack,
             children: vec![Element {
                 id: Some(w_id!()),
-                direction: Direction::TopToBottom,
+                direction: Direction::ZStack,
                 children: vec![children],
                 width: Sizing::grow(),
                 height: Sizing::grow(),

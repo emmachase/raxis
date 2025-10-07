@@ -249,6 +249,40 @@ pub fn position_elements<Message>(
                 slots[key].computed_height - slots[key].padding.top - slots[key].padding.bottom;
 
             match slots[key].direction {
+                Direction::ZStack => {
+                    // All children are stacked at the same position, respecting individual alignment
+                    for c in non_floating {
+                        // Calculate horizontal position based on child's alignment
+                        match slots[c].horizontal_alignment {
+                            HorizontalAlignment::Left => {
+                                slots[c].x = content_start_x;
+                            }
+                            HorizontalAlignment::Center => {
+                                slots[c].x = content_start_x
+                                    + (available_width - slots[c].computed_width).max(0.0) / 2.0;
+                            }
+                            HorizontalAlignment::Right => {
+                                slots[c].x = content_start_x
+                                    + (available_width - slots[c].computed_width).max(0.0);
+                            }
+                        }
+
+                        // Calculate vertical position based on child's alignment
+                        match slots[c].vertical_alignment {
+                            VerticalAlignment::Top => {
+                                slots[c].y = content_start_y;
+                            }
+                            VerticalAlignment::Center => {
+                                slots[c].y = content_start_y
+                                    + (available_height - slots[c].computed_height).max(0.0) / 2.0;
+                            }
+                            VerticalAlignment::Bottom => {
+                                slots[c].y = content_start_y
+                                    + (available_height - slots[c].computed_height).max(0.0);
+                            }
+                        }
+                    }
+                }
                 Direction::LeftToRight => {
                     // Check if this is a wrapping layout with breaks
                     if slots[key].wrap && !slots[key].wrap_breaks.is_empty() {

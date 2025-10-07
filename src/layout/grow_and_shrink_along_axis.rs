@@ -253,6 +253,149 @@ pub fn grow_and_shrink_along_axis<Message>(
             .filter(|c| ui_tree.slots[*c].floating.is_none())
             .collect();
 
+        // Handle ZStack specially - all children grow to container size (like cross-axis)
+        if element!().direction == Direction::ZStack {
+            let mut grow_to_size = remaining_size;
+            let scroll_enabled = element!()
+                .scroll
+                .as_ref()
+                .map(|s| {
+                    if x_axis {
+                        s.horizontal.unwrap_or(false)
+                    } else {
+                        s.vertical.unwrap_or(false)
+                    }
+                })
+                .unwrap_or(false);
+
+            // Calculate inner content size for ZStack
+            let mut inner_content_size = total_padding;
+            for child in &non_floating_children {
+                let c = &ui_tree.slots[*child];
+                if x_axis {
+                    inner_content_size = inner_content_size.max(c.computed_width + total_padding);
+                } else {
+                    inner_content_size = inner_content_size.max(c.computed_height + total_padding);
+                }
+            }
+
+            if x_axis {
+                element!().computed_content_width = inner_content_size;
+            } else {
+                element!().computed_content_height = inner_content_size;
+            }
+
+            if scroll_enabled {
+                grow_to_size = inner_content_size.max(remaining_size);
+            }
+
+            // Size Percent children
+            let children_all = element!().children.clone();
+            for child in &children_all {
+                let sizing = if x_axis {
+                    ui_tree.slots[*child].width
+                } else {
+                    ui_tree.slots[*child].height
+                };
+                if let Sizing::Percent { percent } = sizing {
+                    let assign = remaining_size * percent;
+                    if x_axis {
+                        ui_tree.slots[*child].computed_width = assign;
+                    } else {
+                        ui_tree.slots[*child].computed_height = assign;
+                    }
+                }
+            }
+
+            // Grow all growable children to fill container
+            let growable_children: Vec<UIKey> = non_floating_children
+                .iter()
+                .copied()
+                .filter(|c| {
+                    let sizing = if x_axis {
+                        ui_tree.slots[*c].width
+                    } else {
+                        ui_tree.slots[*c].height
+                    };
+                    !matches!(sizing, Sizing::Percent { .. })
+                        && matches!(sizing, Sizing::Grow { .. })
+                })
+                .collect();
+
+            for ck in &growable_children {
+                let size = if x_axis {
+                    ui_tree.slots[*ck].computed_width
+                } else {
+                    ui_tree.slots[*ck].computed_height
+                };
+                if size < grow_to_size {
+                    let max_allowed = match if x_axis {
+                        ui_tree.slots[*ck].width
+                    } else {
+                        ui_tree.slots[*ck].height
+                    } {
+                        Sizing::Grow { max, .. } => max,
+                        _ => f32::INFINITY,
+                    };
+                    let new_size = grow_to_size.min(max_allowed);
+                    if x_axis {
+                        ui_tree.slots[*ck].computed_width = new_size;
+                    } else {
+                        ui_tree.slots[*ck].computed_height = new_size;
+                    }
+                }
+            }
+
+            // Shrink if needed (and scroll not enabled)
+            if !scroll_enabled {
+                let shrinkable_children: Vec<UIKey> = non_floating_children
+                    .iter()
+                    .copied()
+                    .filter(|c| {
+                        let sizing = if x_axis {
+                            ui_tree.slots[*c].width
+                        } else {
+                            ui_tree.slots[*c].height
+                        };
+                        !matches!(sizing, Sizing::Percent { .. })
+                    })
+                    .filter(|c| {
+                        let e = &ui_tree.slots[*c];
+                        let size = if x_axis {
+                            e.computed_width
+                        } else {
+                            e.computed_height
+                        };
+                        let min_allowed = if x_axis { e.min_width } else { e.min_height };
+                        size > min_allowed && size > remaining_size
+                    })
+                    .collect();
+
+                for ck in shrinkable_children {
+                    let size = if x_axis {
+                        ui_tree.slots[ck].computed_width
+                    } else {
+                        ui_tree.slots[ck].computed_height
+                    };
+                    if size > remaining_size {
+                        let min_allowed = if x_axis {
+                            ui_tree.slots[ck].min_width
+                        } else {
+                            ui_tree.slots[ck].min_height
+                        };
+                        let new_size = remaining_size.max(min_allowed);
+                        if x_axis {
+                            ui_tree.slots[ck].computed_width = new_size;
+                        } else {
+                            ui_tree.slots[ck].computed_height = new_size;
+                        }
+                    }
+                }
+            }
+
+            return; // Done with ZStack
+        }
+
         // Children which are resizable in this pass (i.e., not Percent sizing)
         let resizable_children: Vec<UIKey> = non_floating_children
             .iter()
