@@ -20,7 +20,12 @@ use raxis::{
     },
     math::easing::Easing,
     row,
-    runtime::{Backdrop, font_manager::FontIdentifier, scroll::ScrollPosition, task::Task},
+    runtime::{
+        Backdrop,
+        font_manager::FontIdentifier,
+        scroll::ScrollPosition,
+        task::{Task, hide_window},
+    },
     use_animation,
     util::{str::StableString, unique::combine_id},
     w_id,
@@ -768,7 +773,12 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
             slider_demos(hook),
             // Border demos
             border_demos(),
-            animated_button(hook),
+            row![
+                animated_button(hook),
+                Button::new()
+                    .with_click_handler(|_, s| s.dispatch_task(hide_window()))
+                    .as_element(w_id!(), Text::new("Hide Window"))
+            ],
             pixie.as_element(w_id!()),
             // Input section
             Element {

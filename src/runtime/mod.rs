@@ -18,7 +18,7 @@ use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::focus::FocusManager;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
-use crate::runtime::task::{Action, ClipboardAction, Task, into_stream};
+use crate::runtime::task::{Action, ClipboardAction, Task, WindowAction, WindowMode, into_stream};
 use crate::runtime::vkey::VKey;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::renderer::{Renderer, ShadowCache};
@@ -129,12 +129,12 @@ use windows::{
                 self as WAM, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
                 DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
                 GetMessageTime, GetMessageW, GetSystemMetrics, HTCLIENT, IDC_ARROW, LoadCursorW,
-                MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK, SW_SHOW, SWP_NOACTIVATE,
-                SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
-                WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION,
-                WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN,
-                WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW,
-                WS_OVERLAPPEDWINDOW,
+                MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK, SW_HIDE, SW_SHOW,
+                SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow,
+                TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE,
+                WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE,
+                WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -670,6 +670,15 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                                     ClipboardAction::Get(sender) => {
                                         let _ = sender.send(clipboard::get_clipboard_text(hwnd.0));
                                     }
+                                },
+                                Action::Window(action) => match action {
+                                    WindowAction::SetMode(mode) => unsafe {
+                                        let show_cmd = match mode {
+                                            WindowMode::Windowed => SW_SHOW,
+                                            WindowMode::Hidden => SW_HIDE,
+                                        };
+                                        ShowWindow(hwnd.0, show_cmd).ok().ok();
+                                    },
                                 },
                                 Action::Exit => unsafe {
                                     DestroyWindow(hwnd.0).ok();

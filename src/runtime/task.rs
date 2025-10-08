@@ -50,9 +50,20 @@ pub enum ClipboardAction {
     Get(Sender<Option<String>>),
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum WindowMode {
+    Windowed,
+    Hidden,
+}
+
+pub enum WindowAction {
+    SetMode(WindowMode),
+}
+
 pub enum Action<T> {
     Output(T),
     Clipboard(ClipboardAction),
+    Window(WindowAction),
     Exit,
 }
 
@@ -68,7 +79,7 @@ impl<T> Action<T> {
             // Action::LoadFont { bytes, channel } => Err(Action::LoadFont { bytes, channel }),
             // Action::Widget(operation) => Err(Action::Widget(operation)),
             Action::Clipboard(action) => Err(Action::Clipboard(action)),
-            // Action::Window(action) => Err(Action::Window(action)),
+            Action::Window(action) => Err(Action::Window(action)),
             // Action::System(action) => Err(Action::System(action)),
             // Action::Reload => Err(Action::Reload),
             Action::Exit => Err(Action::Exit),
@@ -518,6 +529,21 @@ pub fn effect<T>(action: impl Into<Action<Infallible>>) -> Task<T> {
         }))),
         units: 1,
     }
+}
+
+/// Creates a new [`Task`] that sets the window mode.
+pub fn set_window_mode<T>(mode: WindowMode) -> Task<T> {
+    effect(Action::Window(WindowAction::SetMode(mode)))
+}
+
+/// Creates a new [`Task`] that shows the window.
+pub fn show_window<T>() -> Task<T> {
+    set_window_mode(WindowMode::Windowed)
+}
+
+/// Creates a new [`Task`] that hides the window.
+pub fn hide_window<T>() -> Task<T> {
+    set_window_mode(WindowMode::Hidden)
 }
 
 /// Returns the underlying [`Stream`] of the [`Task`].
