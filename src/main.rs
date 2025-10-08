@@ -9,7 +9,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use raxis::{
-    HookManager, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig,
+    ContextMenuItem, HookManager, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig,
     layout::{
         helpers::{center, spacer},
         model::{
@@ -22,6 +22,7 @@ use raxis::{
     row,
     runtime::{
         Backdrop,
+        context_menu::ContextMenuItemExt,
         font_manager::FontIdentifier,
         scroll::ScrollPosition,
         task::{Task, hide_window},
@@ -53,9 +54,15 @@ struct State {
     modal_open: bool,
 }
 
+#[derive(Clone)]
 enum Message {
     ToggleModal,
     TrayIconClicked,
+    ShowContextMenu,
+    ContextMenuCopy,
+    ContextMenuPaste,
+    ContextMenuDelete,
+    ContextMenuCancelled,
 }
 
 fn demo_box(label: &'static str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
@@ -778,7 +785,10 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                 animated_button(hook),
                 Button::new()
                     .with_click_handler(|_, s| s.dispatch_task(hide_window()))
-                    .as_element(w_id!(), Text::new("Hide Window"))
+                    .as_element(w_id!(), Text::new("Hide Window")),
+                Button::new()
+                    .with_click_handler(|_, s| s.publish(Message::ShowContextMenu))
+                    .as_element(w_id!(), Text::new("Show Context Menu"))
             ],
             pixie.as_element(w_id!()),
             // Input section
@@ -1396,6 +1406,34 @@ fn update(state: &mut State, message: Message) -> Option<Task<Message>> {
             println!("Tray icon clicked!");
             None
         }
+        Message::ShowContextMenu => {
+            // Show a context menu with various options
+            Some(raxis::show_context_menu(
+                vec![
+                    ContextMenuItem::new(Message::ContextMenuCopy, "Copy"),
+                    ContextMenuItem::new(Message::ContextMenuPaste, "Paste").checked(),
+                    ContextMenuItem::separator(),
+                    ContextMenuItem::new(Message::ContextMenuDelete, "Delete").disabled(),
+                ],
+                Message::ContextMenuCancelled,
+            ))
+        }
+        Message::ContextMenuCopy => {
+            println!("Copy selected from context menu!");
+            None
+        }
+        Message::ContextMenuPaste => {
+            println!("Paste selected from context menu!");
+            None
+        }
+        Message::ContextMenuDelete => {
+            println!("Delete selected from context menu!");
+            None
+        }
+        Message::ContextMenuCancelled => {
+            println!("Context menu cancelled");
+            None
+        }
     }
 }
 
@@ -1412,14 +1450,14 @@ fn main() {
         .with_tray_icon(tray_config)
         .with_tray_event_handler(|state, event| {
             match event {
-                TrayEvent::LeftClick(_) | TrayEvent::LeftDoubleClick(_) => {
+                TrayEvent::LeftClick | TrayEvent::LeftDoubleClick => {
                     println!("Tray icon clicked! Modal is open: {}", state.modal_open);
                     Some(Message::TrayIconClicked)
                 }
-                TrayEvent::RightClick(_) => {
-                    // Could open a context menu here
+                TrayEvent::RightClick => {
+                    // Show context menu on right-click
                     println!("Tray icon right-clicked!");
-                    None
+                    Some(Message::ShowContextMenu)
                 }
             }
         })

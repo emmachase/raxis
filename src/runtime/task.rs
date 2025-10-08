@@ -38,6 +38,8 @@ use futures::stream::{self, Stream, StreamExt};
 use std::convert::Infallible;
 use std::sync::Arc;
 
+use crate::ContextMenuItem;
+
 pub fn boxed_stream<T, S>(stream: S) -> BoxStream<'static, T>
 where
     S: futures::Stream<Item = T> + Send + 'static,
@@ -61,10 +63,19 @@ pub enum WindowAction {
     SetMode(WindowMode),
 }
 
+pub enum ContextMenuAction {
+    Show {
+        items: Vec<ContextMenuItem>, // label, message, enabled, checked, is_separator
+        position: Option<(i32, i32)>, // None = cursor position
+        sender: Sender<Option<usize>>, // sender to send the selected message
+    },
+}
+
 pub enum Action<T> {
     Output(T),
     Clipboard(ClipboardAction),
     Window(WindowAction),
+    ContextMenu(ContextMenuAction),
     Exit,
 }
 
@@ -81,6 +92,7 @@ impl<T> Action<T> {
             // Action::Widget(operation) => Err(Action::Widget(operation)),
             Action::Clipboard(action) => Err(Action::Clipboard(action)),
             Action::Window(action) => Err(Action::Window(action)),
+            Action::ContextMenu(action) => Err(Action::ContextMenu(action)),
             // Action::System(action) => Err(Action::System(action)),
             // Action::Reload => Err(Action::Reload),
             Action::Exit => Err(Action::Exit),
@@ -556,3 +568,61 @@ pub fn hide_window<T>() -> Task<T> {
 pub fn into_stream<T>(task: Task<T>) -> Option<BoxStream<'static, Action<T>>> {
     task.stream
 }
+
+/// Creates a new [`Task`] that shows a context menu at the cursor position.
+///
+/// The task completes with `Some(message)` if an item is selected, or `None` if cancelled.
+///
+/// # Example
+/// ```ignore
+/// show_context_menu(vec![
+///     ("Copy", Message::Copy, true, false, false),
+///     ("Paste", Message::Paste, true, false, false),
+///     ("", Message::default(), true, false, true), // separator
+///     ("Delete", Message::Delete, true, false, false),
+/// ])
+/// ```
+pub fn show_context_menu<T: Clone + Send + Sync + 'static>(
+    items: Vec<(Option<T>, ContextMenuItem)>,
+    cancel: T,
+) -> Task<T> {
+    oneshot::<Option<usize>>({
+        let items = items.clone();
+        move |sender| {
+            Action::ContextMenu(ContextMenuAction::Show {
+                items: items.into_iter().map(|(_message, item)| item).collect(),
+                position: None,
+                sender,
+            })
+        }
+    })
+    .map(move |index| {
+        if let Some(index) = index {
+            items[index].0.clone()
+        } else {
+            Some(cancel.clone())
+        }
+    })
+    .and_then(|option| Task::done(option))
+}
+
+// /// Creates a new [`Task`] that shows a context menu at a specific screen position.
+// ///
+// /// The task completes with `Some(message)` if an item is selected, or `None` if cancelled.
+// pub fn show_context_menu_at<T>(
+//     items: Vec<(String, T, bool, bool, bool)>,
+//     cancel: T,
+//     x: i32,
+//     y: i32,
+// ) -> Task<T>
+// where
+//     T: Send + 'static,
+// {
+//     oneshot::<T>(|sender| {
+//         Action::ContextMenu(ContextMenuAction::Show {
+//             items,
+//             position: Some((x, y)),
+//             sender,
+//         })
+//     })
+// }

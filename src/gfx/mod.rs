@@ -8,12 +8,6 @@ pub mod command_executor;
 pub mod command_recorder;
 pub mod draw_commands;
 
-#[derive(Debug, Default, Clone, Copy, PartialEq, Eq)]
-pub struct ScreenPoint {
-    pub x: i32,
-    pub y: i32,
-}
-
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct PointDIP {
     pub x: f32,

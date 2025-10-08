@@ -14,18 +14,17 @@ use windows::Win32::{
 };
 use windows_core::PCWSTR;
 
-use crate::gfx::ScreenPoint;
 pub const WM_TRAYICON: u32 = windows::Win32::UI::WindowsAndMessaging::WM_USER + 100;
 
 /// Events that can occur on a tray icon
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
     /// Left mouse button clicked
-    LeftClick(ScreenPoint),
+    LeftClick,
     /// Left mouse button double-clicked
-    LeftDoubleClick(ScreenPoint),
+    LeftDoubleClick,
     /// Right mouse button clicked
-    RightClick(ScreenPoint),
+    RightClick,
 }
 
 /// Configuration for a system tray icon
@@ -129,17 +128,11 @@ impl TrayIcon {
     /// Parse a tray icon message into a TrayEvent
     pub fn parse_message(lparam: LPARAM) -> Option<TrayEvent> {
         let msg = lparam.0 as u32;
-        let mut point = POINT::default();
-        unsafe { GetCursorPos(&mut point).ok() };
-        let point = ScreenPoint {
-            x: point.x,
-            y: point.y,
-        };
 
         match msg {
-            WM_LBUTTONUP => Some(TrayEvent::LeftClick(point)),
-            WM_LBUTTONDBLCLK => Some(TrayEvent::LeftDoubleClick(point)),
-            WM_RBUTTONUP => Some(TrayEvent::RightClick(point)),
+            WM_LBUTTONUP => Some(TrayEvent::LeftClick),
+            WM_LBUTTONDBLCLK => Some(TrayEvent::LeftDoubleClick),
+            WM_RBUTTONUP => Some(TrayEvent::RightClick),
             _ => None,
         }
     }

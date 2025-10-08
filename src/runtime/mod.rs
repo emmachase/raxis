@@ -1,4 +1,5 @@
 pub mod clipboard;
+pub mod context_menu;
 pub mod dragdrop;
 pub mod focus;
 pub mod font_manager;
@@ -16,12 +17,15 @@ use crate::layout::model::{Axis, Direction, Element, Sizing, create_tree};
 use crate::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom,
 };
+use crate::runtime::context_menu::{ContextMenu, ContextMenuRequest, WM_SHOW_CONTEXT_MENU};
 use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::focus::FocusManager;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
-use crate::runtime::task::{Action, ClipboardAction, Task, WindowAction, WindowMode, into_stream};
+use crate::runtime::task::{
+    Action, ClipboardAction, ContextMenuAction, Task, WindowAction, WindowMode, into_stream,
+};
 use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig, WM_TRAYICON};
 use crate::runtime::vkey::VKey;
 use crate::widgets::drop_target::DropTarget;
@@ -505,7 +509,7 @@ impl DeviceResources {
 
 static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
 
-impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> {
+impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, Message> {
     fn new(
         view_fn: ViewFn<State, Message>,
         update_fn: UpdateFn<State, Message>,
@@ -653,7 +657,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 let message_sender = message_sender.clone();
                 let hwnd = UncheckedHWND(hwnd);
                 thread::spawn(move || {
-                    async fn process_task_stream<Message: Send + 'static>(
+                    async fn process_task_stream<Message: Send + Clone + 'static>(
                         stream: impl futures::Stream<Item = Action<Message>> + Send + Unpin + 'static,
                         message_sender: mpsc::Sender<Message>,
                         hwnd: UncheckedHWND,
@@ -700,6 +704,20 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                                         ShowWindow(hwnd.0, show_cmd).ok().ok();
                                     },
                                 },
+                                Action::ContextMenu(ContextMenuAction::Show {
+                                    items,
+                                    position,
+                                    sender,
+                                }) => {
+                                    // Build the context menu from items
+                                    let menu = ContextMenu::new(items);
+
+                                    // Request the menu to be shown on the UI thread and await the result
+                                    let result = menu.show_async(hwnd, position).await;
+
+                                    // Send the result back through the channel
+                                    let _ = sender.send(result);
+                                }
                                 Action::Exit => unsafe {
                                     DestroyWindow(hwnd.0).ok();
                                 },
@@ -707,7 +725,7 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                         }
                     }
 
-                    async fn run_task_loop<Message: Send + 'static>(
+                    async fn run_task_loop<Message: Send + Clone + 'static>(
                         task_receiver: mpsc::Receiver<Task<Message>>,
                         message_sender: mpsc::Sender<Message>,
                         hwnd: UncheckedHWND,
@@ -1014,7 +1032,7 @@ extern "system" fn wndproc(hwnd: HWND, msg: u32, wparam: WPARAM, lparam: LPARAM)
 }
 
 static REPLACE_TITLEBAR: AtomicBool = AtomicBool::new(false);
-fn wndproc_impl<State: 'static, Message: 'static + Send>(
+fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
     hwnd: HWND,
     msg: u32,
     wparam: WPARAM,
@@ -1113,6 +1131,21 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                             }
                         }
                     }
+                }
+                LRESULT(0)
+            }
+            WM_SHOW_CONTEXT_MENU => {
+                // Handle context menu request from async thread
+                let request_ptr = wparam.0 as *mut ContextMenuRequest;
+                if !request_ptr.is_null() {
+                    let request = Box::from_raw(request_ptr);
+
+                    // Show the menu on the UI thread
+                    let result =
+                        ContextMenu::show_sync_on_ui_thread(&request.items, hwnd, request.position);
+
+                    // Send the result back through the channel
+                    let _ = request.sender.send(result);
                 }
                 LRESULT(0)
             }
@@ -2186,7 +2219,7 @@ pub struct Application<
 impl<
     B: Fn(&State) -> Option<crate::runtime::task::Task<Message>> + 'static,
     State: 'static,
-    Message: 'static + Send,
+    Message: 'static + Send + Clone,
 > Application<B, State, Message>
 {
     pub fn new(
