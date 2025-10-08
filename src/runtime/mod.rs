@@ -98,9 +98,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, MINMAXINFO,
     NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
     SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SetForegroundWindow, SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND,
-    WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND,
-    WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
+    SetForegroundWindow, SystemParametersInfoW, WM_ACTIVATE, WM_CLOSE, WM_DPICHANGED,
+    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST,
+    WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -251,7 +251,7 @@ struct ApplicationHandle<State, Message> {
 
     // System tray icon
     tray_icon: Option<TrayIcon>,
-    tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Message>>>,
+    tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Task<Message>>>>,
 
     // System command handler
     syscommand_handler:
@@ -518,7 +518,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         user_state: State,
         hwnd: HWND,
         tray_config: Option<TrayIconConfig>,
-        tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Message>>>,
+        tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Task<Message>>>>,
         syscommand_handler: Option<
             Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>,
         >,
@@ -719,7 +719,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                                     let _ = sender.send(result);
                                 }
                                 Action::Exit => unsafe {
-                                    DestroyWindow(hwnd.0).ok();
+                                    PostMessageW(Some(hwnd.0), WM_CLOSE, WPARAM(0), LPARAM(0)).ok();
                                 },
                             }
                         }
@@ -1125,9 +1125,8 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                     if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                         let state = state.deref_mut();
                         if let Some(ref handler) = state.tray_event_handler {
-                            if let Some(message) = handler(&state.user_state, event) {
-                                let _ = state.shell.message_sender.send(message);
-                                state.shell.pending_messages = true;
+                            if let Some(task) = handler(&state.user_state, event) {
+                                state.task_sender.send(task);
                             }
                         }
                     }
@@ -2210,7 +2209,7 @@ pub struct Application<
     replace_titlebar: bool,
 
     tray_config: Option<TrayIconConfig>,
-    tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Message>>>,
+    tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Task<Message>>>>,
 
     syscommand_handler:
         Option<Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>>,
@@ -2291,7 +2290,7 @@ impl<
 
     pub fn with_tray_event_handler(
         self,
-        handler: impl Fn(&State, TrayEvent) -> Option<Message> + 'static,
+        handler: impl Fn(&State, TrayEvent) -> Option<Task<Message>> + 'static,
     ) -> Self {
         Self {
             tray_event_handler: Some(Box::new(handler)),

@@ -18,7 +18,7 @@ pub enum RuleOrientation {
 #[derive(Debug, Clone)]
 pub struct Rule {
     pub orientation: RuleOrientation,
-    pub color: Color,
+    pub color: Option<Color>,
     pub thickness: f32,
     pub dash_style: Option<StrokeDashStyle>,
     pub stroke_cap: Option<StrokeLineCap>,
@@ -28,12 +28,7 @@ impl Default for Rule {
     fn default() -> Self {
         Self {
             orientation: RuleOrientation::Horizontal,
-            color: Color {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 0.8,
-            },
+            color: None,
             thickness: 1.0,
             dash_style: None,
             stroke_cap: None,
@@ -61,7 +56,7 @@ impl Rule {
     /// Set the color of the rule
     pub fn with_color(self, color: impl Into<Color>) -> Self {
         Self {
-            color: color.into(),
+            color: Some(color.into()),
             ..self
         }
     }
@@ -194,7 +189,7 @@ impl<Message> Widget<Message> for Rule {
         _instance: &mut Instance,
         _shell: &mut Shell<Message>,
         recorder: &mut CommandRecorder,
-        _style: ElementStyle,
+        style: ElementStyle,
         bounds: Bounds,
         _now: std::time::Instant,
     ) {
@@ -209,7 +204,12 @@ impl<Message> Widget<Message> for Rule {
                     y,
                     rect.x + rect.width,
                     y,
-                    self.color,
+                    self.color.unwrap_or(
+                        style
+                            .color
+                            .map(|x| x.scale_alpha(0.2))
+                            .unwrap_or(Color::from(0x000000AF)),
+                    ),
                     self.thickness,
                     self.dash_style,
                     self.stroke_cap,
@@ -223,7 +223,12 @@ impl<Message> Widget<Message> for Rule {
                     rect.y,
                     x,
                     rect.y + rect.height,
-                    self.color,
+                    self.color.unwrap_or(
+                        style
+                            .color
+                            .map(|x| x.scale_alpha(0.2))
+                            .unwrap_or(Color::from(0x000000AF)),
+                    ),
                     self.thickness,
                     self.dash_style,
                     self.stroke_cap,

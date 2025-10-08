@@ -554,6 +554,11 @@ pub fn activate_window<T>() -> Task<T> {
     effect(Action::Window(WindowAction::Activate))
 }
 
+/// Creates a new [`Task`] that exits the application.
+pub fn exit_application<T>() -> Task<T> {
+    effect(Action::Exit)
+}
+
 /// Creates a new [`Task`] that shows the window.
 pub fn show_window<T: 'static>() -> Task<T> {
     set_window_mode(WindowMode::Windowed).chain(activate_window())

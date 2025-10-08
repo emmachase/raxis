@@ -1452,12 +1452,12 @@ fn main() {
             match event {
                 TrayEvent::LeftClick | TrayEvent::LeftDoubleClick => {
                     println!("Tray icon clicked! Modal is open: {}", state.modal_open);
-                    Some(Message::TrayIconClicked)
+                    Some(Task::done(Message::TrayIconClicked))
                 }
                 TrayEvent::RightClick => {
                     // Show context menu on right-click
                     println!("Tray icon right-clicked!");
-                    Some(Message::ShowContextMenu)
+                    Some(Task::done(Message::ShowContextMenu))
                 }
             }
         })
