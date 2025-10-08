@@ -57,6 +57,7 @@ pub enum WindowMode {
 }
 
 pub enum WindowAction {
+    Activate,
     SetMode(WindowMode),
 }
 
@@ -536,9 +537,14 @@ pub fn set_window_mode<T>(mode: WindowMode) -> Task<T> {
     effect(Action::Window(WindowAction::SetMode(mode)))
 }
 
+/// Creates a new [`Task`] that activates the window.
+pub fn activate_window<T>() -> Task<T> {
+    effect(Action::Window(WindowAction::Activate))
+}
+
 /// Creates a new [`Task`] that shows the window.
-pub fn show_window<T>() -> Task<T> {
-    set_window_mode(WindowMode::Windowed)
+pub fn show_window<T: 'static>() -> Task<T> {
+    set_window_mode(WindowMode::Windowed).chain(activate_window())
 }
 
 /// Creates a new [`Task`] that hides the window.

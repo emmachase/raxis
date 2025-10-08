@@ -9,9 +9,7 @@ use std::{
 
 use lazy_static::lazy_static;
 use raxis::{
-    HookManager,
-    SystemCommand, SystemCommandResponse,
-    TrayEvent, TrayIconConfig,
+    HookManager, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig,
     layout::{
         helpers::{center, spacer},
         model::{
@@ -1406,36 +1404,37 @@ fn main() {
     let _profiler = dhat::Profiler::new_heap();
 
     // Configure tray icon
-    let tray_config = TrayIconConfig::new()
-        .with_tooltip("Raxis Demo - Right-click for options");
-    
+    let tray_config = TrayIconConfig::new().with_tooltip("Raxis Demo - Right-click for options");
+
     raxis::Application::new(State::default(), view, update, |_state| None)
         .with_title("Raxis Demo")
         .with_backdrop(Backdrop::Mica)
         .with_tray_icon(tray_config)
-        .with_tray_event_handler(|event| {
+        .with_tray_event_handler(|state, event| {
             match event {
-                TrayEvent::LeftClick | TrayEvent::LeftDoubleClick => {
+                TrayEvent::LeftClick(_) | TrayEvent::LeftDoubleClick(_) => {
+                    println!("Tray icon clicked! Modal is open: {}", state.modal_open);
                     Some(Message::TrayIconClicked)
                 }
-                TrayEvent::RightClick => {
+                TrayEvent::RightClick(_) => {
                     // Could open a context menu here
                     println!("Tray icon right-clicked!");
                     None
                 }
             }
         })
-        .with_syscommand_handler(|command| {
+        .with_syscommand_handler(|state, command| {
             match command {
                 SystemCommand::Close => {
                     println!("Close button clicked - you could prevent closing here!");
+                    println!("Modal is currently open: {}", state.modal_open);
                     // Return Allow to let it close normally
                     // Return Prevent to stop the close action
                     SystemCommandResponse::Allow
                 }
                 SystemCommand::Minimize => {
                     println!("Minimize button clicked - could minimize to tray instead");
-                    // You could hide the window and minimize to tray here
+                    // You could check state and hide the window to minimize to tray
                     SystemCommandResponse::Allow
                 }
                 SystemCommand::Maximize => {

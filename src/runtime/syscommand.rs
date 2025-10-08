@@ -1,6 +1,4 @@
-use windows::Win32::UI::WindowsAndMessaging::{
-    SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE,
-};
+use windows::Win32::UI::WindowsAndMessaging::{SC_CLOSE, SC_MAXIMIZE, SC_MINIMIZE, SC_RESTORE};
 
 /// System commands that can be intercepted from window caption buttons
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -34,9 +32,13 @@ impl SystemCommand {
 
 /// Response from a system command handler
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SystemCommandResponse {
+pub enum SystemCommandResponse<Message> {
     /// Allow the default behavior to proceed
     Allow,
+    /// Allow the default behavior to proceed, and send a message
+    AllowWith(Message),
     /// Prevent the default behavior (command is handled by application)
     Prevent,
+    /// Prevent the default behavior (command is handled by application), and send a message
+    PreventWith(Message),
 }

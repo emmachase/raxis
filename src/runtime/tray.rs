@@ -1,5 +1,5 @@
 use windows::Win32::{
-    Foundation::{HWND, LPARAM},
+    Foundation::{HWND, LPARAM, POINT},
     System::LibraryLoader::GetModuleHandleW,
     UI::{
         Shell::{
@@ -7,22 +7,25 @@ use windows::Win32::{
             Shell_NotifyIconW,
         },
         WindowsAndMessaging::{
-            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP,
+            GetCursorPos, HICON, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, WM_LBUTTONDBLCLK,
+            WM_LBUTTONUP, WM_RBUTTONUP,
         },
     },
 };
 use windows_core::PCWSTR;
+
+use crate::gfx::ScreenPoint;
 pub const WM_TRAYICON: u32 = windows::Win32::UI::WindowsAndMessaging::WM_USER + 100;
 
 /// Events that can occur on a tray icon
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum TrayEvent {
     /// Left mouse button clicked
-    LeftClick,
+    LeftClick(ScreenPoint),
     /// Left mouse button double-clicked
-    LeftDoubleClick,
+    LeftDoubleClick(ScreenPoint),
     /// Right mouse button clicked
-    RightClick,
+    RightClick(ScreenPoint),
 }
 
 /// Configuration for a system tray icon
@@ -126,10 +129,17 @@ impl TrayIcon {
     /// Parse a tray icon message into a TrayEvent
     pub fn parse_message(lparam: LPARAM) -> Option<TrayEvent> {
         let msg = lparam.0 as u32;
+        let mut point = POINT::default();
+        unsafe { GetCursorPos(&mut point).ok() };
+        let point = ScreenPoint {
+            x: point.x,
+            y: point.y,
+        };
+
         match msg {
-            WM_LBUTTONUP => Some(TrayEvent::LeftClick),
-            WM_LBUTTONDBLCLK => Some(TrayEvent::LeftDoubleClick),
-            WM_RBUTTONUP => Some(TrayEvent::RightClick),
+            WM_LBUTTONUP => Some(TrayEvent::LeftClick(point)),
+            WM_LBUTTONDBLCLK => Some(TrayEvent::LeftDoubleClick(point)),
+            WM_RBUTTONUP => Some(TrayEvent::RightClick(point)),
             _ => None,
         }
     }

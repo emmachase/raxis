@@ -22,7 +22,7 @@ use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::{Action, ClipboardAction, Task, WindowAction, WindowMode, into_stream};
-use crate::runtime::tray::{TrayIcon, TrayIconConfig, TrayEvent, WM_TRAYICON};
+use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig, WM_TRAYICON};
 use crate::runtime::vkey::VKey;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::renderer::{Renderer, ShadowCache};
@@ -94,9 +94,9 @@ use windows::Win32::UI::WindowsAndMessaging::{
     HTBOTTOMRIGHT, HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, MINMAXINFO,
     NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
     SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
-    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_CAPTION,
-    WS_EX_NOREDIRECTIONBITMAP,
+    SetForegroundWindow, SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND,
+    WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND,
+    WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -247,10 +247,11 @@ struct ApplicationHandle<State, Message> {
 
     // System tray icon
     tray_icon: Option<TrayIcon>,
-    tray_event_handler: Option<Box<dyn Fn(TrayEvent) -> Option<Message>>>,
+    tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Message>>>,
 
     // System command handler
-    syscommand_handler: Option<Box<dyn Fn(SystemCommand) -> SystemCommandResponse>>,
+    syscommand_handler:
+        Option<Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>>,
 }
 
 pub struct DeviceResources {
@@ -513,8 +514,10 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
         user_state: State,
         hwnd: HWND,
         tray_config: Option<TrayIconConfig>,
-        tray_event_handler: Option<Box<dyn Fn(TrayEvent) -> Option<Message>>>,
-        syscommand_handler: Option<Box<dyn Fn(SystemCommand) -> SystemCommandResponse>>,
+        tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Message>>>,
+        syscommand_handler: Option<
+            Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>,
+        >,
     ) -> Result<Self> {
         unsafe {
             let mut d3d_device = None;
@@ -686,6 +689,9 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                                     }
                                 },
                                 Action::Window(action) => match action {
+                                    WindowAction::Activate => unsafe {
+                                        SetForegroundWindow(hwnd.0).ok().ok();
+                                    },
                                     WindowAction::SetMode(mode) => unsafe {
                                         let show_cmd = match mode {
                                             WindowMode::Windowed => SW_SHOW,
@@ -1067,22 +1073,31 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
             WM_SYSCOMMAND => {
                 // Handle system commands (minimize, maximize, close, etc.)
                 let command = SystemCommand::from_wparam(wparam.0);
-                
+
                 if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                     let state = state.deref_mut();
                     if let Some(ref handler) = state.syscommand_handler {
-                        match handler(command) {
+                        match handler(&state.user_state, command) {
+                            SystemCommandResponse::Allow => {
+                                // Fall through to default handling
+                            }
+                            SystemCommandResponse::AllowWith(message) => {
+                                state.shell.message_sender.send(message);
+                                state.shell.pending_messages = true;
+                            }
                             SystemCommandResponse::Prevent => {
                                 // Application handled the command, prevent default behavior
                                 return LRESULT(0);
                             }
-                            SystemCommandResponse::Allow => {
-                                // Fall through to default handling
+                            SystemCommandResponse::PreventWith(message) => {
+                                state.shell.message_sender.send(message);
+                                state.shell.pending_messages = true;
+                                return LRESULT(0);
                             }
                         }
                     }
                 }
-                
+
                 // Default handling
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
@@ -1092,7 +1107,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
                     if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                         let state = state.deref_mut();
                         if let Some(ref handler) = state.tray_event_handler {
-                            if let Some(message) = handler(event) {
+                            if let Some(message) = handler(&state.user_state, event) {
                                 let _ = state.shell.message_sender.send(message);
                                 state.shell.pending_messages = true;
                             }
@@ -2162,9 +2177,10 @@ pub struct Application<
     replace_titlebar: bool,
 
     tray_config: Option<TrayIconConfig>,
-    tray_event_handler: Option<Box<dyn Fn(TrayEvent) -> Option<Message>>>,
+    tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Message>>>,
 
-    syscommand_handler: Option<Box<dyn Fn(SystemCommand) -> SystemCommandResponse>>,
+    syscommand_handler:
+        Option<Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>>,
 }
 
 impl<
@@ -2242,7 +2258,7 @@ impl<
 
     pub fn with_tray_event_handler(
         self,
-        handler: impl Fn(TrayEvent) -> Option<Message> + 'static,
+        handler: impl Fn(&State, TrayEvent) -> Option<Message> + 'static,
     ) -> Self {
         Self {
             tray_event_handler: Some(Box::new(handler)),
@@ -2252,7 +2268,7 @@ impl<
 
     pub fn with_syscommand_handler(
         self,
-        handler: impl Fn(SystemCommand) -> SystemCommandResponse + 'static,
+        handler: impl Fn(&State, SystemCommand) -> SystemCommandResponse<Message> + 'static,
     ) -> Self {
         Self {
             syscommand_handler: Some(Box::new(handler)),
