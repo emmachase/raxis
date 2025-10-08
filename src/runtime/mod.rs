@@ -4,7 +4,9 @@ pub mod focus;
 pub mod font_manager;
 pub mod scroll;
 pub mod smooth_scroll;
+pub mod syscommand;
 pub mod task;
+pub mod tray;
 pub mod vkey;
 
 use crate::gfx::PointDIP;
@@ -18,7 +20,9 @@ use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::focus::FocusManager;
 use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
+use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::{Action, ClipboardAction, Task, WindowAction, WindowMode, into_stream};
+use crate::runtime::tray::{TrayIcon, TrayIconConfig, TrayEvent, WM_TRAYICON};
 use crate::runtime::vkey::VKey;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::renderer::{Renderer, ShadowCache};
@@ -91,7 +95,7 @@ use windows::Win32::UI::WindowsAndMessaging::{
     NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
     SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
     SystemParametersInfoW, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
-    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_TIMER, WM_USER, WS_CAPTION,
+    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_CAPTION,
     WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
@@ -240,6 +244,13 @@ struct ApplicationHandle<State, Message> {
     // Async task executor
     task_sender: mpsc::Sender<Task<Message>>,
     message_receiver: mpsc::Receiver<Message>,
+
+    // System tray icon
+    tray_icon: Option<TrayIcon>,
+    tray_event_handler: Option<Box<dyn Fn(TrayEvent) -> Option<Message>>>,
+
+    // System command handler
+    syscommand_handler: Option<Box<dyn Fn(SystemCommand) -> SystemCommandResponse>>,
 }
 
 pub struct DeviceResources {
@@ -501,6 +512,9 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
         boot_fn: impl Fn(&State) -> Option<Task<Message>>,
         user_state: State,
         hwnd: HWND,
+        tray_config: Option<TrayIconConfig>,
+        tray_event_handler: Option<Box<dyn Fn(TrayEvent) -> Option<Message>>>,
+        syscommand_handler: Option<Box<dyn Fn(SystemCommand) -> SystemCommandResponse>>,
     ) -> Result<Self> {
         unsafe {
             let mut d3d_device = None;
@@ -720,6 +734,12 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 });
             }
 
+            // Create and add tray icon if configured
+            let mut tray_icon = tray_config.map(|config| TrayIcon::new(hwnd, config));
+            if let Some(ref mut tray) = tray_icon {
+                let _ = tray.add(); // Ignore errors during initialization
+            }
+
             Ok(Self {
                 device_resources: Rc::new(RefCell::new(device_resources)),
                 clock: 0.0,
@@ -739,6 +759,9 @@ impl<State: 'static, Message: 'static + Send> ApplicationHandle<State, Message> 
                 scroll_drag: None,
                 task_sender,
                 message_receiver,
+                tray_icon,
+                tray_event_handler,
+                syscommand_handler,
             })
         }
     }
@@ -1039,6 +1062,43 @@ fn wndproc_impl<State: 'static, Message: 'static + Send>(
         match msg {
             WM_ACTIVATE => {
                 let _ = InvalidateRect(Some(hwnd), None, true);
+                LRESULT(0)
+            }
+            WM_SYSCOMMAND => {
+                // Handle system commands (minimize, maximize, close, etc.)
+                let command = SystemCommand::from_wparam(wparam.0);
+                
+                if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                    let state = state.deref_mut();
+                    if let Some(ref handler) = state.syscommand_handler {
+                        match handler(command) {
+                            SystemCommandResponse::Prevent => {
+                                // Application handled the command, prevent default behavior
+                                return LRESULT(0);
+                            }
+                            SystemCommandResponse::Allow => {
+                                // Fall through to default handling
+                            }
+                        }
+                    }
+                }
+                
+                // Default handling
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+            WM_TRAYICON => {
+                // Handle tray icon events
+                if let Some(event) = TrayIcon::parse_message(lparam) {
+                    if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                        let state = state.deref_mut();
+                        if let Some(ref handler) = state.tray_event_handler {
+                            if let Some(message) = handler(event) {
+                                let _ = state.shell.message_sender.send(message);
+                                state.shell.pending_messages = true;
+                            }
+                        }
+                    }
+                }
                 LRESULT(0)
             }
             WM_ASYNC_MESSAGE => {
@@ -2100,6 +2160,11 @@ pub struct Application<
 
     backdrop: Backdrop,
     replace_titlebar: bool,
+
+    tray_config: Option<TrayIconConfig>,
+    tray_event_handler: Option<Box<dyn Fn(TrayEvent) -> Option<Message>>>,
+
+    syscommand_handler: Option<Box<dyn Fn(SystemCommand) -> SystemCommandResponse>>,
 }
 
 impl<
@@ -2127,6 +2192,11 @@ impl<
 
             backdrop: Backdrop::default(),
             replace_titlebar: false,
+
+            tray_config: None,
+            tray_event_handler: None,
+
+            syscommand_handler: None,
         }
     }
 
@@ -2163,6 +2233,33 @@ impl<
         }
     }
 
+    pub fn with_tray_icon(self, config: TrayIconConfig) -> Self {
+        Self {
+            tray_config: Some(config),
+            ..self
+        }
+    }
+
+    pub fn with_tray_event_handler(
+        self,
+        handler: impl Fn(TrayEvent) -> Option<Message> + 'static,
+    ) -> Self {
+        Self {
+            tray_event_handler: Some(Box::new(handler)),
+            ..self
+        }
+    }
+
+    pub fn with_syscommand_handler(
+        self,
+        handler: impl Fn(SystemCommand) -> SystemCommandResponse + 'static,
+    ) -> Self {
+        Self {
+            syscommand_handler: Some(Box::new(handler)),
+            ..self
+        }
+    }
+
     pub fn run(self) -> Result<()> {
         let Application {
             view_fn,
@@ -2177,6 +2274,11 @@ impl<
 
             backdrop,
             replace_titlebar,
+
+            tray_config,
+            tray_event_handler,
+
+            syscommand_handler,
         } = self;
 
         WNDPROC_IMPL
@@ -2288,8 +2390,17 @@ impl<
             }
 
             // Now create the app handle with the hwnd
-            let mut app =
-                ApplicationHandle::new(view_fn, update_fn, event_mapper_fn, boot_fn, state, hwnd)?;
+            let mut app = ApplicationHandle::new(
+                view_fn,
+                update_fn,
+                event_mapper_fn,
+                boot_fn,
+                state,
+                hwnd,
+                tray_config,
+                tray_event_handler,
+                syscommand_handler,
+            )?;
 
             let dips = dips_scale(hwnd);
 

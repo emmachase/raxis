@@ -288,6 +288,8 @@ pub type UpdateFn<State, Message> =
 pub type EventMapperFn<Message> = fn(Event, Option<u64>) -> Option<Message>;
 
 pub use runtime::Application;
+pub use runtime::syscommand::{SystemCommand, SystemCommandResponse};
+pub use runtime::tray::{TrayEvent, TrayIconConfig};
 
 pub enum DeferredControl {
     StartDrag { data: DragData, src_id: u64 },

@@ -10,6 +10,8 @@ use std::{
 use lazy_static::lazy_static;
 use raxis::{
     HookManager,
+    SystemCommand, SystemCommandResponse,
+    TrayEvent, TrayIconConfig,
     layout::{
         helpers::{center, spacer},
         model::{
@@ -55,6 +57,7 @@ struct State {
 
 enum Message {
     ToggleModal,
+    TrayIconClicked,
 }
 
 fn demo_box(label: &'static str, border: Border, radius: Option<BorderRadius>) -> Element<Message> {
@@ -1390,6 +1393,11 @@ fn update(state: &mut State, message: Message) -> Option<Task<Message>> {
             state.modal_open = !state.modal_open;
             None
         }
+        Message::TrayIconClicked => {
+            // Handle tray icon click - for example, show/restore the window
+            println!("Tray icon clicked!");
+            None
+        }
     }
 }
 
@@ -1397,9 +1405,50 @@ fn main() {
     #[cfg(feature = "dhat-heap")]
     let _profiler = dhat::Profiler::new_heap();
 
+    // Configure tray icon
+    let tray_config = TrayIconConfig::new()
+        .with_tooltip("Raxis Demo - Right-click for options");
+    
     raxis::Application::new(State::default(), view, update, |_state| None)
         .with_title("Raxis Demo")
         .with_backdrop(Backdrop::Mica)
+        .with_tray_icon(tray_config)
+        .with_tray_event_handler(|event| {
+            match event {
+                TrayEvent::LeftClick | TrayEvent::LeftDoubleClick => {
+                    Some(Message::TrayIconClicked)
+                }
+                TrayEvent::RightClick => {
+                    // Could open a context menu here
+                    println!("Tray icon right-clicked!");
+                    None
+                }
+            }
+        })
+        .with_syscommand_handler(|command| {
+            match command {
+                SystemCommand::Close => {
+                    println!("Close button clicked - you could prevent closing here!");
+                    // Return Allow to let it close normally
+                    // Return Prevent to stop the close action
+                    SystemCommandResponse::Allow
+                }
+                SystemCommand::Minimize => {
+                    println!("Minimize button clicked - could minimize to tray instead");
+                    // You could hide the window and minimize to tray here
+                    SystemCommandResponse::Allow
+                }
+                SystemCommand::Maximize => {
+                    println!("Maximize button clicked");
+                    SystemCommandResponse::Allow
+                }
+                SystemCommand::Restore => {
+                    println!("Restore button clicked");
+                    SystemCommandResponse::Allow
+                }
+                _ => SystemCommandResponse::Allow,
+            }
+        })
         .run()
         .expect("Failed to run event loop");
 }
