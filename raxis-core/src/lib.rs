@@ -87,7 +87,6 @@ impl SvgPathList {
             sink.SetFillMode(D2D1_FILL_MODE_WINDING);
 
             let mut points = Vec::new();
-            println!("Paths: {:#?}", self.paths);
 
             for commands in self.paths {
                 match commands {
@@ -256,8 +255,6 @@ impl SvgPathList {
                         let mut has_begin_figure = false;
 
                         for command in *commands {
-                            println!("Command: {:?}", command);
-
                             match command {
                                 PathCommand::MoveTo { x, y } => {
                                     if has_begin_figure {

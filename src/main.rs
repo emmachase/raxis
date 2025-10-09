@@ -668,11 +668,20 @@ fn call_controls_demo(hook: &mut HookManager<Message>) -> Element<Message> {
                                 children: vec![center(
                                     if video_is_on {
                                         SvgPath::new(
-                                            svg![svg_path!("m23 7-7 5 7 5V7z M16 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z")],
+                                            svg![
+                                                svg_path!("m16 13 5.223 3.482a.5.5 0 0 0 .777-.416V7.87a.5.5 0 0 0-.752-.432L16 10.5"),
+                                                SvgPathCommands::Rect {
+                                                    x: 2.0,
+                                                    y: 6.0,
+                                                    width: 14.0,
+                                                    height: 12.0,
+                                                    rx: 2.0,
+                                                    ry: 2.0,
+                                                },
+                                            ],
                                             ViewBox::new(24.0, 24.0),
                                         )
                                         .with_size(24.0, 24.0)
-                                        .with_fill(Color::WHITE)
                                         .with_stroke(Color::WHITE)
                                         .with_stroke_width(2.0)
                                         .with_stroke_cap(StrokeLineCap::Round)
@@ -680,7 +689,11 @@ fn call_controls_demo(hook: &mut HookManager<Message>) -> Element<Message> {
                                         .as_element(w_id!())
                                     } else {
                                         SvgPath::new(
-                                            svg![svg_path!("M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10 M2 2l20 20")],
+                                            svg![
+                                                svg_path!("M10.66 6H14a2 2 0 0 1 2 2v2.5l5.248-3.062A.5.5 0 0 1 22 7.87v8.196"),
+                                                svg_path!("M16 16a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h2"),
+                                                svg_path!("m2 2 20 20"),
+                                            ],
                                             ViewBox::new(24.0, 24.0),
                                         )
                                         .with_size(24.0, 24.0)
@@ -727,7 +740,7 @@ fn call_controls_demo(hook: &mut HookManager<Message>) -> Element<Message> {
                                 height: Sizing::fixed(56.0),
                                 children: vec![center(
                                     SvgPath::new(
-                                        svg![svg_path!("M2 4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Z M6 22h12")],
+                                        svg![svg_path!("M13 3H4a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-3"), svg_path!("M8 21h8"), svg_path!("M12 17v4"), svg_path!("m17 8 5-5"), svg_path!("M17 3h5v5")],
                                         ViewBox::new(24.0, 24.0),
                                     )
                                     .with_size(24.0, 24.0)

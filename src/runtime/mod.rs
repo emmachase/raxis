@@ -13,7 +13,9 @@ pub mod vkey;
 use crate::gfx::PointDIP;
 use crate::gfx::command_executor::CommandExecutor;
 use crate::gfx::draw_commands::DrawCommandList;
-use crate::layout::model::{Axis, Direction, Element, Sizing, create_tree};
+use crate::layout::model::{
+    Axis, Direction, Element, ScrollConfig, Sizing, StrokeLineCap, create_tree,
+};
 use crate::layout::{
     self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom,
 };
@@ -36,6 +38,9 @@ use crate::{
 };
 use crate::{current_dpi, dips_scale, gfx::RectDIP};
 use log::{error, warn};
+use raxis_core::{self as raxis, SvgPathList};
+use raxis_core::{SvgPathCommands, svg};
+use raxis_proc_macro::svg_path;
 use slotmap::DefaultKey;
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
@@ -52,7 +57,7 @@ use windows::Win32::Graphics::Direct2D::Common::D2D1_ALPHA_MODE_PREMULTIPLIED;
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
     D2D1_DEVICE_CONTEXT_OPTIONS_NONE, ID2D1Bitmap1, ID2D1Device6, ID2D1DeviceContext6,
-    ID2D1Factory7,
+    ID2D1Factory7, ID2D1PathGeometry,
 };
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
@@ -141,8 +146,8 @@ use windows::{
                 SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow,
                 TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE,
                 WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE,
-                WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_PAINT,
+                WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -167,6 +172,17 @@ struct ScrollDragState {
     axis: Axis,
     // Offset within the thumb (along the drag axis) where the pointer grabbed, in DIPs
     grab_offset: f32,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct MiddleMouseScrollState {
+    element_id: u64,
+    // Origin position where middle mouse was clicked, in DIPs
+    origin_x: f32,
+    origin_y: f32,
+    // Current mouse position, in DIPs
+    current_x: f32,
+    current_y: f32,
 }
 
 type WinUserData<State, Message> = Mutex<ApplicationHandle<State, Message>>;
@@ -220,6 +236,7 @@ struct ApplicationHandle<State, Message> {
 
     clock: f64,
     timing_info: DWM_TIMING_INFO,
+    last_frame_time: Instant,
     view_fn: ViewFn<State, Message>,
     update_fn: UpdateFn<State, Message>,
     _event_mapper_fn: EventMapperFn<Message>,
@@ -244,6 +261,14 @@ struct ApplicationHandle<State, Message> {
 
     // Active scrollbar dragging state (if any)
     scroll_drag: Option<ScrollDragState>,
+
+    // Middle mouse scroll state (if any)
+    middle_mouse_scroll: Option<MiddleMouseScrollState>,
+
+    // Cached geometries for middle mouse scroll indicators
+    scroll_icon_all: Option<ID2D1PathGeometry>,
+    scroll_icon_horizontal: Option<ID2D1PathGeometry>,
+    scroll_icon_vertical: Option<ID2D1PathGeometry>,
 
     // Async task executor
     task_sender: mpsc::Sender<Task<Message>>,
@@ -764,10 +789,39 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 let _ = tray.add(); // Ignore errors during initialization
             }
 
+            // Create cached geometries for middle mouse scroll icons
+            let scroll_icon_all = svg![
+                svg_path!("M12 2v20"),
+                svg_path!("m15 19-3 3-3-3"),
+                svg_path!("m19 9 3 3-3 3"),
+                svg_path!("M2 12h20"),
+                svg_path!("m5 9-3 3 3 3"),
+                svg_path!("m9 5 3-3 3 3"),
+            ]
+            .create_geometry(&device_resources.d2d_factory)
+            .ok();
+
+            let scroll_icon_horizontal = svg![
+                svg_path!("m18 8 4 4-4 4"),
+                svg_path!("M2 12h20"),
+                svg_path!("m6 8-4 4 4 4"),
+            ]
+            .create_geometry(&device_resources.d2d_factory)
+            .ok();
+
+            let scroll_icon_vertical = svg![
+                svg_path!("M12 2v20"),
+                svg_path!("m8 18 4 4 4-4"),
+                svg_path!("m8 6 4-4 4 4"),
+            ]
+            .create_geometry(&device_resources.d2d_factory)
+            .ok();
+
             Ok(Self {
                 device_resources: Rc::new(RefCell::new(device_resources)),
                 clock: 0.0,
                 timing_info: DWM_TIMING_INFO::default(),
+                last_frame_time: Instant::now(),
                 ui_tree,
                 view_fn,
                 update_fn,
@@ -781,6 +835,10 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 last_click_pos: POINT { x: 0, y: 0 },
                 click_count: 0,
                 scroll_drag: None,
+                middle_mouse_scroll: None,
+                scroll_icon_all,
+                scroll_icon_horizontal,
+                scroll_icon_vertical,
                 task_sender,
                 message_receiver,
                 tray_icon,
@@ -791,10 +849,14 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
     }
 
     fn on_paint(&mut self, hwnd: HWND) -> Result<DrawCommandList> {
-        let dt = self.timing_info.rateCompose.uiDenominator as f64
-            / self.timing_info.rateCompose.uiNumerator as f64;
+        let now = Instant::now();
+        let dt = now.duration_since(self.last_frame_time).as_secs_f64();
+        self.last_frame_time = now;
 
         let window_active = unsafe { GetForegroundWindow() == hwnd };
+
+        // Update middle mouse scrolling first
+        self.update_middle_mouse_scroll(dt);
 
         // Update smooth scroll animations and apply positions to scroll state manager
         self.update_smooth_scroll_animations();
@@ -843,9 +905,82 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         }
 
         let root = self.ui_tree.root;
-        let commands = layout::paint(&mut self.shell, &mut self.ui_tree, root);
+        let mut commands = layout::paint(&mut self.shell, &mut self.ui_tree, root);
+
+        // Draw middle mouse scroll indicator if active
+        if let Some(middle_scroll) = self.middle_mouse_scroll {
+            use crate::gfx::{RectDIP, command_recorder::CommandRecorder};
+            use crate::layout::model::Color;
+
+            let mut recorder = CommandRecorder::new();
+
+            // Create a 4-directional arrow icon (cross with arrows pointing in all directions)
+            const ICON_SIZE: f32 = 32.0;
+            let icon_rect = RectDIP {
+                x: middle_scroll.origin_x - ICON_SIZE / 2.0,
+                y: middle_scroll.origin_y - ICON_SIZE / 2.0,
+                width: ICON_SIZE,
+                height: ICON_SIZE,
+            };
+
+            // Pick icon based on scroll capabilities on x and y axis
+            let scroll_config = if let Some(element_key) =
+                Shell::find_key_by_id(&mut self.ui_tree, middle_scroll.element_id)
+                && let ref element = self.ui_tree.slots[element_key]
+                && let Some(scroll_config) = element.scroll.as_ref()
+            {
+                scroll_config
+            } else {
+                &ScrollConfig::default()
+            };
+
+            let geometry = match (scroll_config.horizontal, scroll_config.vertical) {
+                (Some(true), Some(true)) => self.scroll_icon_all.as_ref(),
+                (Some(true), _) => self.scroll_icon_horizontal.as_ref(),
+                (_, Some(true)) => self.scroll_icon_vertical.as_ref(),
+                _ => None,
+            };
+
+            // Create geometry and draw
+            // ViewBox is 24x24, icon is 32x32, so scale accordingly
+            const VIEWBOX_SIZE: f32 = 24.0;
+            let scale = ICON_SIZE / VIEWBOX_SIZE;
+
+            if let Some(geometry) = geometry {
+                recorder.stroke_path_geometry(
+                    &icon_rect,
+                    &geometry,
+                    Color::BLACK,
+                    2.5,
+                    scale,
+                    scale,
+                    Some(StrokeLineCap::Round),
+                    None,
+                );
+                recorder.stroke_path_geometry(
+                    &icon_rect,
+                    &geometry,
+                    Color::WHITE,
+                    1.5,
+                    scale,
+                    scale,
+                    Some(StrokeLineCap::Round),
+                    None,
+                );
+            }
+
+            // Append the icon commands to the main command list
+            let icon_commands = recorder.take_commands();
+            commands.commands.extend(icon_commands.commands);
+        }
 
         self.clock += dt;
+
+        // Request continuous redraws if middle mouse scrolling is active
+        if self.middle_mouse_scroll.is_some() {
+            self.shell
+                .request_redraw(hwnd, crate::RedrawRequest::Immediate);
+        }
 
         Ok(commands)
     }
@@ -949,12 +1084,44 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 }
             }
         }
-
         None
     }
 
+    fn update_middle_mouse_scroll(&mut self, dt: f64) {
+        if let Some(middle_scroll) = self.middle_mouse_scroll {
+            // Calculate delta from origin
+            let delta_x = middle_scroll.current_x - middle_scroll.origin_x;
+            let delta_y = middle_scroll.current_y - middle_scroll.origin_y;
+
+            // Calculate velocity based on distance from origin
+            // Use quadratic scaling for better control: slow near origin, faster further away
+            const BASE_SPEED: f32 = 30.0; // pixels per second at 100px distance
+            let velocity_x = delta_x * delta_x.abs() * BASE_SPEED * dt as f32 / 100.0;
+            let velocity_y = delta_y * delta_y.abs() * BASE_SPEED * dt as f32 / 100.0;
+
+            // Get current scroll position and apply velocity
+            let current_pos = self
+                .shell
+                .scroll_state_manager
+                .get_scroll_position(middle_scroll.element_id);
+
+            let new_pos = ScrollPosition {
+                x: current_pos.x + velocity_x,
+                y: current_pos.y + velocity_y,
+            };
+
+            // Update scroll position directly
+            self.shell
+                .scroll_state_manager
+                .set_scroll_position(middle_scroll.element_id, new_pos);
+
+            // Stop any smooth scroll animations for this element
+            self.smooth_scroll_manager
+                .stop_animation(middle_scroll.element_id);
+        }
+    }
+
     fn update_smooth_scroll_animations(&mut self) {
-        // Update all smooth scroll animations and apply current positions
         self.smooth_scroll_manager.update_animations();
 
         // Apply current animated positions to the scroll state manager
@@ -1394,7 +1561,22 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                             }
                         }
                         return LRESULT(0);
-                    } else if let Some(drag) = state.hit_test_scrollbar_thumb(x, y, false) {
+                    }
+
+                    // Handle middle mouse scrolling if active - update current mouse position
+                    if let Some(ref mut middle_scroll) = state.middle_mouse_scroll {
+                        // Update current mouse position
+                        middle_scroll.current_x = x;
+                        middle_scroll.current_y = y;
+
+                        // Request continuous redraws while scrolling
+                        state
+                            .shell
+                            .request_redraw(hwnd, crate::RedrawRequest::Immediate);
+                        return LRESULT(0);
+                    }
+
+                    if let Some(drag) = state.hit_test_scrollbar_thumb(x, y, false) {
                         state
                             .shell
                             .scroll_state_manager
@@ -1564,6 +1746,62 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                 // println!("WM_LBUTTONUP invalidate rect");
 
                 // println!("WM_LBUTTONUP finished");
+                LRESULT(0)
+            }
+
+            WM_MBUTTONDOWN => {
+                // println!("WM_MBUTTONDOWN");
+                let _ = SetFocus(Some(hwnd));
+                let _ = SetCapture(hwnd);
+
+                if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                    let state = state.deref_mut();
+
+                    // Extract mouse position in client pixels
+                    let xi = (lparam.0 & 0xFFFF) as i16 as i32;
+                    let yi = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+                    let to_dip = dips_scale(hwnd);
+                    let x = (xi as f32) * to_dip;
+                    let y = (yi as f32) * to_dip;
+
+                    // Find the scrollable element at this position
+                    if let Some(innermost_key) =
+                        Shell::find_innermost_element_at(&mut state.ui_tree, x, y)
+                    {
+                        let ancestry = Shell::collect_ancestry(&mut state.ui_tree, innermost_key);
+
+                        // Walk up the ancestry from innermost to outermost
+                        for &key in &ancestry {
+                            let element = &state.ui_tree.slots[key];
+
+                            if element.scroll.is_some()
+                                && let Some(element_id) = element.id
+                            {
+                                // Found a scrollable element, start middle mouse scroll
+                                state.middle_mouse_scroll = Some(MiddleMouseScrollState {
+                                    element_id,
+                                    origin_x: x,
+                                    origin_y: y,
+                                    current_x: x,
+                                    current_y: y,
+                                });
+                                break;
+                            }
+                        }
+                    }
+                }
+                LRESULT(0)
+            }
+
+            WM_MBUTTONUP => {
+                // println!("WM_MBUTTONUP");
+                if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                    let state = state.deref_mut();
+                    state.middle_mouse_scroll = None;
+                }
+
+                // Release mouse capture
+                let _ = ReleaseCapture();
                 LRESULT(0)
             }
 
