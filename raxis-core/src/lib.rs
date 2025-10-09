@@ -42,7 +42,19 @@ pub enum PathCommand {
 #[derive(Debug)]
 pub enum SvgPathCommands {
     Path(&'static [PathCommand]),
-    Circle { cx: f32, cy: f32, r: f32 },
+    Circle {
+        cx: f32,
+        cy: f32,
+        r: f32,
+    },
+    Rect {
+        x: f32,
+        y: f32,
+        width: f32,
+        height: f32,
+        rx: f32,
+        ry: f32,
+    },
 }
 
 #[derive(Debug)]
@@ -107,6 +119,136 @@ impl SvgPathList {
                             sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
                             arcSize: D2D1_ARC_SIZE_SMALL,
                         });
+
+                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                    }
+                    SvgPathCommands::Rect {
+                        x,
+                        y,
+                        width,
+                        height,
+                        rx,
+                        ry,
+                    } => {
+                        // Draw rectangle with optional rounded corners
+                        let left = *x;
+                        let top = *y;
+                        let right = x + width;
+                        let bottom = y + height;
+
+                        // Clamp radii to prevent overlapping
+                        let max_radius_x = width / 2.0;
+                        let max_radius_y = height / 2.0;
+                        let rx = rx.min(max_radius_x);
+                        let ry = ry.min(max_radius_y);
+
+                        // Start from top-left corner (after the radius)
+                        sink.BeginFigure(
+                            Vector2 {
+                                X: left + rx,
+                                Y: top,
+                            },
+                            D2D1_FIGURE_BEGIN_FILLED,
+                        );
+
+                        // Top edge to top-right corner
+                        if rx > 0.0 && ry > 0.0 {
+                            sink.AddLine(Vector2 {
+                                X: right - rx,
+                                Y: top,
+                            });
+                            // Top-right arc
+                            sink.AddArc(&D2D1_ARC_SEGMENT {
+                                point: Vector2 {
+                                    X: right,
+                                    Y: top + ry,
+                                },
+                                size: D2D_SIZE_F {
+                                    width: rx,
+                                    height: ry,
+                                },
+                                rotationAngle: 0.0,
+                                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                arcSize: D2D1_ARC_SIZE_SMALL,
+                            });
+                        } else {
+                            sink.AddLine(Vector2 { X: right, Y: top });
+                        }
+
+                        // Right edge to bottom-right corner
+                        if rx > 0.0 && ry > 0.0 {
+                            sink.AddLine(Vector2 {
+                                X: right,
+                                Y: bottom - ry,
+                            });
+                            // Bottom-right arc
+                            sink.AddArc(&D2D1_ARC_SEGMENT {
+                                point: Vector2 {
+                                    X: right - rx,
+                                    Y: bottom,
+                                },
+                                size: D2D_SIZE_F {
+                                    width: rx,
+                                    height: ry,
+                                },
+                                rotationAngle: 0.0,
+                                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                arcSize: D2D1_ARC_SIZE_SMALL,
+                            });
+                        } else {
+                            sink.AddLine(Vector2 {
+                                X: right,
+                                Y: bottom,
+                            });
+                        }
+
+                        // Bottom edge to bottom-left corner
+                        if rx > 0.0 && ry > 0.0 {
+                            sink.AddLine(Vector2 {
+                                X: left + rx,
+                                Y: bottom,
+                            });
+                            // Bottom-left arc
+                            sink.AddArc(&D2D1_ARC_SEGMENT {
+                                point: Vector2 {
+                                    X: left,
+                                    Y: bottom - ry,
+                                },
+                                size: D2D_SIZE_F {
+                                    width: rx,
+                                    height: ry,
+                                },
+                                rotationAngle: 0.0,
+                                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                arcSize: D2D1_ARC_SIZE_SMALL,
+                            });
+                        } else {
+                            sink.AddLine(Vector2 { X: left, Y: bottom });
+                        }
+
+                        // Left edge to top-left corner
+                        if rx > 0.0 && ry > 0.0 {
+                            sink.AddLine(Vector2 {
+                                X: left,
+                                Y: top + ry,
+                            });
+                            // Top-left arc
+                            sink.AddArc(&D2D1_ARC_SEGMENT {
+                                point: Vector2 {
+                                    X: left + rx,
+                                    Y: top,
+                                },
+                                size: D2D_SIZE_F {
+                                    width: rx,
+                                    height: ry,
+                                },
+                                rotationAngle: 0.0,
+                                sweepDirection: D2D1_SWEEP_DIRECTION_CLOCKWISE,
+                                arcSize: D2D1_ARC_SIZE_SMALL,
+                            });
+                        } else {
+                            sink.AddLine(Vector2 { X: left, Y: top });
+                        }
 
                         sink.EndFigure(D2D1_FIGURE_END_CLOSED);
                     }

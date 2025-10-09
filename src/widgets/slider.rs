@@ -500,6 +500,7 @@ impl<Message> Widget<Message> for Slider<Message> {
                     offset_x: 0.0,
                     offset_y: 1.0,
                     color: Color::from(0x0000001A), // Black with 10% opacity
+                    inset: false,
                 },
                 Some(&crate::layout::model::BorderRadius::all(thumb_radius)),
             );

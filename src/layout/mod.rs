@@ -178,20 +178,22 @@ pub fn generate_paint_commands<Message>(
                 }
 
                 if matches!(ownership, PaintOwnership::Contents) {
-                    // Draw drop shadow first (behind the element)
-                    if let Some(shadow) = &style.drop_shadow {
-                        let element_rect = RectDIP {
-                            x,
-                            y,
-                            width,
-                            height,
-                        };
+                    // Draw outset drop shadows first (behind the element)
+                    for shadow in &style.drop_shadows {
+                        if !shadow.inset {
+                            let element_rect = RectDIP {
+                                x,
+                                y,
+                                width,
+                                height,
+                            };
 
-                        recorder.draw_blurred_shadow(
-                            &element_rect,
-                            shadow,
-                            style.border_radius.as_ref(),
-                        );
+                            recorder.draw_blurred_shadow(
+                                &element_rect,
+                                shadow,
+                                style.border_radius.as_ref(),
+                            );
+                        }
                     }
 
                     if let Some(color) = style.background_color {
@@ -208,6 +210,24 @@ pub fn generate_paint_commands<Message>(
                         } else {
                             // Use regular rectangle rendering
                             recorder.fill_rectangle(&element_rect, color);
+                        }
+                    }
+
+                    // Draw inset drop shadows after background (on top of the element)
+                    for shadow in &style.drop_shadows {
+                        if shadow.inset {
+                            let element_rect = RectDIP {
+                                x,
+                                y,
+                                width,
+                                height,
+                            };
+
+                            recorder.draw_blurred_shadow(
+                                &element_rect,
+                                shadow,
+                                style.border_radius.as_ref(),
+                            );
                         }
                     }
 

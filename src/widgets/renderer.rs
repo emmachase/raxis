@@ -1,24 +1,27 @@
 use std::collections::HashMap;
-use std::{cell::RefCell, collections::hash_map};
+use std::{cell::RefCell, collections::hash_map, mem::ManuallyDrop};
 use windows::Win32::Graphics::Direct2D::{
     CLSID_D2D1Shadow,
     Common::{
         D2D_RECT_F, D2D_SIZE_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
         D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED,
     },
-    D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_ROUND,
-    D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE, D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
-    D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH, D2D1_DASH_STYLE_DASH_DOT,
-    D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT, D2D1_DASH_STYLE_SOLID,
-    D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER,
-    D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT,
-    D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
-    D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
-    ID2D1DeviceContext6, ID2D1Effect, ID2D1Factory, ID2D1GeometrySink, ID2D1Image,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_FLAT,
+    D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE,
+    D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH,
+    D2D1_DASH_STYLE_DASH_DOT, D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT,
+    D2D1_DASH_STYLE_SOLID, D2D1_INTERPOLATION_MODE_LINEAR,
+    D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND, D2D1_LAYER_PARAMETERS1, D2D1_LINE_JOIN_BEVEL,
+    D2D1_LINE_JOIN_MITER, D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND,
+    D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT,
+    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES,
+    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, ID2D1DeviceContext6,
+    ID2D1Effect, ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1Image,
     ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
+use windows::Win32::Graphics::Direct2D::{D2D1_LAYER_OPTIONS_NONE, D2D1_LAYER_PARAMETERS};
 use windows_core::Interface;
-use windows_numerics::{Vector2, Vector4};
+use windows_numerics::{Matrix3x2, Vector2, Vector4};
 
 use crate::{
     gfx::RectDIP,
@@ -38,6 +41,7 @@ struct ShadowCacheKey {
     color: [u8; 4],                  // RGBA as bytes for exact comparison
     border_radius: Option<[u32; 4]>, // [tl, tr, br, bl] rounded
     text_hash: Option<u64>,          // Hash of text content for text shadows
+    inset: bool,                     // Whether this is an inset shadow
 }
 
 impl ShadowCacheKey {
@@ -71,6 +75,7 @@ impl ShadowCacheKey {
             color: color_bytes,
             border_radius: border_radius_key,
             text_hash: None, // Box shadows don't have text content
+            inset: shadow.inset,
         }
     }
 
@@ -95,6 +100,7 @@ impl ShadowCacheKey {
             color: color_bytes,
             border_radius: None,
             text_hash: Some(text_hash), // Include text content hash
+            inset: false,               // Text shadows are never inset
         }
     }
 }
@@ -398,6 +404,19 @@ impl Renderer<'_> {
         shadow: &DropShadow,
         border_radius: Option<&BorderRadius>,
     ) {
+        if shadow.inset {
+            self.draw_inset_shadow(rect, shadow, border_radius);
+        } else {
+            self.draw_outset_shadow(rect, shadow, border_radius);
+        }
+    }
+
+    fn draw_outset_shadow(
+        &self,
+        rect: &RectDIP,
+        shadow: &DropShadow,
+        border_radius: Option<&BorderRadius>,
+    ) {
         unsafe {
             if shadow.blur_radius <= 0.0 {
                 // Simple shadow without blur
@@ -447,6 +466,141 @@ impl Renderer<'_> {
                     D2D1_INTERPOLATION_MODE_LINEAR,
                     D2D1_COMPOSITE_MODE_SOURCE_OVER,
                 );
+            }
+        }
+    }
+
+    fn draw_inset_shadow(
+        &self,
+        rect: &RectDIP,
+        shadow: &DropShadow,
+        border_radius: Option<&BorderRadius>,
+    ) {
+        unsafe {
+            // For inset shadows, we need to clip to the element bounds and draw the shadow inside
+            // We create a shadow from a large outer rectangle with a hole cut out for the element
+
+            // Push a clip to the element bounds
+            if let Some(border_radius) = border_radius {
+                // Use layer with geometry for rounded clip
+                if border_radius.top_left == border_radius.top_right
+                    && border_radius.top_right == border_radius.bottom_right
+                    && border_radius.bottom_right == border_radius.bottom_left
+                {
+                    // Simple rounded rectangle
+                    let rounded_rect = windows::Win32::Graphics::Direct2D::D2D1_ROUNDED_RECT {
+                        rect: D2D_RECT_F {
+                            left: rect.x,
+                            top: rect.y,
+                            right: rect.x + rect.width,
+                            bottom: rect.y + rect.height,
+                        },
+                        radiusX: border_radius.top_left,
+                        radiusY: border_radius.top_left,
+                    };
+                    if let Ok(geometry) = self.factory.CreateRoundedRectangleGeometry(&rounded_rect)
+                    {
+                        let layer_params = D2D1_LAYER_PARAMETERS1 {
+                            contentBounds: D2D_RECT_F {
+                                left: rect.x,
+                                top: rect.y,
+                                right: rect.x + rect.width,
+                                bottom: rect.y + rect.height,
+                            },
+                            geometricMask: ManuallyDrop::new(Some(geometry.cast::<ID2D1Geometry>().unwrap())),
+                            maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                            maskTransform: Matrix3x2::identity(),
+                            opacity: 1.0,
+                            opacityBrush: ManuallyDrop::new(None),
+                            layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
+                        };
+                        self.render_target.PushLayer(&layer_params, None);
+                    }
+                } else {
+                    // Complex rounded rectangle - use path geometry
+                    if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
+                        if let Ok(sink) = path_geometry.Open() {
+                            self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                            let _ = sink.Close();
+
+                            let layer_params = D2D1_LAYER_PARAMETERS1 {
+                                contentBounds: D2D_RECT_F {
+                                    left: rect.x,
+                                    top: rect.y,
+                                    right: rect.x + rect.width,
+                                    bottom: rect.y + rect.height,
+                                },
+                                geometricMask: ManuallyDrop::new(Some(path_geometry.cast::<ID2D1Geometry>().unwrap())),
+                                maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                maskTransform: Matrix3x2::identity(),
+                                opacity: 1.0,
+                                opacityBrush: ManuallyDrop::new(None),
+                                layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
+                            };
+                            self.render_target.PushLayer(&layer_params, None);
+                        }
+                    }
+                }
+            } else {
+                // Use simple axis-aligned clip
+                let clip_rect = D2D_RECT_F {
+                    left: rect.x,
+                    top: rect.y,
+                    right: rect.x + rect.width,
+                    bottom: rect.y + rect.height,
+                };
+                self.render_target
+                    .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+            }
+
+            // Create expanded dimensions for the shadow bitmap
+            // For inset shadows, we need extra space for the blur AND the offset
+            let padding = shadow.blur_radius * 3.0 + shadow.spread_radius;
+            let offset_padding_x = shadow.offset_x.abs();
+            let offset_padding_y = shadow.offset_y.abs();
+            let expanded_width = rect.width + padding * 2.0 + offset_padding_x;
+            let expanded_height = rect.height + padding * 2.0 + offset_padding_y;
+
+            // Create cache key for this inset shadow
+            let cache_key =
+                ShadowCacheKey::new(expanded_width, expanded_height, shadow, border_radius);
+
+            // Try to get cached shadow effect or create new one
+            let mut shadow_cache = self.shadow_cache.borrow_mut();
+            let cached_effect = shadow_cache.get_or_create_shadow(&cache_key, || {
+                // Create the inset shadow effect
+                self.create_inset_shadow_effect(
+                    rect,
+                    shadow,
+                    border_radius,
+                    expanded_width,
+                    expanded_height,
+                    padding,
+                    shadow.offset_x,
+                    shadow.offset_y,
+                )
+            });
+
+            // Draw the cached shadow effect
+            if let Some(effect) = cached_effect {
+                // Position the bitmap: offset from rect by padding, adjusting for negative offsets
+                let draw_x = rect.x - padding - shadow.offset_x.min(0.0);
+                let draw_y = rect.y - padding - shadow.offset_y.min(0.0);
+                
+                self.render_target.DrawImage(
+                    &effect.cast::<ID2D1Image>().unwrap(),
+                    Some(&Vector2::new(draw_x, draw_y)),
+                    None,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    D2D1_COMPOSITE_MODE_SOURCE_OVER,
+                );
+            }
+
+            // Pop the clip
+            if border_radius.is_some() {
+                self.render_target.PopLayer();
+            } else {
+                self.render_target.PopAxisAlignedClip();
             }
         }
     }
@@ -558,6 +712,148 @@ impl Renderer<'_> {
                                 D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
                                 D2D1_PROPERTY_TYPE_FLOAT,
                                 // Docs say this should be 3.0 but it seems more accurate at 2.0
+                                &(shadow.blur_radius / 2.0).to_le_bytes(),
+                            )
+                            .unwrap();
+
+                        shadow_effect
+                            .SetValue(
+                                D2D1_SHADOW_PROP_COLOR.0 as u32,
+                                D2D1_PROPERTY_TYPE_VECTOR4,
+                                &(std::mem::transmute::<
+                                    Vector4,
+                                    [u8; std::mem::size_of::<Vector4>()],
+                                >(Vector4 {
+                                    X: shadow.color.r,
+                                    Y: shadow.color.g,
+                                    Z: shadow.color.b,
+                                    W: shadow.color.a,
+                                })),
+                            )
+                            .unwrap();
+
+                        return Some(shadow_effect);
+                    }
+                }
+            }
+            None
+        }
+    }
+
+    /// Create an inset shadow effect for caching
+    fn create_inset_shadow_effect(
+        &self,
+        rect: &RectDIP,
+        shadow: &DropShadow,
+        border_radius: Option<&BorderRadius>,
+        expanded_width: f32,
+        expanded_height: f32,
+        padding: f32,
+        offset_x: f32,
+        offset_y: f32,
+    ) -> Option<ID2D1Effect> {
+        unsafe {
+            // Create a bitmap render target for the inset shadow
+            let expanded_size = D2D_SIZE_F {
+                width: expanded_width,
+                height: expanded_height,
+            };
+
+            if let Ok(bitmap_rt) = self.render_target.CreateCompatibleRenderTarget(
+                Some(&expanded_size),
+                None,
+                None,
+                D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+            ) {
+                bitmap_rt.BeginDraw();
+                bitmap_rt.Clear(Some(&D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.0, // Transparent background
+                }));
+
+                // For inset shadows, create a "frame" geometry (outer rect with inner hole)
+                // The element rect in the bitmap needs to account for shadow offset
+                // Positive offset means shadow goes right/down, so hole shifts right/down in bitmap
+                let hole_offset_x = offset_x.max(0.0);
+                let hole_offset_y = offset_y.max(0.0);
+                
+                let element_rect_in_bitmap = RectDIP {
+                    x: padding + hole_offset_x - shadow.spread_radius,
+                    y: padding + hole_offset_y - shadow.spread_radius,
+                    width: rect.width + shadow.spread_radius * 2.0,
+                    height: rect.height + shadow.spread_radius * 2.0,
+                };
+
+                if let Ok(white_brush) = bitmap_rt.CreateSolidColorBrush(
+                    &D2D1_COLOR_F {
+                        r: 1.0,
+                        g: 1.0,
+                        b: 1.0,
+                        a: 1.0,
+                    },
+                    None,
+                ) {
+                    // Create a path geometry that represents the frame (outer rect with hole)
+                    if let Ok(frame_geometry) = self.factory.CreatePathGeometry() {
+                        if let Ok(sink) = frame_geometry.Open() {
+                            // Start the outer rectangle
+                            sink.BeginFigure(
+                                Vector2::new(0.0, 0.0),
+                                D2D1_FIGURE_BEGIN_FILLED,
+                            );
+                            sink.AddLine(Vector2::new(expanded_width, 0.0));
+                            sink.AddLine(Vector2::new(expanded_width, expanded_height));
+                            sink.AddLine(Vector2::new(0.0, expanded_height));
+                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+
+                            // Now add the inner shape as a hole (reverse winding)
+                            if let Some(border_radius) = border_radius {
+                                // Add rounded rectangle hole
+                                self.create_rounded_rectangle_path_reverse(
+                                    &sink,
+                                    &element_rect_in_bitmap,
+                                    border_radius,
+                                );
+                            } else {
+                                // Add rectangular hole (reverse winding - counterclockwise)
+                                sink.BeginFigure(
+                                    Vector2::new(element_rect_in_bitmap.x, element_rect_in_bitmap.y),
+                                    D2D1_FIGURE_BEGIN_FILLED,
+                                );
+                                sink.AddLine(Vector2::new(
+                                    element_rect_in_bitmap.x,
+                                    element_rect_in_bitmap.y + element_rect_in_bitmap.height,
+                                ));
+                                sink.AddLine(Vector2::new(
+                                    element_rect_in_bitmap.x + element_rect_in_bitmap.width,
+                                    element_rect_in_bitmap.y + element_rect_in_bitmap.height,
+                                ));
+                                sink.AddLine(Vector2::new(
+                                    element_rect_in_bitmap.x + element_rect_in_bitmap.width,
+                                    element_rect_in_bitmap.y,
+                                ));
+                                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                            }
+
+                            let _ = sink.Close();
+                            bitmap_rt.FillGeometry(&frame_geometry, &white_brush, None);
+                        }
+                    }
+                }
+
+                let _ = bitmap_rt.EndDraw(None, None);
+
+                // Get the bitmap from the render target
+                if let Ok(bitmap) = bitmap_rt.GetBitmap() {
+                    // Create shadow effect
+                    if let Ok(shadow_effect) = self.render_target.CreateEffect(&CLSID_D2D1Shadow) {
+                        shadow_effect.SetInput(0, &bitmap, true);
+                        shadow_effect
+                            .SetValue(
+                                D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION.0 as u32,
+                                D2D1_PROPERTY_TYPE_FLOAT,
                                 &(shadow.blur_radius / 2.0).to_le_bytes(),
                             )
                             .unwrap();
@@ -810,6 +1106,141 @@ impl Renderer<'_> {
                 });
             } else {
                 sink.AddLine(Vector2 { X: left, Y: top });
+            }
+
+            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+        }
+    }
+
+    /// Create a rounded rectangle path with reverse winding (for creating holes)
+    fn create_rounded_rectangle_path_reverse(
+        &self,
+        sink: &ID2D1GeometrySink,
+        rect: &RectDIP,
+        border_radius: &BorderRadius,
+    ) {
+        unsafe {
+            let left = rect.x;
+            let top = rect.y;
+            let right = rect.x + rect.width;
+            let bottom = rect.y + rect.height;
+
+            // Clamp radii to prevent overlapping
+            let max_radius_x = rect.width / 2.0;
+            let max_radius_y = rect.height / 2.0;
+
+            let tl = border_radius.top_left.min(max_radius_x).min(max_radius_y);
+            let tr = border_radius.top_right.min(max_radius_x).min(max_radius_y);
+            let br = border_radius
+                .bottom_right
+                .min(max_radius_x)
+                .min(max_radius_y);
+            let bl = border_radius
+                .bottom_left
+                .min(max_radius_x)
+                .min(max_radius_y);
+
+            // Start from top-left corner (going counterclockwise)
+            sink.BeginFigure(
+                Vector2 {
+                    X: left + tl,
+                    Y: top,
+                },
+                D2D1_FIGURE_BEGIN_FILLED,
+            );
+
+            // Go counterclockwise: top-left arc
+            if tl > 0.0 {
+                sink.AddArc(&D2D1_ARC_SEGMENT {
+                    point: Vector2 {
+                        X: left,
+                        Y: top + tl,
+                    },
+                    size: D2D_SIZE_F {
+                        width: tl,
+                        height: tl,
+                    },
+                    rotationAngle: 0.0,
+                    sweepDirection: D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                    arcSize: D2D1_ARC_SIZE_SMALL,
+                });
+            } else {
+                sink.AddLine(Vector2 { X: left, Y: top });
+            }
+
+            // Left edge to bottom-left corner
+            if bl > 0.0 {
+                sink.AddLine(Vector2 {
+                    X: left,
+                    Y: bottom - bl,
+                });
+                // Bottom-left arc
+                sink.AddArc(&D2D1_ARC_SEGMENT {
+                    point: Vector2 {
+                        X: left + bl,
+                        Y: bottom,
+                    },
+                    size: D2D_SIZE_F {
+                        width: bl,
+                        height: bl,
+                    },
+                    rotationAngle: 0.0,
+                    sweepDirection: D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                    arcSize: D2D1_ARC_SIZE_SMALL,
+                });
+            } else {
+                sink.AddLine(Vector2 { X: left, Y: bottom });
+            }
+
+            // Bottom edge to bottom-right corner
+            if br > 0.0 {
+                sink.AddLine(Vector2 {
+                    X: right - br,
+                    Y: bottom,
+                });
+                // Bottom-right arc
+                sink.AddArc(&D2D1_ARC_SEGMENT {
+                    point: Vector2 {
+                        X: right,
+                        Y: bottom - br,
+                    },
+                    size: D2D_SIZE_F {
+                        width: br,
+                        height: br,
+                    },
+                    rotationAngle: 0.0,
+                    sweepDirection: D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                    arcSize: D2D1_ARC_SIZE_SMALL,
+                });
+            } else {
+                sink.AddLine(Vector2 {
+                    X: right,
+                    Y: bottom,
+                });
+            }
+
+            // Right edge to top-right corner
+            if tr > 0.0 {
+                sink.AddLine(Vector2 {
+                    X: right,
+                    Y: top + tr,
+                });
+                // Top-right arc
+                sink.AddArc(&D2D1_ARC_SEGMENT {
+                    point: Vector2 {
+                        X: right - tr,
+                        Y: top,
+                    },
+                    size: D2D_SIZE_F {
+                        width: tr,
+                        height: tr,
+                    },
+                    rotationAngle: 0.0,
+                    sweepDirection: D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+                    arcSize: D2D1_ARC_SIZE_SMALL,
+                });
+            } else {
+                sink.AddLine(Vector2 { X: right, Y: top });
             }
 
             sink.EndFigure(D2D1_FIGURE_END_CLOSED);

@@ -383,6 +383,7 @@ pub struct DropShadow {
     pub spread_radius: f32,
     pub blur_radius: f32,
     pub color: Color,
+    pub inset: bool,
 }
 
 impl DropShadow {
@@ -393,6 +394,7 @@ impl DropShadow {
             spread_radius: 0.0,
             blur_radius: 0.0,
             color: Color::default(),
+            inset: false,
         }
     }
 
@@ -409,6 +411,7 @@ impl DropShadow {
             spread_radius,
             blur_radius,
             color: Color::from(color),
+            inset: false,
         }
     }
 
@@ -419,6 +422,7 @@ impl DropShadow {
             spread_radius: 0.0,
             blur_radius: 0.0,
             color: Color::default(),
+            inset: false,
         }
     }
 
@@ -449,6 +453,10 @@ impl DropShadow {
             color: color.into(),
             ..self
         }
+    }
+
+    pub fn inset(self, inset: bool) -> Self {
+        Self { inset, ..self }
     }
 }
 
@@ -648,7 +656,7 @@ pub struct ElementStyle {
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
-    pub drop_shadow: Option<DropShadow>,
+    pub drop_shadows: Vec<DropShadow>,
     pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
     pub snap: bool,
@@ -662,7 +670,7 @@ impl<Message> From<&UIElement<Message>> for ElementStyle {
             word_break: value.word_break,
             padding: value.padding,
             border_radius: value.border_radius,
-            drop_shadow: value.drop_shadow,
+            drop_shadows: value.drop_shadows.clone(),
             text_shadows: value.text_shadows.clone(),
             border: value.border,
             snap: value.snap,
@@ -710,7 +718,7 @@ pub struct UIElement<Message> {
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
-    pub drop_shadow: Option<DropShadow>,
+    pub drop_shadows: Vec<DropShadow>,
     pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
@@ -753,7 +761,7 @@ impl<Message> Default for UIElement<Message> {
             word_break: None,
             padding: BoxAmount::default(),
             border_radius: None,
-            drop_shadow: None,
+            drop_shadows: Vec::new(),
             text_shadows: Vec::new(),
             border: None,
             z_index: None,
@@ -830,7 +838,7 @@ pub struct Element<Message> {
     pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
-    pub drop_shadow: Option<DropShadow>,
+    pub drop_shadows: Vec<DropShadow>,
     pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
     pub z_index: Option<i32>,
@@ -939,7 +947,14 @@ impl<Message> Element<Message> {
 
     pub fn with_drop_shadow(self, drop_shadow: impl Into<DropShadow>) -> Self {
         Self {
-            drop_shadow: Some(drop_shadow.into()),
+            drop_shadows: vec![drop_shadow.into()],
+            ..self
+        }
+    }
+
+    pub fn with_drop_shadows(self, drop_shadows: Vec<DropShadow>) -> Self {
+        Self {
+            drop_shadows,
             ..self
         }
     }
@@ -1006,7 +1021,7 @@ impl<Message> Default for Element<Message> {
             word_break: None,
             padding: BoxAmount::default(),
             border_radius: None,
-            drop_shadow: None,
+            drop_shadows: Vec::new(),
             text_shadows: Vec::new(),
             border: None,
             z_index: None,
@@ -1037,7 +1052,7 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             word_break: element.word_break,
             padding: element.padding,
             border_radius: element.border_radius,
-            drop_shadow: element.drop_shadow,
+            drop_shadows: element.drop_shadows,
             text_shadows: element.text_shadows,
             border: element.border,
             z_index: element.z_index,

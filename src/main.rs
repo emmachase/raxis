@@ -9,28 +9,16 @@ use std::{
 
 use lazy_static::lazy_static;
 use raxis::{
-    ContextMenuItem, HookManager, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig,
     layout::{
-        helpers::{center, spacer},
+        helpers::{center, container, spacer},
         model::{
             Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
             Element, FloatingConfig, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap,
             StrokeLineJoin, TextShadow, VerticalAlignment,
         },
-    },
-    math::easing::Easing,
-    row,
-    runtime::{
-        Backdrop,
-        context_menu::ContextMenuItemExt,
-        font_manager::FontIdentifier,
-        scroll::ScrollPosition,
-        task::{Task, hide_window},
-    },
-    use_animation,
-    util::{str::StableString, unique::combine_id},
-    w_id,
-    widgets::{
+    }, math::easing::Easing, row, runtime::{
+        context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{hide_window, Task}, Backdrop
+    }, use_animation, util::{str::StableString, unique::combine_id}, w_id, widgets::{
         button::Button,
         image::Image,
         slider::Slider,
@@ -40,7 +28,7 @@ use raxis::{
         text_input::TextInput,
         toggle::Toggle,
         widget,
-    },
+    }, ContextMenuItem, HookManager, SvgPathCommands, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig
 };
 use raxis_core::svg;
 use raxis_proc_macro::svg_path;
@@ -163,7 +151,7 @@ fn border_demos() -> Element<Message> {
             ..Default::default()
         }),
         border_radius: Some(BorderRadius::all(8.0)),
-        // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
+        // drop_shadows: vec![DropShadow::simple(3.0, 3.0).blur_radius(0.0).inset(false)],
         children: vec![
             // Title
             Element {
@@ -507,6 +495,299 @@ fn slider_demos(hook: &mut HookManager<Message>) -> Element<Message> {
     }
 }
 
+fn call_controls_demo(hook: &mut HookManager<Message>) -> Element<Message> {
+    let mut instance = hook.instance(w_id!());
+    let mic_on = instance.use_state(|| true);
+    let video_on = instance.use_state(|| false);
+    let screen_share = instance.use_state(|| false);
+
+    // Read state values once to avoid borrow conflicts
+    let mic_is_on = *mic_on.borrow();
+    let video_is_on = *video_on.borrow();
+    let screen_is_shared = *screen_share.borrow();
+
+    Element {
+        id: Some(w_id!()),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::fit(),
+        background_color: Some(Color::WHITE),
+        padding: BoxAmount::all(12.0),
+        border: Some(Border {
+            width: 1.0,
+            color: Color {
+                r: 0.85,
+                g: 0.85,
+                b: 0.85,
+                a: 1.0,
+            },
+            ..Default::default()
+        }),
+        border_radius: Some(BorderRadius::all(8.0)),
+        child_gap: 16.0,
+        children: vec![
+            // Title
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(Text::new("Call Controls").with_font_size(20.0)),
+                ..Default::default()
+            },
+            // Call controls container
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::LeftToRight,
+                width: Sizing::fit(),
+                height: Sizing::fit(),
+                child_gap: 12.0,
+                padding: BoxAmount::all(16.0),
+                background_color: Some(Color::from(0x1E1E1EFF)), // Dark background
+                border_radius: Some(BorderRadius::all(44.0)),
+                drop_shadows: vec![
+                    DropShadow::simple(0.0, 4.0)
+                        .blur_radius(12.0)
+                        .color(Color::from(0x00000040)),
+                ],
+                children: vec![
+                    // Microphone button
+                    Button::new()
+                        .with_bg_color(if mic_is_on {
+                            Color::from(0x2C2C2EFF) // Dark gray
+                        } else {
+                            Color::from(0x5E3A3AFF) // Dark red
+                        })
+                        .with_no_border()
+                        .with_border_radius(50.0)
+                        .with_click_handler({
+                            let mic_on = mic_on.clone();
+                            move |_, _| {
+                                let mut mic_on = mic_on.borrow_mut();
+                                *mic_on = !*mic_on;
+                            }
+                        })
+                        .with_drop_shadows(vec![
+                            DropShadow::simple(0.0, 4.0)
+                                .color(Color::from(0x00000040)),
+                            DropShadow::simple(0.0, 2.0)
+                            .blur_radius(2.0)
+                                .inset(true)
+                                .spread_radius(0.5)
+                                .color(if mic_is_on { Color::from(0xFFFFFF40) } else { Color::from(0xFFC0CB40) }), // Tint red when off
+                        ])
+                        .as_element(
+                            w_id!(),
+                            Element {
+
+                                // <path d="M12 19v3" />
+                                // <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
+                                // <rect x="9" y="2" width="6" height="13" rx="3" />                                
+
+                                // <path d="M12 19v3" />
+                                // <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33" />
+                                // <path d="M16.95 16.95A7 7 0 0 1 5 12v-2" />
+                                // <path d="M18.89 13.23A7 7 0 0 0 19 12v-2" />
+                                // <path d="m2 2 20 20" />
+                                // <path d="M9 9v3a3 3 0 0 0 5.12 2.12" />
+                                
+                                id: Some(w_id!()),
+                                width: Sizing::fixed(56.0),
+                                height: Sizing::fixed(56.0),
+                                children: vec![center(
+                                    SvgPath::new(
+                                        if mic_is_on {
+                                            svg![
+                                                svg_path!("M12 19v3"),
+                                                svg_path!("M19 10v2a7 7 0 0 1-14 0v-2"),
+                                                SvgPathCommands::Rect {
+                                                    x: 9.0,
+                                                    y: 2.0,
+                                                    width: 6.0,
+                                                    height: 13.0,
+                                                    rx: 3.0,
+                                                    ry: 3.0,
+                                                },
+                                            ]
+                                        } else {
+                                            svg![
+                                                svg_path!("M12 19v3"),
+                                                svg_path!("M15 9.34V5a3 3 0 0 0-5.68-1.33"),
+                                                svg_path!("M16.95 16.95A7 7 0 0 1 5 12v-2"),
+                                                svg_path!("M18.89 13.23A7 7 0 0 0 19 12v-2"),
+                                                svg_path!("m2 2 20 20"),
+                                                svg_path!("M9 9v3a3 3 0 0 0 5.12 2.12"),
+                                            ]
+                                        },
+                                        ViewBox::new(24.0, 24.0),
+                                    )
+                                    .with_size(24.0, 24.0)
+                                    .with_stroke(if mic_is_on {
+                                        Color::WHITE
+                                    } else {
+                                        Color::from(0xEF4444FF)
+                                    })
+                                    .with_stroke_width(2.0)
+                                    .with_stroke_cap(StrokeLineCap::Round)
+                                    .with_stroke_join(StrokeLineJoin::Round)
+                                    .as_element(if mic_is_on { w_id!() } else { w_id!() }),
+                                )],
+                                ..Default::default()
+                            },
+                        ),
+                    // Video button
+                    Button::new()
+                        .with_bg_color(if video_is_on {
+                            Color::from(0x2C2C2EFF) // Dark gray
+                        } else {
+                            Color::from(0x5E3A3AFF) // Dark red
+                        })
+                        .with_no_border()
+                        .with_border_radius(50.0)
+                        .with_click_handler({
+                            let video_on = video_on.clone();
+                            move |_, _| {
+                                let mut video_on = video_on.borrow_mut();
+                                *video_on = !*video_on;
+                            }
+                        })
+                        .with_drop_shadows(vec![
+                            DropShadow::simple(0.0, 4.0)
+                                .color(Color::from(0x00000040)),
+                            DropShadow::simple(0.0, 2.0)
+                            .blur_radius(2.0)
+                                .inset(true)
+                                .spread_radius(0.5)
+                                .color(if video_is_on { Color::from(0xFFFFFF40) } else { Color::from(0xFFC0CB40) }), // Tint red when off
+                        ])
+                        .as_element(
+                            w_id!(),
+                            Element {
+                                id: Some(w_id!()),
+                                width: Sizing::fixed(56.0),
+                                height: Sizing::fixed(56.0),
+                                children: vec![center(
+                                    if video_is_on {
+                                        SvgPath::new(
+                                            svg![svg_path!("m23 7-7 5 7 5V7z M16 5H3a2 2 0 0 0-2 2v10a2 2 0 0 0 2 2h13a2 2 0 0 0 2-2V7a2 2 0 0 0-2-2z")],
+                                            ViewBox::new(24.0, 24.0),
+                                        )
+                                        .with_size(24.0, 24.0)
+                                        .with_fill(Color::WHITE)
+                                        .with_stroke(Color::WHITE)
+                                        .with_stroke_width(2.0)
+                                        .with_stroke_cap(StrokeLineCap::Round)
+                                        .with_stroke_join(StrokeLineJoin::Round)
+                                        .as_element(w_id!())
+                                    } else {
+                                        SvgPath::new(
+                                            svg![svg_path!("M16 16v1a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V7a2 2 0 0 1 2-2h2m5.66 0H14a2 2 0 0 1 2 2v3.34l1 1L23 7v10 M2 2l20 20")],
+                                            ViewBox::new(24.0, 24.0),
+                                        )
+                                        .with_size(24.0, 24.0)
+                                        .with_stroke(Color::from(0xEF4444FF))
+                                        .with_stroke_width(2.0)
+                                        .with_stroke_cap(StrokeLineCap::Round)
+                                        .with_stroke_join(StrokeLineJoin::Round)
+                                        .as_element(w_id!())
+                                    },
+                                )],
+                                ..Default::default()
+                            },
+                        ),
+                    // Screen share button
+                    Button::new()
+                        .with_bg_color(if screen_is_shared {
+                            Color::from(0x3B82F6FF) // Blue when active
+                        } else {
+                            Color::from(0x2C2C2EFF) // Dark gray
+                        })
+                        .with_no_border()
+                        .with_border_radius(50.0)
+                        .with_click_handler({
+                            let screen_share = screen_share.clone();
+                            move |_, _| {
+                                let mut screen_share = screen_share.borrow_mut();
+                                *screen_share = !*screen_share;
+                            }
+                        })
+                        .with_drop_shadows(vec![
+                            DropShadow::simple(0.0, 4.0)
+                                .color(Color::from(0x00000040)),
+                            DropShadow::simple(0.0, 2.0)
+                            .blur_radius(2.0)
+                                .inset(true)
+                                .spread_radius(0.5)
+                                .color(Color::from(0xFFFFFF40).scale_alpha(if screen_is_shared { 2.0 } else { 1.0 })),
+                        ])
+                        .as_element(
+                            w_id!(),
+                            Element {
+                                id: Some(w_id!()),
+                                width: Sizing::fixed(56.0),
+                                height: Sizing::fixed(56.0),
+                                children: vec![center(
+                                    SvgPath::new(
+                                        svg![svg_path!("M2 4a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V4Z M6 22h12")],
+                                        ViewBox::new(24.0, 24.0),
+                                    )
+                                    .with_size(24.0, 24.0)
+                                    .with_stroke(Color::WHITE)
+                                    .with_stroke_width(2.0)
+                                    .with_stroke_cap(StrokeLineCap::Round)
+                                    .with_stroke_join(StrokeLineJoin::Round)
+                                    .as_element(w_id!()),
+                                )],
+                                ..Default::default()
+                            },
+                        ),
+                    spacer().with_width(Sizing::Grow { min: 50.0, max: f32::MAX }),
+                    // Hang up button (larger, red)
+                    Button::new()
+                        .with_bg_color(Color::from(0xEF4444FF)) // Red
+                        .with_no_border()
+                        .with_border_radius(50.0)
+                        .with_click_handler(|_, _| {
+                            // Handle hang up
+                        })
+                        .with_drop_shadows(vec![
+                            DropShadow::simple(0.0, 4.0)
+                                .color(Color::from(0x00000040)),
+                            DropShadow::simple(0.0, 2.0)
+                            .blur_radius(2.0)
+                                .inset(true)
+                                .spread_radius(0.5)
+                                .color(Color::from(0xFFFFFF40)),
+                        ])
+                        .as_element(
+                            w_id!(),
+                            Element {
+                                id: Some(w_id!()),
+                                width: Sizing::fixed(56.0),
+                                height: Sizing::fixed(56.0),
+                                children: vec![center(
+                                    SvgPath::new(
+                                        svg![svg_path!("M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z")],
+                                        ViewBox::new(24.0, 24.0),
+                                    )
+                                    .with_size(28.0, 28.0)
+                                    .with_fill(Color::WHITE)
+                                    .with_stroke(Color::WHITE)
+                                    .with_stroke_width(2.0)
+                                    .with_stroke_cap(StrokeLineCap::Round)
+                                    .with_stroke_join(StrokeLineJoin::Round)
+                                    .as_element(w_id!()),
+                                )],
+                                ..Default::default()
+                            },
+                        ),
+                ],
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
 fn toggle_demos(hook: &mut HookManager<Message>) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
     let wifi = instance.use_state(|| true);
@@ -531,7 +812,17 @@ fn toggle_demos(hook: &mut HookManager<Message>) -> Element<Message> {
             },
             ..Default::default()
         }),
-        border_radius: Some(BorderRadius::all(8.0)),
+        border_radius: Some(BorderRadius::all(28.0)),
+        // drop_shadows: vec![
+        //     DropShadow::simple(0.0, 30.0)
+        //         .blur_radius(15.0)
+        //         .spread_radius(10.0)
+        //         .inset(true),
+        //     DropShadow::simple(0.0, 30.0)
+        //         .blur_radius(15.0)
+        //         .spread_radius(-10.0)
+        //         .inset(false),
+        // ],
         child_gap: 16.0,
         children: vec![
             // Title
@@ -775,6 +1066,8 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                     .as_element(w_id!(), Text::new("Settings"))
             ]
             .with_width(Sizing::grow()),
+            // Call controls demo
+            call_controls_demo(hook),
             // Toggle demos
             toggle_demos(hook),
             // Slider demos
@@ -820,12 +1113,12 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                             },
                             ..Default::default()
                         }),
-                        drop_shadow: Some(
+                        drop_shadows: vec![
                             DropShadow::simple(0.0, 1.0)
                                 .blur_radius(2.0)
                                 .color(Color::from(0x0000000D)),
-                        ),
-                        // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
+                        ],
+                        // drop_shadows: vec![DropShadow::simple(1.0, 1.0).blur_radius(3.0)],
                         children: vec![Element {
                             id: Some(w_id!()),
                             width: Sizing::grow(),
@@ -851,7 +1144,7 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                         width: Sizing::fit(),
                         height: Sizing::fixed(40.0),
                         border_radius: Some(BorderRadius::all(8.0)),
-                        // drop_shadow: Some(DropShadow::simple(1.0, 1.0).blur_radius(3.0)),
+                        // drop_shadows: vec![DropShadow::simple(1.0, 1.0).blur_radius(3.0)],
                         content: widget(
                             Button::new()
                                 .with_bg_color(Color::from(0xe91923ff))
@@ -1130,12 +1423,12 @@ fn todo_item(
             ..Default::default()
         }),
         border_radius: Some(BorderRadius::all(8.0)),
-        drop_shadow: Some(
+        drop_shadows: vec![
             DropShadow::simple(0.0, 1.0)
                 .blur_radius(3.0)
                 .color(Color::from(0x0000001A)),
-        ),
-        // drop_shadow: Some(DropShadow::simple(0.0, 2.0).blur_radius(4.0)),
+        ],
+        // drop_shadows: vec![DropShadow::simple(0.0, 2.0).blur_radius(4.0)],
         padding: BoxAmount::all(12.0),
         child_gap: 12.0,
         children: vec![
@@ -1152,7 +1445,7 @@ fn todo_item(
                 direction: Direction::TopToBottom,
                 vertical_alignment: VerticalAlignment::Center,
                 border_radius: Some(BorderRadius::all(4.0)),
-                // drop_shadow: Some(DropShadow::simple(0.5, 0.5).blur_radius(2.0)),
+                // drop_shadows: vec![DropShadow::simple(0.5, 0.5).blur_radius(2.0)],
                 content: widget(
                     Button::new()
                         .with_bg_color(if item.completed {

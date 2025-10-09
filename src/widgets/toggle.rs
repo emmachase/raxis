@@ -411,6 +411,7 @@ impl<Message> Widget<Message> for Toggle<Message> {
                     offset_x: 0.0,
                     offset_y: 1.0,
                     color: Color::from(0x00000026), // Black with 15% opacity
+                    inset: false,
                 },
                 Some(&crate::layout::model::BorderRadius::all(thumb_radius)),
             );
