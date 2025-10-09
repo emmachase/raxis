@@ -1,5 +1,5 @@
 use windows::Win32::{
-    Foundation::{HWND, LPARAM, POINT},
+    Foundation::{HWND, LPARAM},
     System::LibraryLoader::GetModuleHandleW,
     UI::{
         Shell::{
@@ -7,7 +7,7 @@ use windows::Win32::{
             Shell_NotifyIconW,
         },
         WindowsAndMessaging::{
-            GetCursorPos, HICON, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, WM_LBUTTONDBLCLK,
+            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, WM_LBUTTONDBLCLK,
             WM_LBUTTONUP, WM_RBUTTONUP,
         },
     },
@@ -29,6 +29,7 @@ pub enum TrayEvent {
 
 /// Configuration for a system tray icon
 #[derive(Clone)]
+#[derive(Default)]
 pub struct TrayIconConfig {
     /// Tooltip text that appears when hovering over the icon
     pub tooltip: Option<String>,
@@ -36,14 +37,6 @@ pub struct TrayIconConfig {
     pub icon_resource: Option<u16>,
 }
 
-impl Default for TrayIconConfig {
-    fn default() -> Self {
-        Self {
-            tooltip: None,
-            icon_resource: None,
-        }
-    }
-}
 
 impl TrayIconConfig {
     pub fn new() -> Self {

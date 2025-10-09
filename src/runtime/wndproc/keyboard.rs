@@ -1,5 +1,5 @@
 use std::ops::DerefMut;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LRESULT, WPARAM};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 
 use crate::runtime::util::{get_modifiers, state_mut_from_hwnd};

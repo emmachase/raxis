@@ -10,7 +10,7 @@ use std::{
 use lazy_static::lazy_static;
 use raxis::{
     layout::{
-        helpers::{center, container, spacer},
+        helpers::{center, spacer},
         model::{
             Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
             Element, FloatingConfig, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap,

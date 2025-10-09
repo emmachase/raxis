@@ -1,7 +1,7 @@
 use log::{error, warn};
 use std::ops::DerefMut;
 use std::time::Instant;
-use windows::Win32::Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, RECT, WPARAM};
+use windows::Win32::Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, RECT};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
 use windows::Win32::Graphics::Dxgi::DXGI_PRESENT;
@@ -23,7 +23,6 @@ use crate::widgets::renderer::Renderer;
 use crate::{RedrawRequest, dips_scale};
 
 use super::super::WinUserData;
-use super::compute_standard_caption_height_for_window;
 
 /// Handle WM_SIZE
 pub fn handle_size<State: 'static, Message: 'static + Send + Clone>(

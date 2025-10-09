@@ -1,7 +1,7 @@
 use crate::gfx::draw_commands::DrawCommandList;
-use crate::gfx::{PointDIP, RectDIP, command_recorder::CommandRecorder};
-use crate::layout::model::{Axis, Color, Direction, Element, ScrollConfig, Sizing, StrokeLineCap, create_tree};
-use crate::layout::{self, OwnedUITree, compute_scrollbar_geom};
+use crate::gfx::{RectDIP, command_recorder::CommandRecorder};
+use crate::layout::model::{Color, Direction, Element, ScrollConfig, Sizing, StrokeLineCap, create_tree};
+use crate::layout::{self, OwnedUITree};
 use crate::runtime::device::DeviceResources;
 use crate::runtime::focus::FocusManager;
 use crate::runtime::font_manager;
@@ -12,7 +12,7 @@ use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::Task;
 use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig};
 use crate::{HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id};
-use crate::{current_dpi, dips_scale};
+use crate::dips_scale;
 use log::error;
 use raxis_core::{self as raxis, svg};
 use raxis_proc_macro::svg_path;
@@ -455,7 +455,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
             if let Some(geometry) = geometry {
                 recorder.stroke_path_geometry(
                     &icon_rect,
-                    &geometry,
+                    geometry,
                     Color::BLACK,
                     2.5,
                     scale,
@@ -465,7 +465,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 );
                 recorder.stroke_path_geometry(
                     &icon_rect,
-                    &geometry,
+                    geometry,
                     Color::WHITE,
                     1.5,
                     scale,

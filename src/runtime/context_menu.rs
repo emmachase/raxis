@@ -116,7 +116,7 @@ impl ContextMenu {
                     let _ = AppendMenuW(
                         hmenu,
                         flags,
-                        (index + 1) as usize,
+                        (index + 1),
                         PCWSTR(wide_label.as_ptr()),
                     );
                 }

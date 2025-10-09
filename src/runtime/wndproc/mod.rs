@@ -7,7 +7,6 @@ pub mod system;
 pub mod lifecycle;
 
 pub use handlers::*;
-pub use nonclient::*;
 pub use ime::*;
 pub use mouse::*;
 pub use keyboard::*;

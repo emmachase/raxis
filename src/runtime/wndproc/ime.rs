@@ -1,5 +1,5 @@
 use std::ops::DerefMut;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
 use windows::Win32::UI::Input::Ime::{
     GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW, ImmGetContext,

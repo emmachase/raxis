@@ -23,138 +23,58 @@ pub use input::{MiddleMouseScrollState, MouseState, ScrollbarDragState};
 pub use window::{Application, Backdrop};
 
 use crate::gfx::PointDIP;
-use crate::gfx::command_executor::CommandExecutor;
-use crate::gfx::draw_commands::DrawCommandList;
-use crate::layout::model::{
-    Axis, Direction, Element, ScrollConfig, Sizing, StrokeLineCap, create_tree,
-};
-use crate::layout::{
-    self, OwnedUITree, ScrollDirection, can_scroll_further, compute_scrollbar_geom,
-};
 use crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING;
-use crate::runtime::context_menu::{ContextMenu, ContextMenuRequest, WM_SHOW_CONTEXT_MENU};
+use crate::runtime::context_menu::WM_SHOW_CONTEXT_MENU;
 use crate::runtime::dragdrop::start_text_drag;
-use crate::runtime::focus::FocusManager;
-use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
-use crate::runtime::smooth_scroll::SmoothScrollManager;
-use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
-use crate::runtime::task::{
-    Action, ClipboardAction, ContextMenuAction, Task, WindowAction, WindowMode, into_stream,
-};
-use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig, WM_TRAYICON};
-use crate::runtime::vkey::VKey;
+use crate::runtime::tray::WM_TRAYICON;
 use crate::widgets::drop_target::DropTarget;
-use crate::widgets::renderer::{Renderer, ShadowCache};
-use crate::widgets::{DragData, DragEvent, Event, Modifiers};
+use crate::widgets::{DragData, DragEvent, Event};
 use crate::{
-    DeferredControl, EventMapperFn, HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id,
+    DeferredControl, RedrawRequest,
 };
-use crate::{current_dpi, dips_scale, gfx::RectDIP};
-use log::{error, warn};
-use raxis_core::{self as raxis, svg};
-use raxis_proc_macro::svg_path;
-use slotmap::DefaultKey;
-use std::cell::RefCell;
-use std::mem::ManuallyDrop;
+use crate::dips_scale;
 use std::ops::DerefMut;
-use std::rc::Rc;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Mutex, MutexGuard, OnceLock, mpsc};
-use std::thread;
-use std::time::Instant;
-use thiserror::Error;
-use windows::Win32::Foundation::{COLORREF, HMODULE};
-use windows::Win32::Graphics::Direct2D::Common::{
-    D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
-};
-use windows::Win32::Graphics::Direct2D::{
-    D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
-    D2D1_DEVICE_CONTEXT_OPTIONS_NONE, ID2D1Bitmap1, ID2D1Device6, ID2D1DeviceContext6,
-    ID2D1Factory7, ID2D1PathGeometry,
-};
-use windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
-    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
-};
-use windows::Win32::Graphics::Direct3D11::{
-    D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
-    ID3D11DeviceContext, ID3D11Texture2D,
-};
-use windows::Win32::Graphics::DirectComposition::{
-    DCompositionCreateDevice2, IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
-};
+use std::sync::{Mutex, OnceLock};
+use windows::Win32::Foundation::COLORREF;
 use windows::Win32::Graphics::Dwm::{
     DWM_BB_ENABLE, DWM_BLURBEHIND, DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_NONE,
     DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
     DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
-use windows::Win32::Graphics::Dxgi::Common::{
-    DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
-};
-use windows::Win32::Graphics::Dxgi::{
-    DXGI_PRESENT, DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
-    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
-    IDXGIFactory7, IDXGISurface, IDXGISwapChain1,
-};
 use windows::Win32::Graphics::Gdi::{
-    BeginPaint, ClientToScreen, CreateSolidBrush, DeleteObject, EndPaint, FillRect, HDC,
-    PAINTSTRUCT,
+    CreateSolidBrush, DeleteObject, FillRect, HDC,
 };
 use windows::Win32::System::Com::CoUninitialize;
-use windows::Win32::System::SystemServices::MK_SHIFT;
-use windows::Win32::UI::Controls::{
-    CS_ACTIVE, CloseThemeData, GetThemePartSize, MARGINS, OpenThemeData, TS_TRUE, WP_CAPTION,
-};
-use windows::Win32::UI::HiDpi::GetDpiForWindow;
+use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
-use windows::Win32::UI::Input::KeyboardAndMouse::VK_MENU;
 use windows::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, GetForegroundWindow, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT,
-    HTCAPTION, HTLEFT, HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, MINMAXINFO,
-    NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
-    SPI_GETWHEELSCROLLLINES, SWP_FRAMECHANGED, SWP_NOMOVE, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SetForegroundWindow, SystemParametersInfoW, WM_ACTIVATE, WM_CLOSE, WM_DPICHANGED,
+    HTNOWHERE,
+    NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED,
     WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST,
-    WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
+    WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
-        Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
-        Graphics::{
-            Direct2D::{
-                D2D1_DEBUG_LEVEL_NONE, D2D1_FACTORY_OPTIONS, D2D1_FACTORY_TYPE_SINGLE_THREADED,
-                D2D1CreateFactory, ID2D1SolidColorBrush,
-            },
-            DirectWrite::{DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory6},
-            Dwm::DWM_TIMING_INFO,
-            Dxgi::Common::DXGI_FORMAT_UNKNOWN,
-            Gdi::{InvalidateRect, ScreenToClient, UpdateWindow},
-        },
+        Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM},
+        Graphics::Gdi::{InvalidateRect, UpdateWindow},
         System::{
             Com::CoInitialize,
             LibraryLoader::GetModuleHandleW,
-            Ole::{IDropTarget, OleInitialize, OleUninitialize, RegisterDragDrop, RevokeDragDrop},
+            Ole::{IDropTarget, OleInitialize, OleUninitialize, RegisterDragDrop},
         },
         UI::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
-            Input::{
-                Ime::{
-                    GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW,
+            Input::Ime::{
                     ImmGetContext, ImmReleaseContext,
                 },
-                KeyboardAndMouse::{
-                    GetDoubleClickTime, GetKeyState, ReleaseCapture, SetCapture, SetFocus,
-                    VK_CONTROL, VK_SHIFT,
-                },
-            },
             WindowsAndMessaging::{
-                self as WAM, CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
-                DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetCursorPos,
-                GetMessageTime, GetMessageW, GetSystemMetrics, HTCLIENT, IDC_ARROW, LoadCursorW,
-                MSG, RegisterClassW, SM_CXDOUBLECLK, SM_CYDOUBLECLK, SW_HIDE, SW_SHOW,
+                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
+                DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, GetSystemMetrics, IDC_ARROW, LoadCursorW,
+                MSG, RegisterClassW, SW_SHOW,
                 SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow,
                 TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE,
                 WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
@@ -165,8 +85,7 @@ use windows::{
     },
     core::{PCWSTR, w},
 };
-use windows_core::Error as WinError;
-use windows_core::{BOOL, IUnknown, Interface};
+use windows_core::{BOOL, Interface};
 
 pub const LINE_HEIGHT: u32 = 32;
 
@@ -179,8 +98,8 @@ unsafe impl Send for UncheckedHWND {}
 unsafe impl Sync for UncheckedHWND {}
 
 // Re-export utility functions  
-use util::{client_rect, get_modifiers, state_mut_from_hwnd, window_rect};
-use wndproc::{compute_standard_caption_height_for_window, hit_test_nca};
+use util::{client_rect, state_mut_from_hwnd};
+use wndproc::hit_test_nca;
 
 type WinUserData<State, Message> = Mutex<ApplicationHandle<State, Message>>;
 
