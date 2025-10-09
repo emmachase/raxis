@@ -113,12 +113,7 @@ impl ContextMenu {
                         .collect();
 
                     // Use index + 1 as the command ID (0 means no selection)
-                    let _ = AppendMenuW(
-                        hmenu,
-                        flags,
-                        (index + 1),
-                        PCWSTR(wide_label.as_ptr()),
-                    );
+                    let _ = AppendMenuW(hmenu, flags, index + 1, PCWSTR(wide_label.as_ptr()));
                 }
             }
 

@@ -1,21 +1,22 @@
-use std::ops::DerefMut;
 use slotmap::DefaultKey;
+use std::ops::DerefMut;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{InvalidateRect, ScreenToClient};
 use windows::Win32::System::SystemServices::MK_SHIFT;
-use windows::Win32::UI::Input::KeyboardAndMouse::{
-    ReleaseCapture, SetCapture, SetFocus,
+use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, SetFocus};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetCursorPos, HTCLIENT, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
+    SystemParametersInfoW,
 };
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, HTCLIENT, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW};
 
+use crate::gfx::PointDIP;
 use crate::layout::model::Axis;
 use crate::layout::{ScrollDirection, can_scroll_further, compute_scrollbar_geom};
 use crate::runtime::input::MiddleMouseScrollState;
 use crate::runtime::scroll::ScrollPosition;
 use crate::runtime::util::{get_modifiers, state_mut_from_hwnd, window_rect};
-use crate::{RedrawRequest, Shell, dips_scale};
-use crate::gfx::PointDIP;
 use crate::widgets::Event;
+use crate::{RedrawRequest, Shell, dips_scale};
 
 use super::super::LINE_HEIGHT;
 
@@ -148,9 +149,7 @@ pub fn handle_mousemove<State: 'static, Message: 'static + Send + Clone>(
             middle_scroll.current_y = y;
 
             // Request continuous redraws while scrolling
-            state
-                .shell
-                .request_redraw(hwnd, RedrawRequest::Immediate);
+            state.shell.request_redraw(hwnd, RedrawRequest::Immediate);
             return LRESULT(0);
         }
 
@@ -220,7 +219,9 @@ pub fn handle_mousewheel<State: 'static, Message: 'static + Send + Clone>(
                 for &key in &ancestry {
                     let element = &state.ui_tree.slots[key];
 
-                    if element.scroll.is_some() && let Some(element_id) = element.id {
+                    if element.scroll.is_some()
+                        && let Some(element_id) = element.id
+                    {
                         // Check if this element can scroll in the requested direction
                         if can_scroll_further(
                             element,
@@ -272,9 +273,7 @@ pub fn handle_mousewheel<State: 'static, Message: 'static + Send + Clone>(
                                 delta,
                             );
 
-                            state
-                                .shell
-                                .request_redraw(hwnd, RedrawRequest::Immediate);
+                            state.shell.request_redraw(hwnd, RedrawRequest::Immediate);
 
                             break;
                         }
@@ -342,16 +341,16 @@ pub fn handle_mbuttondown<State: 'static, Message: 'static + Send + Clone>(
         let y = (yi as f32) * to_dip;
 
         // Find the scrollable element at this position
-        if let Some(innermost_key) =
-            Shell::find_innermost_element_at(&mut state.ui_tree, x, y)
-        {
+        if let Some(innermost_key) = Shell::find_innermost_element_at(&mut state.ui_tree, x, y) {
             let ancestry = Shell::collect_ancestry(&mut state.ui_tree, innermost_key);
 
             // Walk up the ancestry from innermost to outermost
             for &key in &ancestry {
                 let element = &state.ui_tree.slots[key];
 
-                if element.scroll.is_some() && let Some(element_id) = element.id {
+                if element.scroll.is_some()
+                    && let Some(element_id) = element.id
+                {
                     // Found a scrollable element, start middle mouse scroll
                     state.middle_mouse_scroll = Some(MiddleMouseScrollState {
                         element_id,
@@ -369,9 +368,7 @@ pub fn handle_mbuttondown<State: 'static, Message: 'static + Send + Clone>(
 }
 
 /// Handle WM_MBUTTONUP
-pub fn handle_mbuttonup<State: 'static, Message: 'static + Send + Clone>(
-    hwnd: HWND,
-) -> LRESULT {
+pub fn handle_mbuttonup<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND) -> LRESULT {
     if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
         let state = state.deref_mut();
         state.middle_mouse_scroll = None;

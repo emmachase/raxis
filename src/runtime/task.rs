@@ -643,8 +643,10 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
     use futures::StreamExt;
     use std::sync::atomic::Ordering;
     use windows::Win32::Foundation::{LPARAM, WPARAM};
-    use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, ShowWindow, WM_CLOSE, SW_HIDE, SW_SHOW};
     use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+    use windows::Win32::UI::WindowsAndMessaging::{
+        PostMessageW, SW_HIDE, SW_SHOW, ShowWindow, WM_CLOSE,
+    };
 
     async fn process_task_stream<Message: Send + Clone + 'static>(
         stream: impl futures::Stream<Item = Action<Message>> + Send + Unpin + 'static,
@@ -659,7 +661,9 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                     let _ = message_sender.send(message);
 
                     // If the UI thread is not processing messages, notify it
-                    if !crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING.swap(true, Ordering::SeqCst) {
+                    if !crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING
+                        .swap(true, Ordering::SeqCst)
+                    {
                         unsafe {
                             PostMessageW(
                                 Some(hwnd.0),
@@ -676,7 +680,8 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                         let _ = clipboard::set_clipboard_text(hwnd.0, &text);
                     }
                     ClipboardAction::Get(sender) => {
-                        let _ = clipboard::get_clipboard_text(hwnd.0);
+                        let text = clipboard::get_clipboard_text(hwnd.0);
+                        let _ = sender.send(text);
                     }
                 },
                 Action::Window(action) => match action {
@@ -722,8 +727,7 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                 let message_sender = message_sender.clone();
 
                 #[cfg(all(feature = "smol-runtime", not(feature = "tokio")))]
-                smol::spawn(process_task_stream(stream, message_sender, hwnd))
-                    .detach();
+                smol::spawn(process_task_stream(stream, message_sender, hwnd)).detach();
 
                 #[cfg(feature = "tokio")]
                 tokio::spawn(process_task_stream(stream, message_sender, hwnd));

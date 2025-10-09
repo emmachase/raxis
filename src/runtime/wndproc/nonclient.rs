@@ -1,5 +1,7 @@
 use windows::Win32::Foundation::{HWND, LPARAM, RECT, WPARAM};
-use windows::Win32::UI::Controls::{CS_ACTIVE, CloseThemeData, GetThemePartSize, OpenThemeData, TS_TRUE, WP_CAPTION};
+use windows::Win32::UI::Controls::{
+    CS_ACTIVE, CloseThemeData, GetThemePartSize, OpenThemeData, TS_TRUE, WP_CAPTION,
+};
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT,

@@ -22,6 +22,7 @@ pub use device::DeviceResources;
 pub use input::{MiddleMouseScrollState, MouseState, ScrollbarDragState};
 pub use window::{Application, Backdrop};
 
+use crate::dips_scale;
 use crate::gfx::PointDIP;
 use crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING;
 use crate::runtime::context_menu::WM_SHOW_CONTEXT_MENU;
@@ -29,10 +30,7 @@ use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::tray::WM_TRAYICON;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::{DragData, DragEvent, Event};
-use crate::{
-    DeferredControl, RedrawRequest,
-};
-use crate::dips_scale;
+use crate::{DeferredControl, RedrawRequest};
 use std::ops::DerefMut;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
@@ -43,19 +41,17 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
-use windows::Win32::Graphics::Gdi::{
-    CreateSolidBrush, DeleteObject, FillRect, HDC,
-};
+use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, FillRect, HDC};
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    HTNOWHERE,
-    NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED,
-    WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST,
-    WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_EX_NOREDIRECTIONBITMAP,
+    HTNOWHERE, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
+    SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
+    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER,
+    WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -68,24 +64,22 @@ use windows::{
         },
         UI::{
             HiDpi::{DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext},
-            Input::Ime::{
-                    ImmGetContext, ImmReleaseContext,
-                },
+            Input::Ime::{ImmGetContext, ImmReleaseContext},
             WindowsAndMessaging::{
-                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW,
-                DefWindowProcW, DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, GetSystemMetrics, IDC_ARROW, LoadCursorW,
-                MSG, RegisterClassW, SW_SHOW,
-                SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos, ShowWindow,
-                TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE,
-                WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_STARTCOMPOSITION, WM_KEYDOWN,
-                WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN, WM_MBUTTONUP, WM_MOUSEMOVE, WM_PAINT,
-                WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW,
+                DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, GetSystemMetrics,
+                IDC_ARROW, LoadCursorW, MSG, RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
+                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
+                WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+                WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
+                WM_MBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW,
+                WS_OVERLAPPEDWINDOW,
             },
         },
     },
     core::{PCWSTR, w},
 };
-use windows_core::{BOOL, Interface};
+use windows_core::BOOL;
 
 pub const LINE_HEIGHT: u32 = 32;
 
@@ -97,7 +91,7 @@ pub struct UncheckedHWND(pub HWND);
 unsafe impl Send for UncheckedHWND {}
 unsafe impl Sync for UncheckedHWND {}
 
-// Re-export utility functions  
+// Re-export utility functions
 use util::{client_rect, state_mut_from_hwnd};
 use wndproc::hit_test_nca;
 
@@ -172,9 +166,13 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_TRAYICON => wndproc::handle_trayicon::<State, Message>(hwnd, lparam),
-            WM_SHOW_CONTEXT_MENU => wndproc::handle_show_context_menu::<State, Message>(hwnd, wparam),
+            WM_SHOW_CONTEXT_MENU => {
+                wndproc::handle_show_context_menu::<State, Message>(hwnd, wparam)
+            }
             WM_ASYNC_MESSAGE => wndproc::handle_async_message::<State, Message>(hwnd),
-            WM_IME_STARTCOMPOSITION => wndproc::handle_ime_start_composition::<State, Message>(hwnd),
+            WM_IME_STARTCOMPOSITION => {
+                wndproc::handle_ime_start_composition::<State, Message>(hwnd)
+            }
             WM_IME_COMPOSITION => wndproc::handle_ime_composition::<State, Message>(hwnd, lparam),
             WM_IME_ENDCOMPOSITION => wndproc::handle_ime_end_composition::<State, Message>(hwnd),
             WM_TIMER => wndproc::handle_timer::<State, Message>(hwnd, wparam),
@@ -191,7 +189,11 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_KEYDOWN => wndproc::handle_keydown::<State, Message>(hwnd, wparam),
             WM_KEYUP => wndproc::handle_keyup::<State, Message>(hwnd, wparam),
             WM_SIZE => wndproc::handle_size::<State, Message>(hwnd, lparam),
-            WM_DPICHANGED => wndproc::handle_dpichanged::<State, Message>(hwnd, lparam, REPLACE_TITLEBAR.load(Ordering::Relaxed)),
+            WM_DPICHANGED => wndproc::handle_dpichanged::<State, Message>(
+                hwnd,
+                lparam,
+                REPLACE_TITLEBAR.load(Ordering::Relaxed),
+            ),
             WM_SETCURSOR => {
                 if let Some(result) = wndproc::handle_setcursor::<State, Message>(hwnd, lparam) {
                     return result;

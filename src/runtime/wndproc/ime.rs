@@ -1,3 +1,5 @@
+use crate::runtime::util::state_mut_from_hwnd;
+use crate::widgets::Event;
 use std::ops::DerefMut;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
@@ -5,8 +7,6 @@ use windows::Win32::UI::Input::Ime::{
     GCS_COMPSTR, GCS_CURSORPOS, GCS_RESULTSTR, ImmGetCompositionStringW, ImmGetContext,
     ImmReleaseContext,
 };
-use crate::runtime::util::state_mut_from_hwnd;
-use crate::widgets::Event;
 
 /// Handle WM_IME_STARTCOMPOSITION
 pub fn handle_ime_start_composition<State: 'static, Message: 'static + Send + Clone>(
@@ -84,11 +84,7 @@ pub fn handle_ime_composition<State: 'static, Message: 'static + Send + Clone>(
                 // Caret within comp string (UTF-16 units)
                 let caret_units = {
                     let v = unsafe { ImmGetCompositionStringW(himc, GCS_CURSORPOS, None, 0) };
-                    if v < 0 {
-                        0
-                    } else {
-                        v as u32
-                    }
+                    if v < 0 { 0 } else { v as u32 }
                 };
 
                 state.shell.dispatch_event(

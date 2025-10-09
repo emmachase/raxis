@@ -1,6 +1,9 @@
+use crate::dips_scale;
 use crate::gfx::draw_commands::DrawCommandList;
 use crate::gfx::{RectDIP, command_recorder::CommandRecorder};
-use crate::layout::model::{Color, Direction, Element, ScrollConfig, Sizing, StrokeLineCap, create_tree};
+use crate::layout::model::{
+    Color, Direction, Element, ScrollConfig, Sizing, StrokeLineCap, create_tree,
+};
 use crate::layout::{self, OwnedUITree};
 use crate::runtime::device::DeviceResources;
 use crate::runtime::focus::FocusManager;
@@ -12,7 +15,6 @@ use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::Task;
 use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig};
 use crate::{HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id};
-use crate::dips_scale;
 use log::error;
 use raxis_core::{self as raxis, svg};
 use raxis_proc_macro::svg_path;
@@ -35,11 +37,13 @@ use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
 };
 use windows::Win32::Graphics::DirectComposition::{DCompositionCreateDevice2, IDCompositionDevice};
-use windows::Win32::Graphics::DirectWrite::{DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory6};
+use windows::Win32::Graphics::DirectWrite::{
+    DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory6,
+};
 use windows::Win32::Graphics::Dxgi::{IDXGIDevice4, IDXGIFactory7};
+use windows::Win32::System::Ole::IDropTarget;
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
 use windows_core::{Error as WinError, Interface};
-use windows::Win32::System::Ole::IDropTarget;
 
 pub static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
 
@@ -136,7 +140,7 @@ pub struct ApplicationHandle<State, Message> {
     pub(crate) message_receiver: mpsc::Receiver<Message>,
 
     // System tray icon
-    pub(crate) tray_icon: Option<TrayIcon>,
+    pub(crate) _tray_icon: Option<TrayIcon>,
     pub(crate) tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Task<Message>>>>,
 
     // System command handler
@@ -350,7 +354,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 scroll_icon_vertical,
                 task_sender,
                 message_receiver,
-                tray_icon,
+                _tray_icon: tray_icon,
                 tray_event_handler,
                 syscommand_handler,
             })
@@ -566,7 +570,13 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 unsafe {
                     use windows::Win32::Foundation::{LPARAM, WPARAM};
                     use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
-                    PostMessageW(Some(hwnd), crate::runtime::WM_ASYNC_MESSAGE, WPARAM(0), LPARAM(0)).ok();
+                    PostMessageW(
+                        Some(hwnd),
+                        crate::runtime::WM_ASYNC_MESSAGE,
+                        WPARAM(0),
+                        LPARAM(0),
+                    )
+                    .ok();
                 }
                 break;
             }

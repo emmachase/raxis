@@ -8,9 +8,7 @@ use crate::runtime::tray::TrayIcon;
 use crate::runtime::util::state_mut_from_hwnd;
 
 /// Handle WM_ACTIVATE
-pub fn handle_activate<State: 'static, Message: 'static + Send + Clone>(
-    hwnd: HWND,
-) -> LRESULT {
+pub fn handle_activate<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND) -> LRESULT {
     let _ = unsafe { InvalidateRect(Some(hwnd), None, true) };
     LRESULT(0)
 }
@@ -31,7 +29,7 @@ pub fn handle_syscommand<State: 'static, Message: 'static + Send + Clone>(
                     // Fall through to default handling
                 }
                 SystemCommandResponse::AllowWith(message) => {
-                    state.shell.message_sender.send(message);
+                    state.shell.message_sender.send(message).ok();
                     state.shell.pending_messages = true;
                 }
                 SystemCommandResponse::Prevent => {
@@ -39,7 +37,7 @@ pub fn handle_syscommand<State: 'static, Message: 'static + Send + Clone>(
                     return Some(LRESULT(0));
                 }
                 SystemCommandResponse::PreventWith(message) => {
-                    state.shell.message_sender.send(message);
+                    state.shell.message_sender.send(message).ok();
                     state.shell.pending_messages = true;
                     return Some(LRESULT(0));
                 }
@@ -61,7 +59,7 @@ pub fn handle_trayicon<State: 'static, Message: 'static + Send + Clone>(
             let state = state.deref_mut();
             if let Some(ref handler) = state.tray_event_handler {
                 if let Some(task) = handler(&state.user_state, event) {
-                    state.task_sender.send(task);
+                    state.task_sender.send(task).ok();
                 }
             }
         }
@@ -80,7 +78,8 @@ pub fn handle_show_context_menu<State: 'static, Message: 'static + Send + Clone>
         let request = unsafe { Box::from_raw(request_ptr) };
 
         // Show the menu on the UI thread
-        let result = unsafe { ContextMenu::show_sync_on_ui_thread(&request.items, hwnd, request.position) };
+        let result =
+            unsafe { ContextMenu::show_sync_on_ui_thread(&request.items, hwnd, request.position) };
 
         // Send the result back through the channel
         let _ = request.sender.send(result);
