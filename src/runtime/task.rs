@@ -631,3 +631,115 @@ pub fn show_context_menu<T: Clone + Send + Sync + 'static>(
 //         })
 //     })
 // }
+
+/// Runs the task executor loop on an async runtime
+pub fn run_task_executor<Message: Send + Clone + 'static>(
+    task_receiver: std::sync::mpsc::Receiver<Task<Message>>,
+    message_sender: std::sync::mpsc::Sender<Message>,
+    hwnd: crate::runtime::UncheckedHWND,
+) {
+    use crate::runtime::clipboard;
+    use crate::runtime::context_menu::ContextMenu;
+    use futures::StreamExt;
+    use std::sync::atomic::Ordering;
+    use windows::Win32::Foundation::{LPARAM, WPARAM};
+    use windows::Win32::UI::WindowsAndMessaging::{PostMessageW, ShowWindow, WM_CLOSE, SW_HIDE, SW_SHOW};
+    use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
+
+    async fn process_task_stream<Message: Send + Clone + 'static>(
+        stream: impl futures::Stream<Item = Action<Message>> + Send + Unpin + 'static,
+        message_sender: std::sync::mpsc::Sender<Message>,
+        hwnd: crate::runtime::UncheckedHWND,
+    ) {
+        let mut stream = stream;
+        while let Some(action) = stream.next().await {
+            match action {
+                Action::Output(message) => {
+                    // Send message to channel for UI thread processing
+                    let _ = message_sender.send(message);
+
+                    // If the UI thread is not processing messages, notify it
+                    if !crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING.swap(true, Ordering::SeqCst) {
+                        unsafe {
+                            PostMessageW(
+                                Some(hwnd.0),
+                                crate::runtime::WM_ASYNC_MESSAGE,
+                                WPARAM(0),
+                                LPARAM(0),
+                            )
+                            .ok();
+                        }
+                    }
+                }
+                Action::Clipboard(action) => match action {
+                    ClipboardAction::Set(text) => {
+                        let _ = clipboard::set_clipboard_text(hwnd.0, &text);
+                    }
+                    ClipboardAction::Get(sender) => {
+                        let _ = clipboard::get_clipboard_text(hwnd.0);
+                    }
+                },
+                Action::Window(action) => match action {
+                    WindowAction::Activate => unsafe {
+                        SetForegroundWindow(hwnd.0).ok().ok();
+                    },
+                    WindowAction::SetMode(mode) => unsafe {
+                        let show_cmd = match mode {
+                            WindowMode::Windowed => SW_SHOW,
+                            WindowMode::Hidden => SW_HIDE,
+                        };
+                        ShowWindow(hwnd.0, show_cmd).ok().ok();
+                    },
+                },
+                Action::ContextMenu(ContextMenuAction::Show {
+                    items,
+                    position,
+                    sender,
+                }) => {
+                    // Build the context menu from items
+                    let menu = ContextMenu::new(items);
+
+                    // Request the menu to be shown on the UI thread and await the result
+                    let result = menu.show_async(hwnd, position).await;
+
+                    // Send the result back through the channel
+                    let _ = sender.send(result);
+                }
+                Action::Exit => unsafe {
+                    PostMessageW(Some(hwnd.0), WM_CLOSE, WPARAM(0), LPARAM(0)).ok();
+                },
+            }
+        }
+    }
+
+    async fn run_task_loop<Message: Send + Clone + 'static>(
+        task_receiver: std::sync::mpsc::Receiver<Task<Message>>,
+        message_sender: std::sync::mpsc::Sender<Message>,
+        hwnd: crate::runtime::UncheckedHWND,
+    ) {
+        while let Ok(task) = task_receiver.recv() {
+            if let Some(stream) = into_stream(task) {
+                let message_sender = message_sender.clone();
+
+                #[cfg(all(feature = "smol-runtime", not(feature = "tokio")))]
+                smol::spawn(process_task_stream(stream, message_sender, hwnd))
+                    .detach();
+
+                #[cfg(feature = "tokio")]
+                tokio::spawn(process_task_stream(stream, message_sender, hwnd));
+            }
+        }
+    }
+
+    #[cfg(all(feature = "smol-runtime", not(feature = "tokio")))]
+    smol::block_on(run_task_loop(task_receiver, message_sender, hwnd));
+
+    #[cfg(feature = "tokio")]
+    {
+        let rt = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .expect("Failed to create tokio runtime");
+        rt.block_on(run_task_loop(task_receiver, message_sender, hwnd));
+    }
+}
