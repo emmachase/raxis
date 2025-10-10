@@ -434,6 +434,15 @@ impl<
             )
             .ok();
 
+            // (¬_¬)
+            #[link(name = "uxtheme.dll", kind = "raw-dylib", modifiers = "+verbatim")]
+            unsafe extern "system" {
+                #[link_ordinal(135)]
+                pub fn SetPreferredAppMode(preferred_app_mode: i32) -> i32;
+            }
+
+            SetPreferredAppMode(2); // Force Dark
+
             // DwmSetWindowAttribute(
             //     hwnd,
             //     DWMWA_CAPTION_COLOR,
