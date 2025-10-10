@@ -31,6 +31,7 @@ use futures::channel::oneshot::Sender;
 use futures::future::{self, FutureExt};
 use futures::stream::BoxStream;
 use futures::stream::{self, Stream, StreamExt};
+use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 // use futures::{BoxStream, Send, boxed_stream};
 
 // pub type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
@@ -60,6 +61,7 @@ pub enum WindowMode {
 
 pub enum WindowAction {
     Activate,
+    GetMode(Sender<WindowMode>),
     SetMode(WindowMode),
 }
 
@@ -549,6 +551,11 @@ pub fn set_window_mode<T>(mode: WindowMode) -> Task<T> {
     effect(Action::Window(WindowAction::SetMode(mode)))
 }
 
+/// Creates a new [`Task`] that gets the window mode.
+pub fn get_window_mode() -> Task<WindowMode> {
+    oneshot(|sender| Action::Window(WindowAction::GetMode(sender)))
+}
+
 /// Creates a new [`Task`] that activates the window.
 pub fn activate_window<T>() -> Task<T> {
     effect(Action::Window(WindowAction::Activate))
@@ -687,6 +694,12 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                 Action::Window(action) => match action {
                     WindowAction::Activate => unsafe {
                         SetForegroundWindow(hwnd.0).ok().ok();
+                    },
+                    WindowAction::GetMode(sender) => unsafe {
+                        let _ = sender.send(match IsWindowVisible(hwnd.0).as_bool() {
+                            true => WindowMode::Windowed,
+                            false => WindowMode::Hidden,
+                        });
                     },
                     WindowAction::SetMode(mode) => unsafe {
                         let show_cmd = match mode {
