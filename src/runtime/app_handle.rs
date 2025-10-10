@@ -439,15 +439,20 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 && let ref element = self.ui_tree.slots[element_key]
                 && let Some(scroll_config) = element.scroll.as_ref()
             {
-                scroll_config
+                (
+                    scroll_config.horizontal.is_some()
+                        && element.computed_content_width > element.computed_width,
+                    scroll_config.vertical.is_some()
+                        && element.computed_content_height > element.computed_height,
+                )
             } else {
-                &ScrollConfig::default()
+                (false, false)
             };
 
-            let geometry = match (scroll_config.horizontal, scroll_config.vertical) {
-                (Some(true), Some(true)) => self.scroll_icon_all.as_ref(),
-                (Some(true), _) => self.scroll_icon_horizontal.as_ref(),
-                (_, Some(true)) => self.scroll_icon_vertical.as_ref(),
+            let geometry = match scroll_config {
+                (true, true) => self.scroll_icon_all.as_ref(),
+                (true, false) => self.scroll_icon_horizontal.as_ref(),
+                (false, true) => self.scroll_icon_vertical.as_ref(),
                 _ => None,
             };
 

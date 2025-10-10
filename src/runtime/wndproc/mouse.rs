@@ -11,9 +11,10 @@ use windows::Win32::UI::WindowsAndMessaging::{
 
 use crate::gfx::PointDIP;
 use crate::layout::model::Axis;
-use crate::layout::{ScrollDirection, can_scroll_further, compute_scrollbar_geom};
 use crate::runtime::input::MiddleMouseScrollState;
-use crate::runtime::scroll::ScrollPosition;
+use crate::runtime::scroll::{
+    ScrollDirection, ScrollPosition, can_scroll_further, compute_scrollbar_geom,
+};
 use crate::runtime::util::{get_modifiers, state_mut_from_hwnd, window_rect};
 use crate::widgets::Event;
 use crate::{RedrawRequest, Shell, dips_scale};
