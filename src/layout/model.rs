@@ -863,6 +863,10 @@ impl<Message> Element<Message> {
         Self { children, ..self }
     }
 
+    pub fn push_child(&mut self, child: Element<Message>) {
+        self.children.push(child);
+    }
+
     pub fn with_direction(self, direction: Direction) -> Self {
         Self { direction, ..self }
     }

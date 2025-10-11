@@ -39,10 +39,10 @@ pub struct Application<
 }
 
 impl<
-        B: Fn(&State) -> Option<Task<Message>> + 'static,
-        State: 'static,
-        Message: 'static + Send + Clone,
-    > Application<B, State, Message>
+    B: Fn(&State) -> Option<Task<Message>> + 'static,
+    State: 'static,
+    Message: 'static + Send + Clone,
+> Application<B, State, Message>
 {
     pub fn new(
         state: State,

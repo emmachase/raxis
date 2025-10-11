@@ -1,6 +1,7 @@
 use std::ops::DerefMut;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
+use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SWP_FRAMECHANGED, SetWindowPos};
 
 use crate::runtime::context_menu::{ContextMenu, ContextMenuRequest};
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
@@ -10,6 +11,23 @@ use crate::runtime::util::state_mut_from_hwnd;
 /// Handle WM_ACTIVATE
 pub fn handle_activate<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND) -> LRESULT {
     let _ = unsafe { InvalidateRect(Some(hwnd), None, true) };
+
+    unsafe {
+        let mut rc_client = RECT::default();
+        if GetWindowRect(hwnd, &mut rc_client).is_ok() {
+            SetWindowPos(
+                hwnd,
+                None,
+                rc_client.left,
+                rc_client.top,
+                rc_client.right - rc_client.left,
+                rc_client.bottom - rc_client.top,
+                SWP_FRAMECHANGED,
+            )
+            .ok();
+        }
+    }
+
     LRESULT(0)
 }
 

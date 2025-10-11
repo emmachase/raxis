@@ -48,10 +48,9 @@ use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    HTNOWHERE, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME,
-    SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
-    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER,
-    WS_EX_NOREDIRECTIONBITMAP,
+    HTNOWHERE, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE,
+    WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE,
+    WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::{
     Win32::{
@@ -121,12 +120,9 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                 WM_NCCALCSIZE if wparam.0 == 1 => {
                     let pncsp = lparam.0 as *mut NCCALCSIZE_PARAMS;
 
-                    (*pncsp).rgrc[0].left +=
-                        GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    (*pncsp).rgrc[0].right -=
-                        GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
-                    (*pncsp).rgrc[0].bottom -=
-                        GetSystemMetrics(SM_CYFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER);
+                    (*pncsp).rgrc[0].left += GetSystemMetrics(SM_CXFRAME);
+                    (*pncsp).rgrc[0].right -= GetSystemMetrics(SM_CXFRAME);
+                    (*pncsp).rgrc[0].bottom -= GetSystemMetrics(SM_CYFRAME);
 
                     return LRESULT(0);
                 }

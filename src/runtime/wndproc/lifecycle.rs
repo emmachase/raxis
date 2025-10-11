@@ -102,11 +102,10 @@ pub fn handle_getminmaxinfo<State: 'static, Message: 'static + Send + Clone>(
         unsafe {
             // Set the minimum size of the window
             (*min_max_info).ptMinTrackSize.x = (sentinel_node.min_width / dpi_scale).floor() as i32
-                + (GetSystemMetrics(SM_CXFRAME) + GetSystemMetrics(SM_CXPADDEDBORDER)) * 2;
+                + GetSystemMetrics(SM_CXFRAME) * 2;
             (*min_max_info).ptMinTrackSize.y = (sentinel_node.min_height / dpi_scale).floor()
                 as i32
-                + GetSystemMetrics(SM_CYFRAME)
-                + GetSystemMetrics(SM_CXPADDEDBORDER);
+                + GetSystemMetrics(SM_CYFRAME);
         }
     }
     LRESULT(0)
