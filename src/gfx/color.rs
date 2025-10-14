@@ -21,7 +21,7 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 */
 
-use trig_const::{cos, pow, sin};
+use trig_const::{atan2, cos, pow, sin, sqrt};
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct Color {
@@ -144,12 +144,12 @@ impl Color {
 
     /// Returns the relative luminance of the [`Color`].
     /// <https://www.w3.org/TR/WCAG21/#dfn-relative-luminance>
-    pub fn relative_luminance(self) -> f32 {
+    pub const fn relative_luminance(self) -> f32 {
         let linear = self.into_linear();
         0.2126 * linear[0] + 0.7152 * linear[1] + 0.0722 * linear[2]
     }
 
-    pub fn darken(self, amount: f32) -> Color {
+    pub const fn darken(self, amount: f32) -> Color {
         let mut oklch = self.to_oklch();
 
         oklch.l = if oklch.l - amount < 0.0 {
@@ -161,7 +161,7 @@ impl Color {
         Self::from_oklch(oklch)
     }
 
-    pub fn lighten(self, amount: f32) -> Color {
+    pub const fn lighten(self, amount: f32) -> Color {
         let mut oklch = self.to_oklch();
 
         oklch.l = if oklch.l + amount > 1.0 {
@@ -173,7 +173,7 @@ impl Color {
         Self::from_oklch(oklch)
     }
 
-    pub fn deviate(self, amount: f32) -> Color {
+    pub const fn deviate(self, amount: f32) -> Color {
         if self.is_dark() {
             self.lighten(amount)
         } else {
@@ -181,7 +181,7 @@ impl Color {
         }
     }
 
-    pub fn desaturate(self, amount: f32) -> Color {
+    pub const fn desaturate(self, amount: f32) -> Color {
         let mut oklch = self.to_oklch();
 
         oklch.c = if oklch.c - amount < 0.0 {
@@ -193,7 +193,7 @@ impl Color {
         Self::from_oklch(oklch)
     }
 
-    pub fn saturate(self, amount: f32) -> Color {
+    pub const fn saturate(self, amount: f32) -> Color {
         let mut oklch = self.to_oklch();
 
         oklch.c = if oklch.c + amount > 1.0 {
@@ -205,12 +205,22 @@ impl Color {
         Self::from_oklch(oklch)
     }
 
-    pub fn mix(a: Color, b: Color, factor: f32) -> Color {
+    pub const fn mix(a: Color, b: Color, factor: f32) -> Color {
         let b_amount = factor.clamp(0.0, 1.0);
         let a_amount = 1.0 - b_amount;
 
-        let a_linear = a.into_linear().map(|c| c * a_amount);
-        let b_linear = b.into_linear().map(|c| c * b_amount);
+        let mut a_linear = a.into_linear();
+        let mut b_linear = b.into_linear();
+
+        a_linear[0] *= a_amount;
+        a_linear[1] *= a_amount;
+        a_linear[2] *= a_amount;
+        a_linear[3] *= a_amount;
+
+        b_linear[0] *= b_amount;
+        b_linear[1] *= b_amount;
+        b_linear[2] *= b_amount;
+        b_linear[3] *= b_amount;
 
         Color::from_linear_rgba(
             a_linear[0] + b_linear[0],
@@ -220,16 +230,19 @@ impl Color {
         )
     }
 
-    pub fn readable(background: Color, text: Color) -> Color {
+    pub const fn readable(background: Color, text: Color) -> Color {
         if Self::is_readable(background, text) {
             return text;
         }
 
-        let improve = if background.is_dark() {
-            Self::lighten
-        } else {
-            Self::darken
-        };
+        #[inline]
+        const fn improve(color: Color, amount: f32) -> Color {
+            if color.is_dark() {
+                color.lighten(amount)
+            } else {
+                color.darken(amount)
+            }
+        }
 
         // TODO: Compute factor from relative contrast value
         let candidate = improve(text, 0.1);
@@ -254,23 +267,23 @@ impl Color {
         }
     }
 
-    pub fn is_dark(self) -> bool {
+    pub const fn is_dark(self) -> bool {
         self.to_oklch().l < 0.6
     }
 
-    pub fn is_readable(a: Color, b: Color) -> bool {
+    pub const fn is_readable(a: Color, b: Color) -> bool {
         Self::relative_contrast(a, b) >= 6.0
     }
 
     // https://www.w3.org/TR/WCAG21/#dfn-contrast-ratio
-    pub fn relative_contrast(a: Color, b: Color) -> f32 {
+    pub const fn relative_contrast(a: Color, b: Color) -> f32 {
         let lum_a = a.relative_luminance();
         let lum_b = b.relative_luminance();
         (lum_a.max(lum_b) + 0.05) / (lum_a.min(lum_b) + 0.05)
     }
 
     // https://en.wikipedia.org/wiki/Oklab_color_space#Conversions_between_color_spaces
-    pub fn to_oklch(self) -> Oklch {
+    pub const fn to_oklch(self) -> Oklch {
         let [r, g, b, alpha] = self.into_linear();
 
         // linear RGB → LMS
@@ -279,9 +292,9 @@ impl Color {
         let s = 0.08830246 * r + 0.28171885 * g + 0.6299787 * b;
 
         // Nonlinear transform (cube root)
-        let l_ = l.cbrt();
-        let m_ = m.cbrt();
-        let s_ = s.cbrt();
+        let l_ = pow(l as f64, 1.0 / 3.0) as f32;
+        let m_ = pow(m as f64, 1.0 / 3.0) as f32;
+        let s_ = pow(s as f64, 1.0 / 3.0) as f32;
 
         // LMS → Oklab
         let l = 0.21045426 * l_ + 0.7936178 * m_ - 0.004072047 * s_;
@@ -289,8 +302,8 @@ impl Color {
         let b = 0.025904037 * l_ + 0.78277177 * m_ - 0.80867577 * s_;
 
         // Oklab → Oklch
-        let c = (a * a + b * b).sqrt();
-        let h = b.atan2(a); // radians
+        let c = sqrt((a * a + b * b) as f64) as f32;
+        let h = atan2(b as f64, a as f64) as f32; // radians
 
         Oklch { l, c, h, a: alpha }
     }
