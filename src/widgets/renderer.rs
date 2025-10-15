@@ -475,6 +475,177 @@ impl Renderer<'_> {
         border_radius: Option<&BorderRadius>,
     ) {
         unsafe {
+            // Simplified case for solid inset shadow (no blur)
+            if shadow.blur_radius <= 0.0 {
+                // Push a clip to the element bounds
+                if let Some(border_radius) = border_radius {
+                    // Use layer with geometry for rounded clip
+                    if border_radius.top_left == border_radius.top_right
+                        && border_radius.top_right == border_radius.bottom_right
+                        && border_radius.bottom_right == border_radius.bottom_left
+                    {
+                        // Simple rounded rectangle
+                        let rounded_rect = windows::Win32::Graphics::Direct2D::D2D1_ROUNDED_RECT {
+                            rect: D2D_RECT_F {
+                                left: rect.x,
+                                top: rect.y,
+                                right: rect.x + rect.width,
+                                bottom: rect.y + rect.height,
+                            },
+                            radiusX: border_radius.top_left,
+                            radiusY: border_radius.top_left,
+                        };
+                        if let Ok(geometry) =
+                            self.factory.CreateRoundedRectangleGeometry(&rounded_rect)
+                        {
+                            let mut layer_params = D2D1_LAYER_PARAMETERS1 {
+                                contentBounds: D2D_RECT_F {
+                                    left: rect.x,
+                                    top: rect.y,
+                                    right: rect.x + rect.width,
+                                    bottom: rect.y + rect.height,
+                                },
+                                geometricMask: ManuallyDrop::new(Some(geometry.cast::<ID2D1Geometry>().unwrap())),
+                                maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                maskTransform: Matrix3x2::identity(),
+                                opacity: 1.0,
+                                opacityBrush: ManuallyDrop::new(None),
+                                layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
+                            };
+                            self.render_target.PushLayer(&layer_params, None);
+                            // Manually drop the ManuallyDrop fields to prevent leaks
+                            ManuallyDrop::drop(&mut layer_params.geometricMask);
+                            ManuallyDrop::drop(&mut layer_params.opacityBrush);
+                        }
+                    } else {
+                        // Complex rounded rectangle - use path geometry
+                        if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
+                            if let Ok(sink) = path_geometry.Open() {
+                                self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                                let _ = sink.Close();
+
+                                let mut layer_params = D2D1_LAYER_PARAMETERS1 {
+                                    contentBounds: D2D_RECT_F {
+                                        left: rect.x,
+                                        top: rect.y,
+                                        right: rect.x + rect.width,
+                                        bottom: rect.y + rect.height,
+                                    },
+                                    geometricMask: ManuallyDrop::new(Some(path_geometry.cast::<ID2D1Geometry>().unwrap())),
+                                    maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                                    maskTransform: Matrix3x2::identity(),
+                                    opacity: 1.0,
+                                    opacityBrush: ManuallyDrop::new(None),
+                                    layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
+                                };
+                                self.render_target.PushLayer(&layer_params, None);
+                                // Manually drop the ManuallyDrop fields to prevent leaks
+                                ManuallyDrop::drop(&mut layer_params.geometricMask);
+                                ManuallyDrop::drop(&mut layer_params.opacityBrush);
+                            }
+                        }
+                    }
+                } else {
+                    // Use simple axis-aligned clip
+                    let clip_rect = D2D_RECT_F {
+                        left: rect.x,
+                        top: rect.y,
+                        right: rect.x + rect.width,
+                        bottom: rect.y + rect.height,
+                    };
+                    self.render_target
+                        .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                }
+
+                // Draw a frame (large rectangle with hole) for the solid inset shadow
+                // The hole represents where the element is (with offset and spread applied)
+                let element_rect_with_spread = RectDIP {
+                    x: rect.x + shadow.offset_x - shadow.spread_radius,
+                    y: rect.y + shadow.offset_y - shadow.spread_radius,
+                    width: rect.width + shadow.spread_radius * 2.0,
+                    height: rect.height + shadow.spread_radius * 2.0,
+                };
+
+                // Create a large outer rectangle that covers the entire clipped area
+                let outer_rect = RectDIP {
+                    x: rect.x - rect.width,
+                    y: rect.y - rect.height,
+                    width: rect.width * 3.0,
+                    height: rect.height * 3.0,
+                };
+
+                // Set brush to shadow color
+                self.brush.SetColor(&D2D1_COLOR_F {
+                    r: shadow.color.r,
+                    g: shadow.color.g,
+                    b: shadow.color.b,
+                    a: shadow.color.a,
+                });
+
+                // Create a frame geometry (outer rect with hole)
+                if let Ok(frame_geometry) = self.factory.CreatePathGeometry() {
+                    if let Ok(sink) = frame_geometry.Open() {
+                        // Start the outer rectangle
+                        sink.BeginFigure(
+                            Vector2::new(outer_rect.x, outer_rect.y),
+                            D2D1_FIGURE_BEGIN_FILLED,
+                        );
+                        sink.AddLine(Vector2::new(outer_rect.x + outer_rect.width, outer_rect.y));
+                        sink.AddLine(Vector2::new(
+                            outer_rect.x + outer_rect.width,
+                            outer_rect.y + outer_rect.height,
+                        ));
+                        sink.AddLine(Vector2::new(outer_rect.x, outer_rect.y + outer_rect.height));
+                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+
+                        // Add the inner hole (reverse winding)
+                        if let Some(border_radius) = border_radius {
+                            // Add rounded rectangle hole
+                            self.create_rounded_rectangle_path_reverse(
+                                &sink,
+                                &element_rect_with_spread,
+                                border_radius,
+                            );
+                        } else {
+                            // Add rectangular hole (reverse winding - counterclockwise)
+                            sink.BeginFigure(
+                                Vector2::new(
+                                    element_rect_with_spread.x,
+                                    element_rect_with_spread.y,
+                                ),
+                                D2D1_FIGURE_BEGIN_FILLED,
+                            );
+                            sink.AddLine(Vector2::new(
+                                element_rect_with_spread.x,
+                                element_rect_with_spread.y + element_rect_with_spread.height,
+                            ));
+                            sink.AddLine(Vector2::new(
+                                element_rect_with_spread.x + element_rect_with_spread.width,
+                                element_rect_with_spread.y + element_rect_with_spread.height,
+                            ));
+                            sink.AddLine(Vector2::new(
+                                element_rect_with_spread.x + element_rect_with_spread.width,
+                                element_rect_with_spread.y,
+                            ));
+                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+                        }
+
+                        let _ = sink.Close();
+                        self.render_target
+                            .FillGeometry(&frame_geometry, self.brush, None);
+                    }
+                }
+
+                // Pop the clip
+                if border_radius.is_some() {
+                    self.render_target.PopLayer();
+                } else {
+                    self.render_target.PopAxisAlignedClip();
+                }
+
+                return;
+            }
+
             // For inset shadows, we need to clip to the element bounds and draw the shadow inside
             // We create a shadow from a large outer rectangle with a hole cut out for the element
 
@@ -498,7 +669,7 @@ impl Renderer<'_> {
                     };
                     if let Ok(geometry) = self.factory.CreateRoundedRectangleGeometry(&rounded_rect)
                     {
-                        let layer_params = D2D1_LAYER_PARAMETERS1 {
+                        let mut layer_params = D2D1_LAYER_PARAMETERS1 {
                             contentBounds: D2D_RECT_F {
                                 left: rect.x,
                                 top: rect.y,
@@ -513,6 +684,9 @@ impl Renderer<'_> {
                             layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
                         };
                         self.render_target.PushLayer(&layer_params, None);
+                        // Manually drop the ManuallyDrop fields to prevent leaks
+                        ManuallyDrop::drop(&mut layer_params.geometricMask);
+                        ManuallyDrop::drop(&mut layer_params.opacityBrush);
                     }
                 } else {
                     // Complex rounded rectangle - use path geometry
@@ -521,7 +695,7 @@ impl Renderer<'_> {
                             self.create_rounded_rectangle_path(&sink, rect, border_radius);
                             let _ = sink.Close();
 
-                            let layer_params = D2D1_LAYER_PARAMETERS1 {
+                            let mut layer_params = D2D1_LAYER_PARAMETERS1 {
                                 contentBounds: D2D_RECT_F {
                                     left: rect.x,
                                     top: rect.y,
@@ -536,6 +710,9 @@ impl Renderer<'_> {
                                 layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
                             };
                             self.render_target.PushLayer(&layer_params, None);
+                            // Manually drop the ManuallyDrop fields to prevent leaks
+                            ManuallyDrop::drop(&mut layer_params.geometricMask);
+                            ManuallyDrop::drop(&mut layer_params.opacityBrush);
                         }
                     }
                 }
