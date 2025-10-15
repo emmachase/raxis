@@ -10,13 +10,13 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE,
     D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH,
     D2D1_DASH_STYLE_DASH_DOT, D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT,
-    D2D1_DASH_STYLE_SOLID, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_PARAMETERS1, D2D1_LINE_JOIN_BEVEL,
-    D2D1_LINE_JOIN_MITER, D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND,
-    D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT,
+    D2D1_DASH_STYLE_SOLID, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_PARAMETERS1,
+    D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER, D2D1_LINE_JOIN_MITER_OR_BEVEL,
+    D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT,
     D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES,
     D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, ID2D1DeviceContext6,
-    ID2D1Effect, ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1Image,
-    ID2D1SolidColorBrush, ID2D1StrokeStyle,
+    ID2D1Effect, ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
+    ID2D1StrokeStyle,
 };
 use windows_core::Interface;
 use windows_numerics::{Matrix3x2, Vector2, Vector4};
@@ -556,8 +556,8 @@ impl Renderer<'_> {
             let padding = shadow.blur_radius * 3.0 + shadow.spread_radius;
             let offset_padding_x = shadow.offset_x.abs();
             let offset_padding_y = shadow.offset_y.abs();
-            let expanded_width = rect.width + padding * 2.0 + offset_padding_x;
-            let expanded_height = rect.height + padding * 2.0 + offset_padding_y;
+            let expanded_width = rect.width + (padding + offset_padding_x) * 2.0;
+            let expanded_height = rect.height + (padding + offset_padding_y) * 2.0;
 
             // Create cache key for this inset shadow
             let cache_key =
@@ -574,17 +574,15 @@ impl Renderer<'_> {
                     expanded_width,
                     expanded_height,
                     padding,
-                    shadow.offset_x,
-                    shadow.offset_y,
                 )
             });
 
             // Draw the cached shadow effect
             if let Some(effect) = cached_effect {
                 // Position the bitmap: offset from rect by padding, adjusting for negative offsets
-                let draw_x = rect.x - padding - shadow.offset_x.min(0.0);
-                let draw_y = rect.y - padding - shadow.offset_y.min(0.0);
-                
+                let draw_x = rect.x - padding + shadow.offset_x;
+                let draw_y = rect.y - padding + shadow.offset_y;
+
                 self.render_target.DrawImage(
                     &effect.cast::<ID2D1Image>().unwrap(),
                     Some(&Vector2::new(draw_x, draw_y)),
@@ -747,8 +745,6 @@ impl Renderer<'_> {
         expanded_width: f32,
         expanded_height: f32,
         padding: f32,
-        offset_x: f32,
-        offset_y: f32,
     ) -> Option<ID2D1Effect> {
         unsafe {
             // Create a bitmap render target for the inset shadow
@@ -774,12 +770,9 @@ impl Renderer<'_> {
                 // For inset shadows, create a "frame" geometry (outer rect with inner hole)
                 // The element rect in the bitmap needs to account for shadow offset
                 // Positive offset means shadow goes right/down, so hole shifts right/down in bitmap
-                let hole_offset_x = offset_x.max(0.0);
-                let hole_offset_y = offset_y.max(0.0);
-                
                 let element_rect_in_bitmap = RectDIP {
-                    x: padding + hole_offset_x - shadow.spread_radius,
-                    y: padding + hole_offset_y - shadow.spread_radius,
+                    x: padding - shadow.spread_radius,
+                    y: padding - shadow.spread_radius,
                     width: rect.width + shadow.spread_radius * 2.0,
                     height: rect.height + shadow.spread_radius * 2.0,
                 };
@@ -797,10 +790,7 @@ impl Renderer<'_> {
                     if let Ok(frame_geometry) = self.factory.CreatePathGeometry() {
                         if let Ok(sink) = frame_geometry.Open() {
                             // Start the outer rectangle
-                            sink.BeginFigure(
-                                Vector2::new(0.0, 0.0),
-                                D2D1_FIGURE_BEGIN_FILLED,
-                            );
+                            sink.BeginFigure(Vector2::new(0.0, 0.0), D2D1_FIGURE_BEGIN_FILLED);
                             sink.AddLine(Vector2::new(expanded_width, 0.0));
                             sink.AddLine(Vector2::new(expanded_width, expanded_height));
                             sink.AddLine(Vector2::new(0.0, expanded_height));
@@ -817,7 +807,10 @@ impl Renderer<'_> {
                             } else {
                                 // Add rectangular hole (reverse winding - counterclockwise)
                                 sink.BeginFigure(
-                                    Vector2::new(element_rect_in_bitmap.x, element_rect_in_bitmap.y),
+                                    Vector2::new(
+                                        element_rect_in_bitmap.x,
+                                        element_rect_in_bitmap.y,
+                                    ),
                                     D2D1_FIGURE_BEGIN_FILLED,
                                 );
                                 sink.AddLine(Vector2::new(
