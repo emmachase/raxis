@@ -1,4 +1,4 @@
-use crate::layout::model::{Direction, Element, HorizontalAlignment, Sizing, VerticalAlignment};
+use crate::layout::model::{Alignment, Direction, Element, Sizing};
 
 pub fn row<Message>(children: Vec<Element<Message>>) -> Element<Message> {
     Element {
@@ -40,44 +40,144 @@ pub fn center<Message>(content: impl Into<Element<Message>>) -> Element<Message>
             direction: Direction::LeftToRight,
             width: Sizing::grow(),
             children: vec![content.into()],
-            horizontal_alignment: HorizontalAlignment::Center,
+            justify_content: Alignment::Center,
             ..Default::default()
         }],
-        vertical_alignment: VerticalAlignment::Center,
+        justify_content: Alignment::Center,
         ..Default::default()
     }
 }
 
 pub trait ElementAlignmentExt {
-    fn align_x(self, alignment: HorizontalAlignment) -> Self;
-    fn align_y(self, alignment: VerticalAlignment) -> Self;
+    /// Set how children are distributed along the main axis (justify-content in CSS)
+    fn justify_content(self, alignment: Alignment) -> Self;
+    /// Set default main-axis alignment for all children (justify-items, ZStack only)
+    fn justify_items(self, alignment: Alignment) -> Self;
+    /// Set default cross-axis alignment for all children (align-items in CSS)
+    fn align_items(self, alignment: Alignment) -> Self;
+    /// Set how wrapped rows/columns are distributed along cross axis (align-content in CSS)
+    fn align_content(self, alignment: Alignment) -> Self;
+    /// Set how this element aligns on main axis in parent (justify-self, ZStack only)
+    fn justify_self(self, alignment: Alignment) -> Self;
+    /// Set how this element aligns on cross axis in parent (align-self in CSS)
+    fn align_self(self, alignment: Alignment) -> Self;
+
+    // Legacy methods
+    #[deprecated(since = "0.1.0", note = "Use justify_content or align_self")]
+    fn axis_align(self, alignment: Alignment) -> Self;
+    #[deprecated(since = "0.1.0", note = "Use align_items or align_self")]
+    fn cross_align(self, alignment: Alignment) -> Self;
+    #[deprecated(since = "0.1.0", note = "Use justify_content or align_self")]
+    fn align_x(self, alignment: Alignment) -> Self;
+    #[deprecated(since = "0.1.0", note = "Use justify_content or align_self")]
+    fn align_y(self, alignment: Alignment) -> Self;
 }
 
 impl<Message> ElementAlignmentExt for Element<Message> {
-    fn align_x(mut self, alignment: HorizontalAlignment) -> Self {
-        self.children = self.children.align_x(alignment);
+    fn justify_content(mut self, alignment: Alignment) -> Self {
+        self.children = self.children.justify_content(alignment);
         self
     }
 
-    fn align_y(mut self, alignment: VerticalAlignment) -> Self {
-        self.children = self.children.align_y(alignment);
+    fn justify_items(mut self, alignment: Alignment) -> Self {
+        self.children = self.children.justify_items(alignment);
         self
+    }
+
+    fn align_items(mut self, alignment: Alignment) -> Self {
+        self.children = self.children.align_items(alignment);
+        self
+    }
+
+    fn align_content(mut self, alignment: Alignment) -> Self {
+        self.children = self.children.align_content(alignment);
+        self
+    }
+
+    fn justify_self(mut self, alignment: Alignment) -> Self {
+        self.children = self.children.justify_self(alignment);
+        self
+    }
+
+    fn align_self(mut self, alignment: Alignment) -> Self {
+        self.children = self.children.align_self(alignment);
+        self
+    }
+
+    fn axis_align(self, alignment: Alignment) -> Self {
+        self.justify_content(alignment)
+    }
+
+    fn cross_align(self, alignment: Alignment) -> Self {
+        self.align_self(alignment)
+    }
+
+    fn align_x(self, alignment: Alignment) -> Self {
+        self.justify_content(alignment)
+    }
+
+    fn align_y(self, alignment: Alignment) -> Self {
+        self.align_self(alignment)
     }
 }
 
 impl<Message> ElementAlignmentExt for Vec<Element<Message>> {
-    fn align_x(mut self, alignment: HorizontalAlignment) -> Self {
+    fn justify_content(mut self, alignment: Alignment) -> Self {
         self.iter_mut().for_each(|e| {
-            e.horizontal_alignment = alignment;
+            e.justify_content = alignment;
         });
         self
     }
 
-    fn align_y(mut self, alignment: VerticalAlignment) -> Self {
+    fn justify_items(mut self, alignment: Alignment) -> Self {
         self.iter_mut().for_each(|e| {
-            e.vertical_alignment = alignment;
+            e.justify_items = alignment;
         });
         self
+    }
+
+    fn align_items(mut self, alignment: Alignment) -> Self {
+        self.iter_mut().for_each(|e| {
+            e.align_items = alignment;
+        });
+        self
+    }
+
+    fn align_content(mut self, alignment: Alignment) -> Self {
+        self.iter_mut().for_each(|e| {
+            e.align_content = alignment;
+        });
+        self
+    }
+
+    fn justify_self(mut self, alignment: Alignment) -> Self {
+        self.iter_mut().for_each(|e| {
+            e.justify_self = Some(alignment);
+        });
+        self
+    }
+
+    fn align_self(mut self, alignment: Alignment) -> Self {
+        self.iter_mut().for_each(|e| {
+            e.align_self = Some(alignment);
+        });
+        self
+    }
+
+    fn axis_align(self, alignment: Alignment) -> Self {
+        self.justify_content(alignment)
+    }
+
+    fn cross_align(self, alignment: Alignment) -> Self {
+        self.align_self(alignment)
+    }
+
+    fn align_x(self, alignment: Alignment) -> Self {
+        self.justify_content(alignment)
+    }
+
+    fn align_y(self, alignment: Alignment) -> Self {
+        self.align_self(alignment)
     }
 }
 

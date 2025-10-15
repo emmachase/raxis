@@ -116,20 +116,18 @@ pub enum Direction {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum HorizontalAlignment {
+pub enum Alignment {
     #[default]
-    Left,
+    Start,
     Center,
-    Right,
+    End,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum VerticalAlignment {
-    #[default]
-    Top,
-    Center,
-    Bottom,
-}
+// Legacy type aliases for compatibility with floating alignment
+#[deprecated(since = "0.1.0", note = "Use Alignment instead")]
+pub type HorizontalAlignment = Alignment;
+#[deprecated(since = "0.1.0", note = "Use Alignment instead")]
+pub type VerticalAlignment = Alignment;
 
 /// How to break text at word boundaries
 /// Default: AfterWord
@@ -274,8 +272,8 @@ pub struct FloatingConfig {
 
     /// Defaults to parent when None
     pub anchor_id: Option<u64>,
-    pub anchor: Option<Alignment2D<HorizontalAlignment, VerticalAlignment>>,
-    pub align: Option<Alignment2D<HorizontalAlignment, VerticalAlignment>>,
+    pub anchor: Option<Alignment2D<Alignment, Alignment>>,
+    pub align: Option<Alignment2D<Alignment, Alignment>>,
 }
 
 // ---------- Border Radius ----------
@@ -691,9 +689,18 @@ pub struct UIElement<Message> {
 
     pub direction: Direction,
 
-    // These names mirror the TS definitions, though they may be confusing.
-    pub horizontal_alignment: HorizontalAlignment,
-    pub vertical_alignment: VerticalAlignment,
+    /// How children are distributed along the main axis (container property)
+    pub justify_content: Alignment,
+    /// Default main-axis alignment for all children (container property, ZStack only)
+    pub justify_items: Alignment,
+    /// Default cross-axis alignment for all children (container property)
+    pub align_items: Alignment,
+    /// How wrapped rows/columns are distributed along the cross axis (container property, wrapping layouts only)
+    pub align_content: Alignment,
+    /// How this element aligns on the main axis within its parent (self property, ZStack only)
+    pub justify_self: Option<Alignment>,
+    /// How this element aligns on the cross axis within its parent (self property, overrides parent's align_items)
+    pub align_self: Option<Alignment>,
 
     pub width: Sizing,
     pub height: Sizing,
@@ -740,8 +747,12 @@ impl<Message> Default for UIElement<Message> {
             parent: None,
             content: None,
             direction: Direction::LeftToRight,
-            horizontal_alignment: HorizontalAlignment::Left,
-            vertical_alignment: VerticalAlignment::Top,
+            justify_content: Alignment::Start,
+            justify_items: Alignment::Start,
+            align_items: Alignment::Start,
+            align_content: Alignment::Start,
+            justify_self: None,
+            align_self: None,
             width: Sizing::default(),
             height: Sizing::default(),
             child_gap: 0.0,
@@ -821,9 +832,18 @@ pub struct Element<Message> {
 
     pub direction: Direction,
 
-    // These names mirror the TS definitions, though they may be confusing.
-    pub horizontal_alignment: HorizontalAlignment,
-    pub vertical_alignment: VerticalAlignment,
+    /// How children are distributed along the main axis (container property)
+    pub justify_content: Alignment,
+    /// Default main-axis alignment for all children (container property, ZStack only)
+    pub justify_items: Alignment,
+    /// Default cross-axis alignment for all children (container property)
+    pub align_items: Alignment,
+    /// How wrapped rows/columns are distributed along the cross axis (container property, wrapping layouts only)
+    pub align_content: Alignment,
+    /// How this element aligns on the main axis within its parent (self property, ZStack only)
+    pub justify_self: Option<Alignment>,
+    /// How this element aligns on the cross axis within its parent (self property, overrides parent's align_items)
+    pub align_self: Option<Alignment>,
 
     pub width: Sizing,
     pub height: Sizing,
@@ -871,17 +891,78 @@ impl<Message> Element<Message> {
         Self { direction, ..self }
     }
 
-    pub fn with_horizontal_alignment(self, align: HorizontalAlignment) -> Self {
+    pub fn with_justify_content(self, align: Alignment) -> Self {
         Self {
-            horizontal_alignment: align,
+            justify_content: align,
             ..self
         }
     }
 
-    pub fn with_vertical_alignment(self, align: VerticalAlignment) -> Self {
+    pub fn with_justify_items(self, align: Alignment) -> Self {
         Self {
-            vertical_alignment: align,
+            justify_items: align,
             ..self
+        }
+    }
+
+    pub fn with_align_items(self, align: Alignment) -> Self {
+        Self {
+            align_items: align,
+            ..self
+        }
+    }
+
+    pub fn with_align_content(self, align: Alignment) -> Self {
+        Self {
+            align_content: align,
+            ..self
+        }
+    }
+
+    pub fn with_justify_self(self, align: Alignment) -> Self {
+        Self {
+            justify_self: Some(align),
+            ..self
+        }
+    }
+
+    pub fn with_align_self(self, align: Alignment) -> Self {
+        Self {
+            align_self: Some(align),
+            ..self
+        }
+    }
+
+    // Legacy compatibility methods
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use with_justify_content for main axis or with_align_self for cross axis"
+    )]
+    pub fn with_axis_align(self, align: Alignment) -> Self {
+        self.with_justify_content(align)
+    }
+
+    #[deprecated(
+        since = "0.1.0",
+        note = "Use with_align_items for container or with_align_self for self"
+    )]
+    pub fn with_cross_align(self, align: Alignment) -> Self {
+        self.with_align_self(align)
+    }
+
+    #[deprecated(since = "0.1.0", note = "Use with_justify_content or with_align_self")]
+    pub fn with_horizontal_alignment(self, align: Alignment) -> Self {
+        match self.direction {
+            Direction::LeftToRight | Direction::ZStack => self.with_justify_content(align),
+            Direction::TopToBottom => self.with_align_self(align),
+        }
+    }
+
+    #[deprecated(since = "0.1.0", note = "Use with_justify_content or with_align_self")]
+    pub fn with_vertical_alignment(self, align: Alignment) -> Self {
+        match self.direction {
+            Direction::LeftToRight | Direction::ZStack => self.with_align_self(align),
+            Direction::TopToBottom => self.with_justify_content(align),
         }
     }
 
@@ -1013,8 +1094,12 @@ impl<Message> Default for Element<Message> {
             children: Vec::new(),
             content: None,
             direction: Direction::LeftToRight,
-            horizontal_alignment: HorizontalAlignment::Left,
-            vertical_alignment: VerticalAlignment::Top,
+            justify_content: Alignment::Start,
+            justify_items: Alignment::Start,
+            align_items: Alignment::Start,
+            align_content: Alignment::Start,
+            justify_self: None,
+            align_self: None,
             width: Sizing::default(),
             height: Sizing::default(),
             child_gap: 0.0,
@@ -1044,8 +1129,12 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             children: Vec::new(),
             content: element.content,
             direction: element.direction,
-            horizontal_alignment: element.horizontal_alignment,
-            vertical_alignment: element.vertical_alignment,
+            justify_content: element.justify_content,
+            justify_items: element.justify_items,
+            align_items: element.align_items,
+            align_content: element.align_content,
+            justify_self: element.justify_self,
+            align_self: element.align_self,
             width: element.width,
             height: element.height,
             child_gap: element.child_gap,

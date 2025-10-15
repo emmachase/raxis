@@ -1,7 +1,7 @@
 use crate::{
     layout::{
         BorrowedUITree, ScrollStateManager,
-        model::{Direction, HorizontalAlignment, UIKey, VerticalAlignment},
+        model::{Alignment, Direction, UIKey},
         visitors,
     },
     runtime::scroll::ScrollPosition,
@@ -73,20 +73,16 @@ pub fn position_elements<Message>(
                     if let Some(anchor_align) = floating.anchor.as_ref() {
                         if let Some(ax) = anchor_align.x {
                             match ax {
-                                HorizontalAlignment::Left => {}
-                                HorizontalAlignment::Center => {
-                                    anchor_point_x = anchor_x + anchor_w / 2.0
-                                }
-                                HorizontalAlignment::Right => anchor_point_x = anchor_x + anchor_w,
+                                Alignment::Start => {}
+                                Alignment::Center => anchor_point_x = anchor_x + anchor_w / 2.0,
+                                Alignment::End => anchor_point_x = anchor_x + anchor_w,
                             }
                         }
                         if let Some(ay) = anchor_align.y {
                             match ay {
-                                VerticalAlignment::Top => {}
-                                VerticalAlignment::Center => {
-                                    anchor_point_y = anchor_y + anchor_h / 2.0
-                                }
-                                VerticalAlignment::Bottom => anchor_point_y = anchor_y + anchor_h,
+                                Alignment::Start => {}
+                                Alignment::Center => anchor_point_y = anchor_y + anchor_h / 2.0,
+                                Alignment::End => anchor_point_y = anchor_y + anchor_h,
                             }
                         }
                     }
@@ -100,16 +96,16 @@ pub fn position_elements<Message>(
                     if let Some(align) = floating.align.as_ref() {
                         if let Some(ax) = align.x {
                             match ax {
-                                HorizontalAlignment::Left => {}
-                                HorizontalAlignment::Center => align_offset_x = -element_w / 2.0,
-                                HorizontalAlignment::Right => align_offset_x = -element_w,
+                                Alignment::Start => {}
+                                Alignment::Center => align_offset_x = -element_w / 2.0,
+                                Alignment::End => align_offset_x = -element_w,
                             }
                         }
                         if let Some(ay) = align.y {
                             match ay {
-                                VerticalAlignment::Top => {}
-                                VerticalAlignment::Center => align_offset_y = -element_h / 2.0,
-                                VerticalAlignment::Bottom => align_offset_y = -element_h,
+                                Alignment::Start => {}
+                                Alignment::Center => align_offset_y = -element_h / 2.0,
+                                Alignment::End => align_offset_y = -element_h,
                             }
                         }
                     }
@@ -251,32 +247,36 @@ pub fn position_elements<Message>(
             match slots[key].direction {
                 Direction::ZStack => {
                     // All children are stacked at the same position, respecting individual alignment
+                    // ZStack: justify_self for horizontal, align_self for vertical
                     for c in non_floating {
-                        // Calculate horizontal position based on child's alignment
-                        match slots[c].horizontal_alignment {
-                            HorizontalAlignment::Left => {
+                        // Horizontal position: use child's justify_self, fallback to parent's justify_items
+                        let horizontal_align =
+                            slots[c].justify_self.unwrap_or(slots[key].justify_items);
+                        match horizontal_align {
+                            Alignment::Start => {
                                 slots[c].x = content_start_x;
                             }
-                            HorizontalAlignment::Center => {
+                            Alignment::Center => {
                                 slots[c].x = content_start_x
                                     + (available_width - slots[c].computed_width).max(0.0) / 2.0;
                             }
-                            HorizontalAlignment::Right => {
+                            Alignment::End => {
                                 slots[c].x = content_start_x
                                     + (available_width - slots[c].computed_width).max(0.0);
                             }
                         }
 
-                        // Calculate vertical position based on child's alignment
-                        match slots[c].vertical_alignment {
-                            VerticalAlignment::Top => {
+                        // Vertical position: use child's align_self, fallback to parent's align_items
+                        let vertical_align = slots[c].align_self.unwrap_or(slots[key].align_items);
+                        match vertical_align {
+                            Alignment::Start => {
                                 slots[c].y = content_start_y;
                             }
-                            VerticalAlignment::Center => {
+                            Alignment::Center => {
                                 slots[c].y = content_start_y
                                     + (available_height - slots[c].computed_height).max(0.0) / 2.0;
                             }
-                            VerticalAlignment::Bottom => {
+                            Alignment::End => {
                                 slots[c].y = content_start_y
                                     + (available_height - slots[c].computed_height).max(0.0);
                             }
@@ -285,12 +285,45 @@ pub fn position_elements<Message>(
                 }
                 Direction::LeftToRight => {
                     // Check if this is a wrapping layout with breaks
-                    if slots[key].wrap && !slots[key].wrap_breaks.is_empty() {
+                    if slots[key].wrap {
                         // Handle wrapping layout with multiple rows
                         let breaks = slots[key].wrap_breaks.clone();
-                        let mut start_idx = 0;
-                        let mut current_y = content_start_y;
 
+                        // First pass: calculate total height of all rows
+                        let mut total_rows_height = 0.0;
+                        let mut row_count = 0;
+                        let mut start_idx = 0;
+                        for &break_idx in breaks.iter().chain(std::iter::once(&non_floating.len()))
+                        {
+                            let row_children: Vec<UIKey> =
+                                non_floating[start_idx..break_idx].to_vec();
+                            if !row_children.is_empty() {
+                                let row_height = row_children
+                                    .iter()
+                                    .fold(0.0_f32, |acc, &c| acc.max(slots[c].computed_height));
+                                total_rows_height += row_height;
+                                row_count += 1;
+                            }
+                            start_idx = break_idx;
+                        }
+                        // Add gaps between rows
+                        if row_count > 1 {
+                            total_rows_height += slots[key].child_gap * (row_count as f32 - 1.0);
+                        }
+
+                        // Apply align_content to determine starting Y position
+                        let remaining_height = available_height - total_rows_height;
+                        let mut current_y = content_start_y;
+                        if remaining_height > 0.0 {
+                            match slots[key].align_content {
+                                Alignment::Start => {}
+                                Alignment::Center => current_y += remaining_height / 2.0,
+                                Alignment::End => current_y += remaining_height,
+                            }
+                        }
+
+                        // Second pass: position rows
+                        start_idx = 0;
                         for &break_idx in breaks.iter().chain(std::iter::once(&non_floating.len()))
                         {
                             let row_children: Vec<UIKey> =
@@ -313,14 +346,14 @@ pub fn position_elements<Message>(
                                 .iter()
                                 .fold(0.0_f32, |acc, &c| acc.max(slots[c].computed_height));
 
-                            // Calculate starting X position for this row based on alignment
+                            // Calculate starting X position for this row based on justify_content
                             let remaining_width = available_width - total_row_width;
                             let mut start_x = content_start_x;
                             if remaining_width > 0.0 {
-                                match slots[key].horizontal_alignment {
-                                    HorizontalAlignment::Left => {}
-                                    HorizontalAlignment::Center => start_x += remaining_width / 2.0,
-                                    HorizontalAlignment::Right => start_x += remaining_width,
+                                match slots[key].justify_content {
+                                    Alignment::Start => {}
+                                    Alignment::Center => start_x += remaining_width / 2.0,
+                                    Alignment::End => start_x += remaining_width,
                                 }
                             }
 
@@ -329,17 +362,19 @@ pub fn position_elements<Message>(
                             for &c in &row_children {
                                 slots[c].x = current_x;
 
-                                // Vertical alignment within the row
-                                match slots[c].vertical_alignment {
-                                    VerticalAlignment::Top => {
+                                // Vertical alignment: use child's align_self, fallback to parent's align_items
+                                let vertical_align =
+                                    slots[c].align_self.unwrap_or(slots[key].align_items);
+                                match vertical_align {
+                                    Alignment::Start => {
                                         slots[c].y = current_y;
                                     }
-                                    VerticalAlignment::Center => {
+                                    Alignment::Center => {
                                         slots[c].y = current_y
                                             + (row_height - slots[c].computed_height).max(0.0)
                                                 / 2.0;
                                     }
-                                    VerticalAlignment::Bottom => {
+                                    Alignment::End => {
                                         slots[c].y = current_y
                                             + (row_height - slots[c].computed_height).max(0.0);
                                     }
@@ -370,26 +405,29 @@ pub fn position_elements<Message>(
                         let remaining_width = available_width - total_children_width;
                         let mut start_x = content_start_x;
                         if remaining_width > 0.0 {
-                            match slots[key].horizontal_alignment {
-                                HorizontalAlignment::Left => {}
-                                HorizontalAlignment::Center => start_x += remaining_width / 2.0,
-                                HorizontalAlignment::Right => start_x += remaining_width,
+                            match slots[key].justify_content {
+                                Alignment::Start => {}
+                                Alignment::Center => start_x += remaining_width / 2.0,
+                                Alignment::End => start_x += remaining_width,
                             }
                         }
 
                         let mut current_x = start_x;
                         for c in non_floating {
                             slots[c].x = current_x;
-                            match slots[c].vertical_alignment {
-                                VerticalAlignment::Top => {
+                            // Vertical alignment: use child's align_self, fallback to parent's align_items
+                            let vertical_align =
+                                slots[c].align_self.unwrap_or(slots[key].align_items);
+                            match vertical_align {
+                                Alignment::Start => {
                                     slots[c].y = content_start_y;
                                 }
-                                VerticalAlignment::Center => {
+                                Alignment::Center => {
                                     slots[c].y = content_start_y
                                         + (available_height - slots[c].computed_height).max(0.0)
                                             / 2.0;
                                 }
-                                VerticalAlignment::Bottom => {
+                                Alignment::End => {
                                     slots[c].y = content_start_y
                                         + (available_height - slots[c].computed_height).max(0.0);
                                 }
@@ -412,24 +450,27 @@ pub fn position_elements<Message>(
                     let remaining_height = available_height - total_children_height;
                     let mut start_y = content_start_y;
                     if remaining_height > 0.0 {
-                        match slots[key].vertical_alignment {
-                            VerticalAlignment::Top => {}
-                            VerticalAlignment::Center => start_y += remaining_height / 2.0,
-                            VerticalAlignment::Bottom => start_y += remaining_height,
+                        match slots[key].justify_content {
+                            Alignment::Start => {}
+                            Alignment::Center => start_y += remaining_height / 2.0,
+                            Alignment::End => start_y += remaining_height,
                         }
                     }
 
                     let mut current_y = start_y;
                     for c in non_floating {
-                        match slots[c].horizontal_alignment {
-                            HorizontalAlignment::Left => {
+                        // Horizontal alignment: use child's align_self, fallback to parent's align_items
+                        let horizontal_align =
+                            slots[c].align_self.unwrap_or(slots[key].align_items);
+                        match horizontal_align {
+                            Alignment::Start => {
                                 slots[c].x = content_start_x;
                             }
-                            HorizontalAlignment::Center => {
+                            Alignment::Center => {
                                 slots[c].x = content_start_x
                                     + (available_width - slots[c].computed_width).max(0.0) / 2.0;
                             }
-                            HorizontalAlignment::Right => {
+                            Alignment::End => {
                                 slots[c].x = content_start_x
                                     + (available_width - slots[c].computed_width).max(0.0);
                             }

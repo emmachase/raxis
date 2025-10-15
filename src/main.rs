@@ -12,9 +12,9 @@ use raxis::{
     layout::{
         helpers::{center, spacer},
         model::{
-            Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
+            Alignment, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
             Element, FloatingConfig, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap,
-            StrokeLineJoin, TextShadow, VerticalAlignment,
+            StrokeLineJoin, TextShadow,
         },
     }, math::easing::Easing, row, runtime::{
         context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{hide_window, Task}, Backdrop
@@ -62,7 +62,7 @@ fn demo_box(label: &'static str, border: Border, radius: Option<BorderRadius>) -
         padding: BoxAmount::all(8.0),
         border: Some(border),
         border_radius: radius,
-        vertical_alignment: VerticalAlignment::Center,
+        align_self: Some(Alignment::Center),
         content: widget(Text::new(label).with_paragraph_alignment(ParagraphAlignment::Center)),
         ..Default::default()
     }
@@ -165,8 +165,9 @@ fn border_demos() -> Element<Message> {
             Element {
                 direction: Direction::LeftToRight,
                 width: Sizing::grow(),
-                height: Sizing::fit(),
-                wrap: true,
+                height: Sizing::fixed(300.0),
+                align_items: Alignment::Center,
+                // wrap: true,
                 child_gap: 10.0,
                 children: vec![
                     demo_box("Inset 4px", inset, None),
@@ -1456,7 +1457,7 @@ fn todo_item(
                     Color::WHITE
                 }),
                 direction: Direction::TopToBottom,
-                vertical_alignment: VerticalAlignment::Center,
+                align_self: Some(Alignment::Center),
                 border_radius: Some(BorderRadius::all(4.0)),
                 // drop_shadows: vec![DropShadow::simple(0.5, 0.5).blur_radius(2.0)],
                 content: widget(
@@ -1528,7 +1529,7 @@ fn todo_item(
                 id: Some(combine_id(w_id!(), item.id)),
                 width: Sizing::grow(),
                 height: Sizing::fit(),
-                vertical_alignment: VerticalAlignment::Center,
+                align_self: Some(Alignment::Center),
                 content: widget(Text::new(item.text).with_font_size(16.0)),
                 ..Default::default()
             },
@@ -1537,7 +1538,7 @@ fn todo_item(
                 id: Some(combine_id(w_id!(), item.id)),
                 width: Sizing::fit(),
                 height: Sizing::fit(),
-                vertical_alignment: VerticalAlignment::Center,
+                align_self: Some(Alignment::Center),
                 content: widget(
                     Button::new()
                         .with_bg_color(Color::from(0xe91923ff))
