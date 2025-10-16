@@ -7,8 +7,8 @@ use windows::Win32::{
             Shell_NotifyIconW,
         },
         WindowsAndMessaging::{
-            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, WM_LBUTTONDBLCLK,
-            WM_LBUTTONUP, WM_RBUTTONUP,
+            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
+            WM_RBUTTONUP,
         },
     },
 };
@@ -28,15 +28,13 @@ pub enum TrayEvent {
 }
 
 /// Configuration for a system tray icon
-#[derive(Clone)]
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub struct TrayIconConfig {
     /// Tooltip text that appears when hovering over the icon
     pub tooltip: Option<String>,
     /// Icon resource ID from the executable
     pub icon_resource: Option<u16>,
 }
-
 
 impl TrayIconConfig {
     pub fn new() -> Self {
@@ -58,29 +56,19 @@ impl TrayIconConfig {
 pub struct TrayIcon {
     hwnd: HWND,
     config: TrayIconConfig,
-    added: bool,
 }
 
 impl TrayIcon {
     /// Create a new tray icon (doesn't add it to the system tray yet)
     pub fn new(hwnd: HWND, config: TrayIconConfig) -> Self {
-        Self {
-            hwnd,
-            config,
-            added: false,
-        }
+        Self { hwnd, config }
     }
 
     /// Add the tray icon to the system tray
     pub fn add(&mut self) -> windows_core::Result<()> {
-        if self.added {
-            return Ok(());
-        }
-
         unsafe {
             let mut nid = self.create_notify_icon_data()?;
             Shell_NotifyIconW(NIM_ADD, &mut nid).ok()?;
-            self.added = true;
             Ok(())
         }
     }
@@ -88,9 +76,6 @@ impl TrayIcon {
     /// Update the tray icon (tooltip, icon, etc.)
     pub fn update(&mut self, config: TrayIconConfig) -> windows_core::Result<()> {
         self.config = config;
-        if !self.added {
-            return Ok(());
-        }
 
         unsafe {
             let mut nid = self.create_notify_icon_data()?;
@@ -101,10 +86,6 @@ impl TrayIcon {
 
     /// Remove the tray icon from the system tray
     pub fn remove(&mut self) -> windows_core::Result<()> {
-        if !self.added {
-            return Ok(());
-        }
-
         unsafe {
             let mut nid = NOTIFYICONDATAW {
                 cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
@@ -113,7 +94,6 @@ impl TrayIcon {
                 ..Default::default()
             };
             Shell_NotifyIconW(NIM_DELETE, &mut nid).ok()?;
-            self.added = false;
             Ok(())
         }
     }

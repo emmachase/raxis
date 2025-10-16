@@ -936,22 +936,6 @@ impl<Message> Element<Message> {
     // Legacy compatibility methods
     #[deprecated(
         since = "0.1.0",
-        note = "Use with_axis_align_content for main axis or with_cross_align_self for cross axis"
-    )]
-    pub fn with_axis_align(self, align: Alignment) -> Self {
-        self.with_axis_align_content(align)
-    }
-
-    #[deprecated(
-        since = "0.1.0",
-        note = "Use with_cross_align_items for container or with_cross_align_self for self"
-    )]
-    pub fn with_cross_align(self, align: Alignment) -> Self {
-        self.with_cross_align_self(align)
-    }
-
-    #[deprecated(
-        since = "0.1.0",
         note = "Use with_axis_align_content or with_cross_align_self"
     )]
     pub fn with_horizontal_alignment(self, align: Alignment) -> Self {

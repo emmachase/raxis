@@ -200,7 +200,15 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_PAINT => wndproc::handle_paint::<State, Message>(hwnd),
             WM_DISPLAYCHANGE => wndproc::handle_displaychange::<State, Message>(hwnd),
             WM_DESTROY => wndproc::handle_destroy::<State, Message>(hwnd),
-            _ => DefWindowProcW(hwnd, msg, wparam, lparam),
+            _ => {
+                // Check if this is the TaskbarCreated message
+                if wndproc::get_taskbar_created_message()
+                    .map_or(false, |taskbar_created_msg| msg == taskbar_created_msg)
+                {
+                    return wndproc::handle_taskbar_created::<State, Message>(hwnd);
+                }
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
         }
     };
 
@@ -397,6 +405,9 @@ impl<
                 ..Default::default()
             };
             RegisterClassW(&wc);
+
+            // Register the TaskbarCreated message for tray icon restoration
+            wndproc::register_taskbar_created_message();
 
             // Create window first without user data
             let hwnd = CreateWindowExW(

@@ -1,12 +1,36 @@
 use std::ops::DerefMut;
+use std::sync::OnceLock;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::InvalidateRect;
-use windows::Win32::UI::WindowsAndMessaging::{GetWindowRect, SWP_FRAMECHANGED, SetWindowPos};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetWindowRect, RegisterWindowMessageW, SWP_FRAMECHANGED, SetWindowPos,
+};
+use windows_core::PCWSTR;
 
 use crate::runtime::context_menu::{ContextMenu, ContextMenuRequest};
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::tray::TrayIcon;
 use crate::runtime::util::state_mut_from_hwnd;
+
+/// Store the registered TaskbarCreated message ID
+static TASKBAR_CREATED_MSG: OnceLock<u32> = OnceLock::new();
+
+/// Register the TaskbarCreated window message
+/// This message is sent when the taskbar is recreated (e.g., when explorer.exe restarts)
+pub fn register_taskbar_created_message() -> u32 {
+    *TASKBAR_CREATED_MSG.get_or_init(|| {
+        let msg_name: Vec<u16> = "TaskbarCreated"
+            .encode_utf16()
+            .chain(std::iter::once(0))
+            .collect();
+        unsafe { RegisterWindowMessageW(PCWSTR(msg_name.as_ptr())) }
+    })
+}
+
+/// Get the registered TaskbarCreated message ID
+pub fn get_taskbar_created_message() -> Option<u32> {
+    TASKBAR_CREATED_MSG.get().copied()
+}
 
 /// Handle WM_ACTIVATE
 pub fn handle_activate<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND) -> LRESULT {
@@ -129,6 +153,21 @@ pub fn handle_timer<State: 'static, Message: 'static + Send + Clone>(
     }
     unsafe {
         let _ = InvalidateRect(Some(hwnd), None, false);
+    }
+    LRESULT(0)
+}
+
+/// Handle TaskbarCreated message
+/// This is sent when Windows Explorer restarts and the taskbar is recreated
+pub fn handle_taskbar_created<State: 'static, Message: 'static + Send + Clone>(
+    hwnd: HWND,
+) -> LRESULT {
+    // Re-add the tray icon when the taskbar is recreated
+    if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+        let state = state.deref_mut();
+        if let Some(ref mut tray_icon) = state._tray_icon {
+            let res = tray_icon.add(); // Ignore errors, best effort
+        }
     }
     LRESULT(0)
 }
