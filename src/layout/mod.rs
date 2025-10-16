@@ -6,10 +6,10 @@ use string_interner::{StringInterner, backend::StringBackend};
 use crate::{
     HookState, Shell,
     gfx::{
-        RectDIP, color::Color, command_recorder::CommandRecorder, draw_commands::DrawCommandList,
+        RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList,
     },
     layout::{
-        model::{Axis, BorderRadius, ElementStyle, ScrollBarSize, UIElement, UIKey},
+        model::{Axis, ElementStyle, UIElement, UIKey},
         positioning::position_elements,
         visitors::VisitFrame,
     },

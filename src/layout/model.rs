@@ -123,49 +123,6 @@ pub enum Alignment {
     End,
 }
 
-// Legacy type aliases for compatibility with floating alignment
-#[deprecated(since = "0.1.0", note = "Use Alignment instead")]
-pub type HorizontalAlignment = Alignment;
-#[deprecated(since = "0.1.0", note = "Use Alignment instead")]
-pub type VerticalAlignment = Alignment;
-
-/// How to break text at word boundaries
-/// Default: AfterWord
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
-pub enum WordBreak {
-    None,
-    // Anywhere, // TODO: Implement
-    #[default]
-    AfterWord,
-}
-
-// ---------- Inline text model ----------
-
-#[derive(Clone, Debug, PartialEq, Default)]
-pub struct TextSpan {
-    /// The text content of this span
-    pub text: String,
-    /// Optional color override for this specific span
-    pub color: Option<Color>,
-}
-
-#[derive(Clone, Debug, PartialEq)]
-pub struct WrappedLine {
-    /// The spans that make up this line
-    pub spans: Vec<TextSpan>,
-    /// The height of this line (maximum of all span heights)
-    pub height: f32,
-}
-
-impl Default for WrappedLine {
-    fn default() -> Self {
-        Self {
-            spans: Vec::new(),
-            height: 0.0,
-        }
-    }
-}
-
 // ---------- Sizing ----------
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -651,7 +608,6 @@ pub struct ScrollConfig {
 pub struct ElementStyle {
     pub background_color: Option<Color>,
     pub color: Option<Color>,
-    pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadows: Vec<DropShadow>,
@@ -665,7 +621,6 @@ impl<Message> From<&UIElement<Message>> for ElementStyle {
         ElementStyle {
             background_color: value.background_color,
             color: value.color,
-            word_break: value.word_break,
             padding: value.padding,
             border_radius: value.border_radius,
             drop_shadows: value.drop_shadows.clone(),
@@ -722,7 +677,6 @@ pub struct UIElement<Message> {
 
     pub background_color: Option<Color>,
     pub color: Option<Color>,
-    pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadows: Vec<DropShadow>,
@@ -769,7 +723,6 @@ impl<Message> Default for UIElement<Message> {
             scroll: None,
             background_color: None,
             color: None,
-            word_break: None,
             padding: BoxAmount::default(),
             border_radius: None,
             drop_shadows: Vec::new(),
@@ -855,7 +808,6 @@ pub struct Element<Message> {
 
     pub background_color: Option<Color>,
     pub color: Option<Color>,
-    pub word_break: Option<WordBreak>,
     pub padding: BoxAmount,
     pub border_radius: Option<BorderRadius>,
     pub drop_shadows: Vec<DropShadow>,
@@ -1006,13 +958,6 @@ impl<Message> Element<Message> {
         }
     }
 
-    pub fn with_word_break(self, word_break: WordBreak) -> Self {
-        Self {
-            word_break: Some(word_break),
-            ..self
-        }
-    }
-
     pub fn with_border_radius(self, border_radius: impl Into<BorderRadius>) -> Self {
         Self {
             border_radius: Some(border_radius.into()),
@@ -1097,7 +1042,6 @@ impl<Message> Default for Element<Message> {
             scroll: None,
             background_color: None,
             color: None,
-            word_break: None,
             padding: BoxAmount::default(),
             border_radius: None,
             drop_shadows: Vec::new(),
@@ -1132,7 +1076,6 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             scroll: element.scroll,
             background_color: element.background_color,
             color: element.color,
-            word_break: element.word_break,
             padding: element.padding,
             border_radius: element.border_radius,
             drop_shadows: element.drop_shadows,

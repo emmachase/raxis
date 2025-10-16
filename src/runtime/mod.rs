@@ -202,8 +202,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_DESTROY => wndproc::handle_destroy::<State, Message>(hwnd),
             _ => {
                 // Check if this is the TaskbarCreated message
-                if wndproc::get_taskbar_created_message()
-                    .map_or(false, |taskbar_created_msg| msg == taskbar_created_msg)
+                if wndproc::get_taskbar_created_message() == Some(msg)
                 {
                     return wndproc::handle_taskbar_created::<State, Message>(hwnd);
                 }

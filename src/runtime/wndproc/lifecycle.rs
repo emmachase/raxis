@@ -11,7 +11,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Ole::RevokeDragDrop;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GWLP_USERDATA, GetSystemMetrics, GetWindowLongPtrW, MINMAXINFO, SM_CXFRAME, SM_CXPADDEDBORDER,
+    GWLP_USERDATA, GetSystemMetrics, GetWindowLongPtrW, MINMAXINFO, SM_CXFRAME,
     SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos,
 };
 

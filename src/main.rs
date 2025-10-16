@@ -24,7 +24,7 @@ use raxis::{
         slider::Slider,
         svg::ViewBox,
         svg_path::SvgPath,
-        text::{ParagraphAlignment, Text, TextAlignment},
+        text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment},
         text_input::TextInput,
         toggle::Toggle,
         widget,
@@ -1080,6 +1080,7 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                     .as_element(w_id!(), Text::new("Settings"))
             ]
             .with_width(Sizing::grow()),
+            colored_text_demo(),
             // Call controls demo
             call_controls_demo(hook),
             // Toggle demos
@@ -1634,6 +1635,88 @@ fn modal(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
             ..Default::default()
         })],
 
+        ..Default::default()
+    }
+}
+
+fn colored_text_demo() -> Element<Message> {
+    Element {
+        id: Some(w_id!()),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::fit(),
+        child_gap: 12.0,
+        padding: BoxAmount::all(12.0),
+        background_color: Some(Color::WHITE),
+        border: Some(Border {
+            width: 1.0,
+            color: Color {
+                r: 0.85,
+                g: 0.85,
+                b: 0.85,
+                a: 1.0,
+            },
+            ..Default::default()
+        }),
+        border_radius: Some(BorderRadius::all(8.0)),
+        children: vec![
+            // Title
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(Text::new("Colored Text Spans").with_font_size(20.0)),
+                ..Default::default()
+            },
+            // Example 1: Using colored segments
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(
+                    Text::new_with_colored_segments(vec![
+                        ColoredTextSegment::new("Hello ", Color::from(0xFF6B6BFF)),
+                        ColoredTextSegment::new("World", Color::from(0x4ECDC4FF)),
+                    ])
+                    .with_font_size(18.0)
+                ),
+                ..Default::default()
+            },
+            // Example 2: Rainbow text
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(
+                    Text::new_with_colored_segments(vec![
+                        ColoredTextSegment::new("R", Color::from(0xFF0000FF)),
+                        ColoredTextSegment::new("a", Color::from(0xFF7F00FF)),
+                        ColoredTextSegment::new("i", Color::from(0xFFFF00FF)),
+                        ColoredTextSegment::new("n", Color::from(0x00FF00FF)),
+                        ColoredTextSegment::new("b", Color::from(0x0000FFFF)),
+                        ColoredTextSegment::new("o", Color::from(0x4B0082FF)),
+                        ColoredTextSegment::new("w", Color::from(0x9400D3FF)),
+                    ])
+                    .with_font_size(24.0)
+                ),
+                ..Default::default()
+            },
+            // Example 3: Code-like syntax highlighting
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(
+                    Text::new_with_colored_segments(vec![
+                        ColoredTextSegment::new("fn ", Color::from(0xA6E22EFF)),
+                        ColoredTextSegment::new("hello", Color::from(0x66D9EFFF)),
+                        ColoredTextSegment::new("() {", Color::from(0xF8F8F2FF)),
+                    ])
+                    .with_font_size(16.0)
+                ),
+                ..Default::default()
+            },
+        ],
         ..Default::default()
     }
 }

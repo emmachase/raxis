@@ -1,9 +1,12 @@
 use std::any::Any;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::panic::Location;
 use std::time::Instant;
 
 use windows::Win32::Foundation::HWND;
+use windows::Win32::Graphics::Direct2D::ID2D1DeviceContext6;
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_PARAGRAPH_ALIGNMENT_NEAR, DWRITE_TEXT_ALIGNMENT_LEADING, DWRITE_TEXT_METRICS,
     IDWriteFactory6, IDWriteTextFormat3, IDWriteTextLayout,
@@ -38,6 +41,42 @@ pub enum ParagraphAlignment {
     Bottom,
 }
 
+/// Text span with color information
+#[derive(Debug, Clone, PartialEq)]
+pub struct TextSpan {
+    pub start: usize,
+    pub end: usize,
+    pub color: Color,
+}
+
+impl Hash for TextSpan {
+    fn hash<H: Hasher>(&self, state: &mut H) {
+        self.start.hash(state);
+        self.end.hash(state);
+        // Hash color components as f32 bits
+        self.color.r.to_bits().hash(state);
+        self.color.g.to_bits().hash(state);
+        self.color.b.to_bits().hash(state);
+        self.color.a.to_bits().hash(state);
+    }
+}
+
+/// A segment of colored text for easier construction
+#[derive(Debug, Clone)]
+pub struct ColoredTextSegment {
+    pub text: String,
+    pub color: Color,
+}
+
+impl ColoredTextSegment {
+    pub fn new(text: impl Into<String>, color: Color) -> Self {
+        Self {
+            text: text.into(),
+            color,
+        }
+    }
+}
+
 /// Simple text display widget for showing read-only text
 #[derive(Debug)]
 pub struct Text {
@@ -52,6 +91,7 @@ pub struct Text {
     pub font_axes: FontAxes,
     pub word_wrap: bool,
     pub caller: &'static Location<'static>,
+    pub spans: Vec<TextSpan>,
 
     pub assisted_width: Option<f32>,
     pub assisted_id: Option<u64>,
@@ -72,6 +112,64 @@ impl Text {
             font_axes: FontAxes::default(),
             word_wrap: true,
             caller: Location::caller(),
+            spans: Vec::new(),
+
+            assisted_width: None,
+            assisted_id: None,
+        }
+    }
+
+    #[track_caller]
+    pub fn new_with_spans(text: impl Into<StableString>, spans: Vec<TextSpan>) -> Self {
+        Self {
+            text: text.into(),
+            font_size: 14.0,
+            line_spacing: None,
+            color: None,
+            text_shadows: Vec::new(),
+            text_alignment: TextAlignment::Leading,
+            paragraph_alignment: ParagraphAlignment::Top,
+            font_id: FontIdentifier::system("Segoe UI"),
+            font_axes: FontAxes::default(),
+            word_wrap: true,
+            caller: Location::caller(),
+            spans,
+
+            assisted_width: None,
+            assisted_id: None,
+        }
+    }
+
+    #[track_caller]
+    pub fn new_with_colored_segments(segments: Vec<ColoredTextSegment>) -> Self {
+        let mut full_text = String::new();
+        let mut spans = Vec::new();
+
+        for segment in segments {
+            let start = full_text.len();
+            full_text.push_str(&segment.text);
+            let end = full_text.len();
+
+            spans.push(TextSpan {
+                start,
+                end,
+                color: segment.color,
+            });
+        }
+
+        Self {
+            text: StableString::Heap(full_text),
+            font_size: 14.0,
+            line_spacing: None,
+            color: None,
+            text_shadows: Vec::new(),
+            text_alignment: TextAlignment::Leading,
+            paragraph_alignment: ParagraphAlignment::Top,
+            font_id: FontIdentifier::system("Segoe UI"),
+            font_axes: FontAxes::default(),
+            word_wrap: true,
+            caller: Location::caller(),
+            spans,
 
             assisted_width: None,
             assisted_id: None,
@@ -189,6 +287,7 @@ impl Default for Text {
 struct TextWidgetState {
     // DirectWrite objects for text rendering
     dwrite_factory: IDWriteFactory6,
+    d2d_device_context: ID2D1DeviceContext6,
     text_format: IDWriteTextFormat3,
     text_layout: Option<IDWriteTextLayout>,
     cached_text: String,
@@ -208,11 +307,15 @@ struct TextWidgetState {
     // Sizing cache for limits_x/limits_y
     cached_preferred_width: Option<f32>,
     cached_preferred_height_for_width: Option<(f32, f32)>, // (width, height)
+
+    // Span caching - None means not yet applied, Some(hash) means applied with that hash
+    cached_spans_hash: Option<u64>,
 }
 
 impl TextWidgetState {
     pub fn new(
         dwrite_factory: IDWriteFactory6,
+        d2d_device_context: ID2D1DeviceContext6,
         font_id: &FontIdentifier,
         font_size: f32,
         font_axes: FontAxes,
@@ -267,6 +370,7 @@ impl TextWidgetState {
 
         let mut state = Self {
             dwrite_factory,
+            d2d_device_context,
             text_format,
             text_layout: None,
             cached_text: String::new(),
@@ -282,6 +386,7 @@ impl TextWidgetState {
             layout_invalidated: true,
             cached_preferred_width: None,
             cached_preferred_height_for_width: None,
+            cached_spans_hash: None,
         };
 
         state.build_text_layout("", RectDIP::default())?;
@@ -398,6 +503,7 @@ impl TextWidgetState {
             self.cached_text = text.to_string();
             self.layout_invalidated = false;
             self.invalidate_sizing_cache();
+            self.cached_spans_hash = None;
         }
 
         // Check if we need to update bounds (cheaper operation)
@@ -431,6 +537,45 @@ impl TextWidgetState {
     fn invalidate_sizing_cache(&mut self) {
         self.cached_preferred_width = None;
         self.cached_preferred_height_for_width = None;
+    }
+
+    fn spans_changed(&mut self, new_spans: &[TextSpan]) -> bool {
+        let mut hasher = DefaultHasher::new();
+        new_spans.hash(&mut hasher);
+        let new_hash = hasher.finish();
+
+        let changed = self.cached_spans_hash != Some(new_hash);
+        if changed {
+            self.cached_spans_hash = Some(new_hash);
+        }
+        changed
+    }
+
+    fn apply_spans(&self, layout: &IDWriteTextLayout, spans: &[TextSpan]) -> Result<()> {
+        use windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_RANGE;
+
+        unsafe {
+            for span in spans {
+                let range = DWRITE_TEXT_RANGE {
+                    startPosition: span.start as u32,
+                    length: (span.end - span.start) as u32,
+                };
+
+                // Create a solid color brush for this span's color
+                let brush = self.d2d_device_context.CreateSolidColorBrush(
+                    &windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F {
+                        r: span.color.r,
+                        g: span.color.g,
+                        b: span.color.b,
+                        a: span.color.a,
+                    },
+                    None,
+                )?;
+
+                layout.SetDrawingEffect(&brush, range)?;
+            }
+        }
+        Ok(())
     }
 
     fn get_preferred_width(&mut self, text: &str) -> Result<f32> {
@@ -483,6 +628,7 @@ impl<Message> Widget<Message> for Text {
     ) -> super::State {
         match TextWidgetState::new(
             device_resources.dwrite_factory.clone(),
+            device_resources.d2d_device_context.clone(),
             &self.font_id,
             self.font_size,
             self.font_axes,
@@ -598,6 +744,13 @@ impl<Message> Widget<Message> for Text {
             bounds.content_box,
         );
 
+        // Apply colored spans only if they changed or layout was rebuilt
+        if !self.spans.is_empty() && state.spans_changed(&self.spans) {
+            if let Some(layout) = &state.text_layout {
+                let _ = state.apply_spans(layout, &self.spans);
+            }
+        }
+
         // Draw the text
         if let Some(layout) = &state.text_layout {
             // Combine widget shadows with style shadows (widget shadows have priority)
@@ -606,7 +759,7 @@ impl<Message> Widget<Message> for Text {
             } else {
                 &style.text_shadows
             };
-            
+
             recorder.draw_text(
                 &bounds.content_box,
                 layout,

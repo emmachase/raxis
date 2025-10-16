@@ -68,7 +68,7 @@ impl TrayIcon {
     pub fn add(&mut self) -> windows_core::Result<()> {
         unsafe {
             let mut nid = self.create_notify_icon_data()?;
-            Shell_NotifyIconW(NIM_ADD, &mut nid).ok()?;
+            Shell_NotifyIconW(NIM_ADD, &nid).ok()?;
             Ok(())
         }
     }
@@ -79,7 +79,7 @@ impl TrayIcon {
 
         unsafe {
             let mut nid = self.create_notify_icon_data()?;
-            Shell_NotifyIconW(NIM_MODIFY, &mut nid).ok()?;
+            Shell_NotifyIconW(NIM_MODIFY, &nid).ok()?;
             Ok(())
         }
     }
@@ -93,7 +93,7 @@ impl TrayIcon {
                 uID: 1,
                 ..Default::default()
             };
-            Shell_NotifyIconW(NIM_DELETE, &mut nid).ok()?;
+            Shell_NotifyIconW(NIM_DELETE, &nid).ok()?;
             Ok(())
         }
     }

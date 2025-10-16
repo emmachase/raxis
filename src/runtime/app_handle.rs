@@ -2,7 +2,7 @@ use crate::dips_scale;
 use crate::gfx::draw_commands::DrawCommandList;
 use crate::gfx::{RectDIP, command_recorder::CommandRecorder};
 use crate::layout::model::{
-    Color, Direction, Element, ScrollConfig, Sizing, StrokeLineCap, create_tree,
+    Color, Direction, Element, Sizing, StrokeLineCap, create_tree,
 };
 use crate::layout::{self, OwnedUITree};
 use crate::runtime::device::DeviceResources;

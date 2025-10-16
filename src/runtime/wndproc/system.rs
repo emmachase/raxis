@@ -166,7 +166,7 @@ pub fn handle_taskbar_created<State: 'static, Message: 'static + Send + Clone>(
     if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
         let state = state.deref_mut();
         if let Some(ref mut tray_icon) = state._tray_icon {
-            let res = tray_icon.add(); // Ignore errors, best effort
+            let _ = tray_icon.add(); // Ignore errors, best effort
         }
     }
     LRESULT(0)
