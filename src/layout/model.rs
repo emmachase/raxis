@@ -145,8 +145,8 @@ pub enum WordBreak {
 pub struct TextSpan {
     /// The text content of this span
     pub text: String,
-    /// Optional color override for this specific span (RGBA packed)
-    pub color: Option<u32>,
+    /// Optional color override for this specific span
+    pub color: Option<Color>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
