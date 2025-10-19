@@ -1141,7 +1141,7 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                                 TextInput::new()
                                     .with_text_changed_handler({
                                         let todo_state = todo_state.clone();
-                                        move |text| {
+                                        move |text, _| {
                                             todo_state.borrow_mut().input_text = text.to_string();
                                         }
                                     })
