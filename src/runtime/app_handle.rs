@@ -14,6 +14,7 @@ use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::Task;
 use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig};
+use crate::widgets::Event;
 use crate::{HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id};
 use log::error;
 use raxis_core::{self as raxis, svg};
@@ -24,11 +25,13 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc;
 use std::time::Instant;
 use thiserror::Error;
-use windows::Win32::Foundation::{HMODULE, HWND};
+use windows::Win32::Foundation::{HMODULE, HWND, POINT};
 use windows::Win32::Graphics::Direct2D::{
     D2D1_DEBUG_LEVEL_NONE, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_FACTORY_OPTIONS,
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1CreateFactory, ID2D1Factory7, ID2D1PathGeometry,
 };
+use windows::Win32::Graphics::Gdi::ScreenToClient;
+use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
@@ -371,10 +374,32 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         let window_active = unsafe { GetForegroundWindow() == hwnd };
 
         // Update middle mouse scrolling first
-        self.update_middle_mouse_scroll(dt);
+        let middle_mouse_scrolling = self.update_middle_mouse_scroll(dt);
 
         // Update smooth scroll animations and apply positions to scroll state manager
-        self.update_smooth_scroll_animations();
+        let smooth_scrolling = self.update_smooth_scroll_animations();
+
+        // If any scrolling happened, emit a mouse move event to update hover states
+        if middle_mouse_scrolling || smooth_scrolling {
+            // Get current mouse position in screen coordinates
+            let mut pt = POINT { x: 0, y: 0 };
+            unsafe { GetCursorPos(&mut pt).ok() };
+            
+            // Convert to client coordinates
+            unsafe { ScreenToClient(hwnd, &mut pt).ok() };
+            
+            // Convert to DIPs
+            let to_dip = dips_scale(hwnd);
+            let x_dip = (pt.x as f32) * to_dip;
+            let y_dip = (pt.y as f32) * to_dip;
+            
+            // Dispatch mouse move event
+            self.shell.dispatch_event(
+                hwnd,
+                &mut self.ui_tree,
+                Event::MouseMove { x: x_dip, y: y_dip },
+            );
+        }
 
         // Allow at most 5 layout passes, otherwise assume infinite loop
         for _ in 0..5 {
@@ -524,42 +549,65 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         )
     }
 
-    fn update_middle_mouse_scroll(&mut self, dt: f64) {
+    fn update_middle_mouse_scroll(&mut self, dt: f64) -> bool {
         if let Some(middle_scroll) = self.middle_mouse_scroll {
             let (velocity_x, velocity_y) = middle_scroll.calculate_velocity(dt);
 
-            // Get current scroll position and apply velocity
-            let current_pos = self
-                .shell
-                .scroll_state_manager
-                .get_scroll_position(middle_scroll.element_id);
+            // Check if there's actual scrolling happening (non-zero velocity)
+            const EPSILON: f32 = 0.01;
+            let is_scrolling = velocity_x.abs() > EPSILON || velocity_y.abs() > EPSILON;
 
-            let new_pos = ScrollPosition {
-                x: current_pos.x + velocity_x,
-                y: current_pos.y + velocity_y,
-            };
+            if is_scrolling {
+                // Get current scroll position and apply velocity
+                let current_pos = self
+                    .shell
+                    .scroll_state_manager
+                    .get_scroll_position(middle_scroll.element_id);
 
-            // Update scroll position directly
-            self.shell
-                .scroll_state_manager
-                .set_scroll_position(middle_scroll.element_id, new_pos);
+                let new_pos = ScrollPosition {
+                    x: current_pos.x + velocity_x,
+                    y: current_pos.y + velocity_y,
+                };
 
-            // Stop any smooth scroll animations for this element
-            self.smooth_scroll_manager
-                .stop_animation(middle_scroll.element_id);
+                // Update scroll position directly
+                self.shell
+                    .scroll_state_manager
+                    .set_scroll_position(middle_scroll.element_id, new_pos);
+
+                // Stop any smooth scroll animations for this element
+                self.smooth_scroll_manager
+                    .stop_animation(middle_scroll.element_id);
+            }
+
+            is_scrolling
+        } else {
+            false
         }
     }
 
-    fn update_smooth_scroll_animations(&mut self) {
+    fn update_smooth_scroll_animations(&mut self) -> bool {
         self.smooth_scroll_manager.update_animations();
+
+        let mut any_scrolling = false;
 
         // Apply current animated positions to the scroll state manager
         for (&element_id, animation) in self.smooth_scroll_manager.get_active_animations() {
             let current_pos = animation.current_position(std::time::Instant::now());
+            let prev_pos = self.shell.scroll_state_manager.get_scroll_position(element_id);
+            
+            // Check if position actually changed (with small epsilon to avoid floating point issues)
+            const EPSILON: f32 = 0.01;
+            if (current_pos.x - prev_pos.x).abs() > EPSILON 
+                || (current_pos.y - prev_pos.y).abs() > EPSILON {
+                any_scrolling = true;
+            }
+            
             self.shell
                 .scroll_state_manager
                 .set_scroll_position(element_id, current_pos);
         }
+
+        any_scrolling
     }
 
     // Process async messages from executor thread
