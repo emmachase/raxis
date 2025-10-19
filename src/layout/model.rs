@@ -579,6 +579,65 @@ impl ScrollBarSize {
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ScrollbarStyle {
+    pub track_color: Color,
+    pub thumb_color: Color,
+    pub size: ScrollBarSize,
+    pub min_thumb_size: f32,
+    pub track_radius: BorderRadius,
+    pub thumb_radius: BorderRadius,
+}
+
+impl Default for ScrollbarStyle {
+    fn default() -> Self {
+        Self {
+            track_color: Color::from_hex(0x00000033),
+            thumb_color: Color::from_hex(0x00000055),
+            size: ScrollBarSize::ThinThick(8.0, 16.0),
+            min_thumb_size: 16.0,
+            track_radius: BorderRadius::all(0.0),
+            thumb_radius: BorderRadius::all(0.0),
+        }
+    }
+}
+
+impl ScrollbarStyle {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn with_track_color(mut self, color: Color) -> Self {
+        self.track_color = color;
+        self
+    }
+
+    pub fn with_thumb_color(mut self, color: Color) -> Self {
+        self.thumb_color = color;
+        self
+    }
+
+    pub fn with_size(mut self, size: ScrollBarSize) -> Self {
+        self.size = size;
+        self
+    }
+
+    pub fn with_min_thumb_size(mut self, min_size: f32) -> Self {
+        self.min_thumb_size = min_size;
+        self
+    }
+
+    pub fn with_track_radius(mut self, radius: BorderRadius) -> Self {
+        self.track_radius = radius;
+        self
+    }
+
+    pub fn with_thumb_radius(mut self, radius: BorderRadius) -> Self {
+        self.thumb_radius = radius;
+        self
+    }
+}
+
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScrollConfig {
     pub horizontal: Option<bool>,
@@ -594,12 +653,7 @@ pub struct ScrollConfig {
     pub sticky_right: Option<bool>,  // keep scrolled to right when content width increases
 
     // Scrollbar appearance customization
-    pub scrollbar_size: Option<ScrollBarSize>, // width of the scrollbar track
-    pub scrollbar_track_radius: Option<BorderRadius>,
-    pub scrollbar_thumb_radius: Option<BorderRadius>,
-    pub scrollbar_track_color: Option<Color>,
-    pub scrollbar_thumb_color: Option<Color>,
-    pub scrollbar_min_thumb_size: Option<f32>, // minimum size of the thumb in pixels
+    pub scrollbar_style: Option<ScrollbarStyle>,
 }
 
 // ---------- Element tree ----------

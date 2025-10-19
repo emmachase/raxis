@@ -340,7 +340,7 @@ impl<Message> Widget<Message> for Slider<Message> {
                         handler(true, arenas, shell);
                     }
 
-                    Cursor::Grabbing.set();
+                    Cursor::SizeAll.set();
 
                     // Update value immediately on click
                     let new_value = self.value_from_x(*x, bounds);
@@ -517,7 +517,7 @@ impl<Message> Widget<Message> for Slider<Message> {
         if point.within(bounds.border_box) && self.enabled {
             let state = with_state!(instance as SliderWidgetState);
             if state.is_dragging {
-                Some(Cursor::Grabbing)
+                Some(Cursor::SizeAll)
             } else {
                 self.cursor
             }

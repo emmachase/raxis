@@ -5,7 +5,9 @@ use windows::Win32::{
     Foundation::HWND,
     System::Ole::DROPEFFECT,
     UI::WindowsAndMessaging::{
-        IDC_ARROW, IDC_HAND, IDC_IBEAM, IDC_SIZEALL, LoadCursorW, SetCursor,
+        IDC_APPSTARTING, IDC_ARROW, IDC_CROSS, IDC_HAND, IDC_HELP, IDC_IBEAM, IDC_NO, IDC_SIZEALL,
+        IDC_SIZENESW, IDC_SIZENS, IDC_SIZENWSE, IDC_SIZEWE, IDC_UPARROW, IDC_WAIT, LoadCursorW,
+        SetCursor,
     },
 };
 
@@ -159,7 +161,18 @@ pub enum Cursor {
     Arrow,
     IBeam,
     Pointer,
-    Grabbing,
+    Cross,
+    Hand,
+    Help,
+    No,
+    SizeNS,
+    SizeEW,
+    SizeNWSE,
+    SizeNESW,
+    SizeAll,
+    UpArrow,
+    Wait,
+    AppStarting,
 }
 
 impl Cursor {
@@ -175,8 +188,41 @@ impl Cursor {
                 Cursor::Pointer => {
                     let _ = SetCursor(Some(LoadCursorW(None, IDC_HAND).unwrap()));
                 }
-                Cursor::Grabbing => {
+                Cursor::Cross => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_CROSS).unwrap()));
+                }
+                Cursor::Hand => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_HAND).unwrap()));
+                }
+                Cursor::Help => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_HELP).unwrap()));
+                }
+                Cursor::No => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_NO).unwrap()));
+                }
+                Cursor::SizeNS => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_SIZENS).unwrap()));
+                }
+                Cursor::SizeEW => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_SIZEWE).unwrap()));
+                }
+                Cursor::SizeNWSE => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_SIZENWSE).unwrap()));
+                }
+                Cursor::SizeNESW => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_SIZENESW).unwrap()));
+                }
+                Cursor::SizeAll => {
                     let _ = SetCursor(Some(LoadCursorW(None, IDC_SIZEALL).unwrap()));
+                }
+                Cursor::UpArrow => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_UPARROW).unwrap()));
+                }
+                Cursor::Wait => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_WAIT).unwrap()));
+                }
+                Cursor::AppStarting => {
+                    let _ = SetCursor(Some(LoadCursorW(None, IDC_APPSTARTING).unwrap()));
                 }
             }
         }

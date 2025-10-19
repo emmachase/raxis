@@ -16,7 +16,7 @@ use crate::runtime::scroll::{
     ScrollDirection, ScrollPosition, can_scroll_further, compute_scrollbar_geom,
 };
 use crate::runtime::util::{get_modifiers, state_mut_from_hwnd, window_rect};
-use crate::widgets::Event;
+use crate::widgets::{Cursor, Event};
 use crate::{RedrawRequest, Shell, dips_scale};
 
 use super::super::LINE_HEIGHT;
@@ -398,6 +398,15 @@ pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
             let x_dip = (pt.x as f32) * to_dip;
             let y_dip = (pt.y as f32) * to_dip;
             let point = PointDIP { x: x_dip, y: y_dip };
+
+            // Check if hovering over a scrollbar first
+            if state
+                .hit_test_scrollbar_thumb(x_dip, y_dip, false)
+                .is_some()
+            {
+                Cursor::Arrow.set();
+                return Some(LRESULT(1));
+            }
 
             let mut cursor = None;
 

@@ -328,6 +328,14 @@ impl<Message: 'static + Send> Button<Message> {
         self
     }
 
+    pub fn with_color(mut self, color: Color) -> Self {
+        self.styles.normal.text_color = Some(color);
+        self.styles.hover.text_color = Some(color);
+        self.styles.pressed.text_color = Some(color);
+        self.styles.disabled.text_color = Some(color);
+        self
+    }
+
     pub fn with_drop_shadow(mut self, shadow: DropShadow) -> Self {
         self.styles.normal.drop_shadows = vec![shadow];
         self.styles.hover.drop_shadows = vec![shadow];

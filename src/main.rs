@@ -12,9 +12,7 @@ use raxis::{
     layout::{
         helpers::{center, spacer},
         model::{
-            Alignment, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow,
-            Element, FloatingConfig, ScrollConfig, Sizing, StrokeDashStyle, StrokeLineCap,
-            StrokeLineJoin, TextShadow,
+            Alignment, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow, Element, FloatingConfig, ScrollConfig, ScrollbarStyle, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, TextShadow
         },
     }, math::easing::Easing, row, runtime::{
         context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{hide_window, Task}, Backdrop
@@ -1312,8 +1310,11 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
             horizontal: Some(true),
             vertical: Some(true),
             safe_area_padding: Some(BoxAmount::from(4.0)),
-            scrollbar_track_radius: Some(BorderRadius::all(4.0)),
-            scrollbar_thumb_radius: Some(BorderRadius::all(4.0)),
+            scrollbar_style: Some(
+                ScrollbarStyle::new()
+                    .with_track_radius(BorderRadius::all(4.0))
+                    .with_thumb_radius(BorderRadius::all(4.0))
+            ),
             ..Default::default()
         }),
         border: Some(Border {
@@ -1758,8 +1759,11 @@ fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
                 scroll: Some(ScrollConfig {
                     vertical: Some(true),
                     safe_area_padding: Some(BoxAmount::from(4.0)),
-                    scrollbar_track_radius: Some(BorderRadius::all(4.0)),
-                    scrollbar_thumb_radius: Some(BorderRadius::all(4.0)),
+                    scrollbar_style: Some(
+                        ScrollbarStyle::new()
+                            .with_track_radius(BorderRadius::all(4.0))
+                            .with_thumb_radius(BorderRadius::all(4.0))
+                    ),
                     ..Default::default()
                 }),
 

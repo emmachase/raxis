@@ -5,19 +5,13 @@ use string_interner::{StringInterner, backend::StringBackend};
 
 use crate::{
     HookState, Shell,
-    gfx::{
-        RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList,
-    },
+    gfx::{RectDIP, command_recorder::CommandRecorder, draw_commands::DrawCommandList},
     layout::{
         model::{Axis, ElementStyle, UIElement, UIKey},
         positioning::position_elements,
         visitors::VisitFrame,
     },
-    runtime::scroll::{
-        DEFAULT_SCROLLBAR_THUMB_COLOR, DEFAULT_SCROLLBAR_THUMB_RADIUS,
-        DEFAULT_SCROLLBAR_TRACK_COLOR, DEFAULT_SCROLLBAR_TRACK_RADIUS, ScrollStateManager,
-        ScrollbarGeom, compute_scrollbar_geom,
-    },
+    runtime::scroll::{ScrollStateManager, ScrollbarGeom, compute_scrollbar_geom},
     widgets::{Instance, PaintOwnership},
 };
 
@@ -64,11 +58,11 @@ impl<Message> Default for OwnedUITree<Message> {
 #[allow(dead_code)]
 fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
     visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
-        if let Some(parent_key) = parent {
-            if ui_tree.slots[key].color.is_none() && ui_tree.slots[parent_key].color.is_some() {
-                ui_tree.slots[key].color = ui_tree.slots[parent_key].color;
-            }
-        }
+        // if let Some(parent_key) = parent {
+        //     if ui_tree.slots[key].color.is_none() && ui_tree.slots[parent_key].color.is_some() {
+        //         ui_tree.slots[key].color = ui_tree.slots[parent_key].color;
+        //     }
+        // }
 
         if let Some(id) = ui_tree.slots[key].id {
             ui_tree.slots[root].id_map.insert(id, key);
@@ -285,19 +279,15 @@ pub fn generate_paint_commands<Message>(
 
                     if has_scroll_x || has_scroll_y {
                         let scroll_config = element.scroll.as_ref().unwrap();
-                        let scrollbar_track_color = scroll_config
-                            .scrollbar_track_color
-                            .unwrap_or(DEFAULT_SCROLLBAR_TRACK_COLOR);
-                        let scrollbar_thumb_color = scroll_config
-                            .scrollbar_thumb_color
-                            .unwrap_or(DEFAULT_SCROLLBAR_THUMB_COLOR);
+                        let global_style = shell.borrow().scrollbar_style;
 
-                        let track_radius = scroll_config
-                            .scrollbar_track_radius
-                            .unwrap_or(DEFAULT_SCROLLBAR_TRACK_RADIUS);
-                        let thumb_radius = scroll_config
-                            .scrollbar_thumb_radius
-                            .unwrap_or(DEFAULT_SCROLLBAR_THUMB_RADIUS);
+                        // Use element's custom scrollbar style if provided, otherwise use global style
+                        let active_style = scroll_config.scrollbar_style.unwrap_or(global_style);
+
+                        let scrollbar_track_color = active_style.track_color;
+                        let scrollbar_thumb_color = active_style.thumb_color;
+                        let track_radius = active_style.track_radius;
+                        let thumb_radius = active_style.thumb_radius;
 
                         if let Some(ScrollbarGeom {
                             track_rect,

@@ -15,13 +15,14 @@ use windows::core::Result;
 use crate::gfx::command_recorder::CommandRecorder;
 use crate::gfx::{PointDIP, RectDIP};
 use crate::layout::UIArenas;
-use crate::layout::model::ElementStyle;
+use crate::layout::model::{Element, ElementStyle};
 use crate::runtime::clipboard::get_clipboard_text;
 use crate::runtime::font_manager::{FontAxes, FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::runtime::vkey::VKey;
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
     Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
+    widget,
 };
 use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
@@ -50,7 +51,7 @@ enum UndoOperationType {
     Other,
 }
 
-pub type TextInputEventHandler = Box<dyn Fn(&str) + 'static>;
+pub type TextInputEventHandler<Message> = Box<dyn Fn(&str, &mut Shell<Message>) + 'static>;
 
 /// A widget that renders selectable text using DirectWrite and draws
 /// the selection highlight using Direct2D.
@@ -60,7 +61,7 @@ pub type TextInputEventHandler = Box<dyn Fn(&str) + 'static>;
 pub struct TextInput<Message> {
     _marker: std::marker::PhantomData<Message>,
 
-    on_text_changed: Option<TextInputEventHandler>,
+    on_text_changed: Option<TextInputEventHandler<Message>>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
     pub font_size: f32,
@@ -105,7 +106,7 @@ impl<Message: 'static> TextInput<Message> {
 
     pub fn with_text_changed_handler<F>(mut self, handler: F) -> Self
     where
-        F: Fn(&str) + 'static,
+        F: Fn(&str, &mut Shell<Message>) + 'static,
     {
         self.on_text_changed = Some(Box::new(handler));
         self
@@ -148,6 +149,14 @@ impl<Message: 'static> TextInput<Message> {
         state.recompute_text_boundaries();
         let _ = state.build_text_layout();
         let _ = state.recalc_metrics();
+    }
+
+    pub fn as_element(self, id: u64) -> Element<Message> {
+        Element {
+            id: Some(id),
+            content: widget(self),
+            ..Default::default()
+        }
     }
 }
 
@@ -563,7 +572,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         if state.text != state.last_emitted_text {
             state.last_emitted_text = state.text.clone();
             if let Some(cb) = self.on_text_changed.as_ref() {
-                cb(&state.text);
+                cb(&state.text, shell);
             }
         }
     }

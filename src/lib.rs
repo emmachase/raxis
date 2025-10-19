@@ -20,7 +20,7 @@ use crate::{
     gfx::{PointDIP, RectDIP},
     layout::{
         BorrowedUITree,
-        model::{Element, UIKey},
+        model::{Element, ScrollbarStyle, UIKey},
         visitors::{self, VisitAction},
     },
     math::easing::Easing,
@@ -332,6 +332,8 @@ pub struct Shell<Message> {
     pending_messages: bool,
 
     task_dispatcher: mpsc::Sender<Task<Message>>,
+
+    pub scrollbar_style: ScrollbarStyle,
 }
 
 #[derive(Debug, PartialEq, Eq, PartialOrd, Ord, Clone, Copy)]
@@ -355,6 +357,7 @@ impl<Message> Shell<Message> {
         scroll_state_manager: ScrollStateManager,
         focus_manager: FocusManager,
         event_mapper: EventMapperFn<Message>,
+        scrollbar_style: ScrollbarStyle,
     ) -> Self {
         Self {
             focus_manager,
@@ -372,6 +375,7 @@ impl<Message> Shell<Message> {
             pending_messages: false,
             task_dispatcher,
             event_mapper,
+            scrollbar_style,
         }
     }
 

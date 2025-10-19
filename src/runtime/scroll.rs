@@ -6,13 +6,6 @@ use crate::{
     layout::model::{Axis, BorderRadius, ScrollBarSize, UIElement},
 };
 
-pub const DEFAULT_SCROLLBAR_TRACK_COLOR: Color = Color::from_hex(0x00000033);
-pub const DEFAULT_SCROLLBAR_THUMB_COLOR: Color = Color::from_hex(0x00000055);
-pub const DEFAULT_SCROLLBAR_SIZE: ScrollBarSize = ScrollBarSize::ThinThick(8.0, 16.0);
-pub const DEFAULT_SCROLLBAR_MIN_THUMB_SIZE: f32 = 16.0;
-pub const DEFAULT_SCROLLBAR_TRACK_RADIUS: BorderRadius = BorderRadius::all(0.0);
-pub const DEFAULT_SCROLLBAR_THUMB_RADIUS: BorderRadius = BorderRadius::all(0.0);
-
 #[derive(Clone, Copy, Debug, PartialEq, Default)]
 pub struct ScrollPosition {
     pub x: f32,
@@ -272,6 +265,9 @@ pub fn compute_scrollbar_geom<Message>(
 
     let scroll_metadata = shell.scroll_state_manager.get_scroll_metadata(id);
 
+    // Use element's custom scrollbar style if provided, otherwise use global style
+    let active_style = sc.scrollbar_style.unwrap_or(shell.scrollbar_style);
+
     match axis {
         Axis::Y if has_scroll_y => {
             let width = element.computed_width;
@@ -282,7 +278,7 @@ pub fn compute_scrollbar_geom<Message>(
                 return None;
             }
 
-            let scrollbar_size = sc.scrollbar_size.unwrap_or(DEFAULT_SCROLLBAR_SIZE);
+            let scrollbar_size = active_style.size;
             let scrollbar_size = scroll_metadata.animation.1.interpolate(
                 shell,
                 scrollbar_size.thin(),
@@ -290,9 +286,7 @@ pub fn compute_scrollbar_geom<Message>(
                 Instant::now(),
             );
 
-            let scrollbar_min_thumb_size = sc
-                .scrollbar_min_thumb_size
-                .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
+            let scrollbar_min_thumb_size = active_style.min_thumb_size;
 
             let scroll_y = scroll_metadata.position.y;
             let effective_scroll_y = scroll_y.clamp(0.0, max_scroll_y);
@@ -343,7 +337,7 @@ pub fn compute_scrollbar_geom<Message>(
                 return None;
             }
 
-            let scrollbar_size = sc.scrollbar_size.unwrap_or(DEFAULT_SCROLLBAR_SIZE);
+            let scrollbar_size = active_style.size;
             let scrollbar_size = scroll_metadata.animation.0.interpolate(
                 shell,
                 scrollbar_size.thin(),
@@ -351,9 +345,7 @@ pub fn compute_scrollbar_geom<Message>(
                 Instant::now(),
             );
 
-            let scrollbar_min_thumb_size = sc
-                .scrollbar_min_thumb_size
-                .unwrap_or(DEFAULT_SCROLLBAR_MIN_THUMB_SIZE);
+            let scrollbar_min_thumb_size = active_style.min_thumb_size;
 
             let scroll_x = scroll_metadata.position.x;
             let effective_scroll_x = scroll_x.clamp(0.0, max_scroll_x);

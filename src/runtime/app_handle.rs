@@ -2,7 +2,7 @@ use crate::dips_scale;
 use crate::gfx::draw_commands::DrawCommandList;
 use crate::gfx::{RectDIP, command_recorder::CommandRecorder};
 use crate::layout::model::{
-    Color, Direction, Element, Sizing, StrokeLineCap, create_tree,
+    Color, Direction, Element, ScrollbarStyle, Sizing, StrokeLineCap, create_tree,
 };
 use crate::layout::{self, OwnedUITree};
 use crate::runtime::device::DeviceResources;
@@ -161,6 +161,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         syscommand_handler: Option<
             Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>,
         >,
+        scrollbar_style: ScrollbarStyle,
     ) -> Result<Self> {
         unsafe {
             let mut d3d_device = None;
@@ -288,6 +289,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 scroll_state_manager,
                 focus_manager,
                 event_mapper_fn,
+                scrollbar_style,
             );
 
             // Spawn executor thread with selected async runtime

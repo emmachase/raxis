@@ -1,3 +1,4 @@
+use crate::layout::model::ScrollbarStyle;
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::Task;
 use crate::runtime::tray::{TrayEvent, TrayIconConfig};
@@ -36,6 +37,8 @@ pub struct Application<
 
     pub(crate) syscommand_handler:
         Option<Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>>,
+
+    pub(crate) scrollbar_style: ScrollbarStyle,
 }
 
 impl<
@@ -68,6 +71,8 @@ impl<
             tray_event_handler: None,
 
             syscommand_handler: None,
+
+            scrollbar_style: ScrollbarStyle::default(),
         }
     }
 
@@ -127,6 +132,13 @@ impl<
     ) -> Self {
         Self {
             syscommand_handler: Some(Box::new(handler)),
+            ..self
+        }
+    }
+
+    pub fn with_scrollbar_style(self, scrollbar_style: ScrollbarStyle) -> Self {
+        Self {
+            scrollbar_style,
             ..self
         }
     }

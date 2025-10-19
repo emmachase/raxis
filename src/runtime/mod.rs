@@ -202,8 +202,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_DESTROY => wndproc::handle_destroy::<State, Message>(hwnd),
             _ => {
                 // Check if this is the TaskbarCreated message
-                if wndproc::get_taskbar_created_message() == Some(msg)
-                {
+                if wndproc::get_taskbar_created_message() == Some(msg) {
                     return wndproc::handle_taskbar_created::<State, Message>(hwnd);
                 }
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -376,6 +375,8 @@ impl<
             tray_event_handler,
 
             syscommand_handler,
+
+            scrollbar_style,
         } = self;
 
         WNDPROC_IMPL
@@ -509,6 +510,7 @@ impl<
                 tray_config,
                 tray_event_handler,
                 syscommand_handler,
+                scrollbar_style,
             )?;
 
             let dips = dips_scale(hwnd);
