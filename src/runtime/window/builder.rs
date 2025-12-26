@@ -35,6 +35,9 @@ pub struct Application<
     pub(crate) tray_config: Option<TrayIconConfig>,
     pub(crate) tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Task<Message>>>>,
 
+    pub(crate) icon: Option<u16>,
+    pub(crate) icon_sm: Option<u16>,
+
     pub(crate) syscommand_handler:
         Option<Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>>,
 
@@ -69,6 +72,9 @@ impl<
 
             tray_config: None,
             tray_event_handler: None,
+
+            icon: None,
+            icon_sm: None,
 
             syscommand_handler: None,
 
@@ -124,6 +130,24 @@ impl<
             tray_event_handler: Some(Box::new(handler)),
             ..self
         }
+    }
+
+    pub fn with_icon(self, resource: Option<u16>) -> Self {
+        Self {
+            icon: resource,
+            ..self
+        }
+    }
+
+    pub fn with_icon_sm(self, resource: Option<u16>) -> Self {
+        Self {
+            icon_sm: resource,
+            ..self
+        }
+    }
+
+    pub fn with_icons(self, resource: Option<u16>) -> Self {
+        self.with_icon(resource).with_icon_sm(resource)
     }
 
     pub fn with_syscommand_handler(

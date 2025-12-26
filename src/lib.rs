@@ -92,7 +92,7 @@ impl<'a> HookInstance<'a> {
 }
 
 impl<Message> HookManager<'_, Message> {
-    pub fn instance(&mut self, id: u64) -> HookInstance {
+    pub fn instance(&'_ mut self, id: u64) -> HookInstance<'_> {
         let state = self.ui_tree.hook_state.entry(id).or_insert_with(|| {
             debug!("Creating hook state for {id}");
             HookState::default()

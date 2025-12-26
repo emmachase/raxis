@@ -29,7 +29,7 @@ use crate::gfx::PointDIP;
 use crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING;
 use crate::runtime::context_menu::WM_SHOW_CONTEXT_MENU;
 use crate::runtime::dragdrop::start_text_drag;
-use crate::runtime::tray::WM_TRAYICON;
+use crate::runtime::tray::{WM_TRAYICON, load_icon_from_resource};
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::{DragData, DragEvent, Event};
 use crate::{DeferredControl, RedrawRequest};
@@ -50,7 +50,7 @@ use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME, WVR_REDRAW
+    HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_SYSCOMMAND, WM_TIMER, WM_USER, WNDCLASSEXW, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME, WVR_REDRAW
 };
 use windows::{
     Win32::{
@@ -67,7 +67,7 @@ use windows::{
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW,
                 DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, GetSystemMetrics,
-                IDC_ARROW, LoadCursorW, MSG, RegisterClassW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
+                IDC_ARROW, LoadCursorW, MSG, RegisterClassExW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
                 WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
                 WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
@@ -402,6 +402,9 @@ impl<
             tray_config,
             tray_event_handler,
 
+            icon,
+            icon_sm,
+
             syscommand_handler,
 
             scrollbar_style,
@@ -411,6 +414,16 @@ impl<
             .set(Box::new(wndproc_impl::<State, Message>))
             .map_err(|_| "WNDPROC_IMPL already initialized")
             .unwrap();
+
+        let h_icon = match icon {
+            Some(resource) => load_icon_from_resource(resource).ok(),
+            _ => None,
+        };
+
+        let h_icon_sm = match icon_sm {
+            Some(resource) => load_icon_from_resource(resource).ok(),
+            _ => None,
+        };
 
         unsafe {
             // Opt-in to Per-Monitor V2 DPI awareness for crisp rendering on high-DPI displays
@@ -424,15 +437,18 @@ impl<
             let hinstance = GetModuleHandleW(None).unwrap();
             let class_name = PCWSTR(w!("DWriteSampleWindow").as_ptr());
 
-            let wc = WNDCLASSW {
+            let wc = WNDCLASSEXW {
+                cbSize: size_of::<WNDCLASSEXW>() as u32,
                 style: CS_HREDRAW | CS_VREDRAW,
                 lpfnWndProc: Some(wndproc),
                 hInstance: hinstance.into(),
                 hCursor: LoadCursorW(None, IDC_ARROW)?,
                 lpszClassName: class_name,
+                hIcon: h_icon.unwrap_or_default(),
+                hIconSm: h_icon_sm.unwrap_or_default(),
                 ..Default::default()
             };
-            RegisterClassW(&wc);
+            RegisterClassExW(&wc);
 
             // Register the TaskbarCreated message for tray icon restoration
             wndproc::register_taskbar_created_message();

@@ -2,8 +2,8 @@ use std::{collections::HashMap, time::Instant};
 
 use crate::{
     Animation, Shell,
-    gfx::{RectDIP, color::Color},
-    layout::model::{Axis, BorderRadius, ScrollBarSize, UIElement},
+    gfx::RectDIP,
+    layout::model::{Axis, UIElement},
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Default)]

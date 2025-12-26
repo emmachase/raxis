@@ -57,7 +57,7 @@ impl<Message> Default for OwnedUITree<Message> {
 
 #[allow(dead_code)]
 fn propagate_inherited_properties<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey) {
-    visitors::visit_bfs(ui_tree, root, |ui_tree, key, parent| {
+    visitors::visit_bfs(ui_tree, root, |ui_tree, key, _parent| {
         // if let Some(parent_key) = parent {
         //     if ui_tree.slots[key].color.is_none() && ui_tree.slots[parent_key].color.is_some() {
         //         ui_tree.slots[key].color = ui_tree.slots[parent_key].color;

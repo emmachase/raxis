@@ -17,7 +17,6 @@ use crate::runtime::titlebar_hit_test::{TitlebarHitRegions, client_origin_screen
 use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig};
 use crate::widgets::Event;
 use crate::{HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, MAGIC_ID_TITLEBAR_CLOSE, MAGIC_ID_TITLEBAR_MAXIMIZE, MAGIC_ID_TITLEBAR_MINIMIZE, w_id};
-use log::error;
 use raxis_core::{self as raxis, svg};
 use raxis_proc_macro::svg_path;
 use std::cell::RefCell;
@@ -392,15 +391,15 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
             // Get current mouse position in screen coordinates
             let mut pt = POINT { x: 0, y: 0 };
             unsafe { GetCursorPos(&mut pt).ok() };
-            
+
             // Convert to client coordinates
-            let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
-            
+            unsafe { _ = ScreenToClient(hwnd, &mut pt) };
+
             // Convert to DIPs
             let to_dip = dips_scale(hwnd);
             let x_dip = (pt.x as f32) * to_dip;
             let y_dip = (pt.y as f32) * to_dip;
-            
+
             // Dispatch mouse move event
             self.shell.dispatch_event(
                 hwnd,

@@ -7,8 +7,7 @@ use windows::Win32::{
             Shell_NotifyIconW,
         },
         WindowsAndMessaging::{
-            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LoadImageW, WM_LBUTTONDBLCLK, WM_LBUTTONUP,
-            WM_RBUTTONUP,
+            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LR_SHARED, LoadImageW, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP
         },
     },
 };
@@ -67,7 +66,7 @@ impl TrayIcon {
     /// Add the tray icon to the system tray
     pub fn add(&mut self) -> windows_core::Result<()> {
         unsafe {
-            let mut nid = self.create_notify_icon_data()?;
+            let nid = self.create_notify_icon_data()?;
             Shell_NotifyIconW(NIM_ADD, &nid).ok()?;
             Ok(())
         }
@@ -78,7 +77,7 @@ impl TrayIcon {
         self.config = config;
 
         unsafe {
-            let mut nid = self.create_notify_icon_data()?;
+            let nid = self.create_notify_icon_data()?;
             Shell_NotifyIconW(NIM_MODIFY, &nid).ok()?;
             Ok(())
         }
@@ -87,7 +86,7 @@ impl TrayIcon {
     /// Remove the tray icon from the system tray
     pub fn remove(&mut self) -> windows_core::Result<()> {
         unsafe {
-            let mut nid = NOTIFYICONDATAW {
+            let nid = NOTIFYICONDATAW {
                 cbSize: std::mem::size_of::<NOTIFYICONDATAW>() as u32,
                 hWnd: self.hwnd,
                 uID: 1,
@@ -151,7 +150,7 @@ impl Drop for TrayIcon {
 }
 
 /// Load an icon from a resource ID
-fn load_icon_from_resource(resource_id: u16) -> windows_core::Result<HICON> {
+pub(crate) fn load_icon_from_resource(resource_id: u16) -> windows_core::Result<HICON> {
     unsafe {
         let hinstance = GetModuleHandleW(None)?;
         let hicon = LoadImageW(
@@ -160,7 +159,7 @@ fn load_icon_from_resource(resource_id: u16) -> windows_core::Result<HICON> {
             IMAGE_ICON,
             0,
             0,
-            LR_DEFAULTSIZE,
+            LR_DEFAULTSIZE | LR_SHARED,
         )?;
         Ok(HICON(hicon.0))
     }
