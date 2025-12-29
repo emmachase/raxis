@@ -152,7 +152,10 @@ pub fn generate_paint_commands<Message>(
 
                 let (style, ownership) = if let Some(widget) = element.content.as_mut() {
                     let state = ui_tree.widget_state.get_mut(&element.id.unwrap()).unwrap();
-                    (widget.adjust_style(state, style), widget.paint_ownership())
+                    (
+                        widget.adjust_style(state, &mut shell.borrow_mut(), style),
+                        widget.paint_ownership(),
+                    )
                 } else {
                     (style, PaintOwnership::Contents)
                 };

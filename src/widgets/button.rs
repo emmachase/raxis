@@ -216,6 +216,8 @@ impl ButtonStyleSet {
 }
 
 pub type OnClickFn<Message> = dyn Fn(&mut UIArenas, &mut Shell<Message>);
+pub type IsFocused = bool;
+pub type AdjustStyleFn = dyn Fn(ButtonState, IsFocused, ElementStyle) -> ElementStyle;
 
 /// Button widget with text label and click handling
 pub struct Button<Message> {
@@ -223,6 +225,7 @@ pub struct Button<Message> {
     pub on_click: Option<Box<OnClickFn<Message>>>,
     pub styles: ButtonStyleSet,
     pub cursor: Option<Cursor>,
+    pub adjust_style_fn: Option<Box<AdjustStyleFn>>,
 }
 
 impl<Message> Debug for Button<Message> {
@@ -240,6 +243,7 @@ impl<Message: 'static + Send> Button<Message> {
             on_click: None,
             styles: ButtonStyleSet::default(),
             cursor: Some(Cursor::Pointer),
+            adjust_style_fn: None,
         }
     }
 
@@ -384,6 +388,14 @@ impl<Message: 'static + Send> Button<Message> {
         self
     }
 
+    pub fn with_adjust_style(
+        mut self,
+        adjust_fn: impl Fn(ButtonState, IsFocused, ElementStyle) -> ElementStyle + 'static,
+    ) -> Self {
+        self.adjust_style_fn = Some(Box::new(adjust_fn));
+        self
+    }
+
     pub fn as_element(self, id: u64, children: impl Into<Element<Message>>) -> Element<Message> {
         Element {
             id: Some(id),
@@ -475,11 +487,16 @@ impl<Message> Widget<Message> for Button<Message> {
         }
     }
 
-    fn adjust_style(&mut self, instance: &mut Instance, style: ElementStyle) -> ElementStyle {
+    fn adjust_style(
+        &mut self,
+        instance: &mut Instance,
+        shell: &mut Shell<Message>,
+        style: ElementStyle,
+    ) -> ElementStyle {
         let state = with_state!(mut instance as ButtonWidgetState);
         state.update_state(self.enabled);
         let cur_style = state.get_current_style(&self.styles);
-        ElementStyle {
+        let adjusted_style = ElementStyle {
             background_color: cur_style.bg_color.or(style.background_color),
             color: cur_style.text_color.or(style.color),
             border_radius: cur_style.border_radius.or(style.border_radius),
@@ -495,6 +512,17 @@ impl<Message> Widget<Message> for Button<Message> {
             },
             border: cur_style.border.or(style.border),
             ..style
+        };
+
+        // Call custom adjust_style function if provided
+        if let Some(adjust_fn) = &self.adjust_style_fn {
+            adjust_fn(
+                state.state,
+                shell.focus_manager.is_focused(instance.id),
+                adjusted_style,
+            )
+        } else {
+            adjusted_style
         }
     }
 
@@ -517,6 +545,7 @@ impl<Message> Widget<Message> for Button<Message> {
                     state.is_mouse_over = true;
                     state.update_state(self.enabled);
                     shell.capture_event(instance.id);
+                    shell.focus_manager.focus(instance.id);
                     shell.request_redraw(hwnd, RedrawRequest::Immediate);
                 }
             }

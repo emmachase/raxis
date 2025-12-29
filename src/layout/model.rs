@@ -555,6 +555,36 @@ impl From<Color> for Border {
     }
 }
 
+impl Border {
+    pub fn dot() -> Self {
+        Self {
+            dash_style: Some(StrokeDashStyle::Dot),
+            ..Default::default()
+        }
+    }
+
+    pub fn dash() -> Self {
+        Self {
+            dash_style: Some(StrokeDashStyle::Dash),
+            ..Default::default()
+        }
+    }
+
+    pub fn dash_dot() -> Self {
+        Self {
+            dash_style: Some(StrokeDashStyle::DashDot),
+            ..Default::default()
+        }
+    }
+
+    pub fn dash_dot_dot() -> Self {
+        Self {
+            dash_style: Some(StrokeDashStyle::DashDotDot),
+            ..Default::default()
+        }
+    }
+}
+
 // ---------- Scrolling ----------
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -784,6 +814,9 @@ impl<Message> Default for UIElement<Message> {
             border: None,
             z_index: None,
             opacity: None,
+            #[cfg(feature = "snap")]
+            snap: true,
+            #[cfg(not(feature = "snap"))]
             snap: false,
             wrap: false,
             wrap_breaks: Vec::new(),
@@ -1103,6 +1136,9 @@ impl<Message> Default for Element<Message> {
             border: None,
             z_index: None,
             opacity: None,
+            #[cfg(feature = "snap")]
+            snap: true,
+            #[cfg(not(feature = "snap"))]
             snap: false,
             wrap: false,
             id: None,

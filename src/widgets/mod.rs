@@ -304,7 +304,12 @@ pub trait Widget<Message>: std::fmt::Debug {
         PaintOwnership::Contents
     }
 
-    fn adjust_style(&mut self, instance: &mut Instance, style: ElementStyle) -> ElementStyle {
+    fn adjust_style(
+        &mut self,
+        instance: &mut Instance,
+        shell: &mut Shell<Message>,
+        style: ElementStyle,
+    ) -> ElementStyle {
         style
     }
 
