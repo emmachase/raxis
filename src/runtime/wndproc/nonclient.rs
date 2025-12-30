@@ -52,7 +52,7 @@ pub fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
             &mut rc_frame,
             window_style & !WS_CAPTION,
             false,
-            WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
+            WS_EX_NOREDIRECTIONBITMAP,
         )
         .unwrap()
     };

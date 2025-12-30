@@ -463,7 +463,7 @@ impl<
 
             // Create window first without user data
             let hwnd = CreateWindowExW(
-                WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
+                WS_EX_NOREDIRECTIONBITMAP,
                 class_name,
                 PCWSTR(
                     title
