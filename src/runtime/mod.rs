@@ -111,7 +111,9 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
     lparam: LPARAM,
 ) -> LRESULT {
     let result = unsafe {
-        if REPLACE_TITLEBAR.load(Ordering::Relaxed) {
+        let replace_titlebar = REPLACE_TITLEBAR.load(Ordering::Relaxed);
+
+        if replace_titlebar {
             let mut l_ret = LRESULT(0);
             let mut skip_normal_handlers =
                 DwmDefWindowProc(hwnd, msg, wparam, lparam, &mut l_ret).as_bool();
@@ -186,6 +188,7 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_TIMER => wndproc::handle_timer::<State, Message>(hwnd, wparam),
             WM_LBUTTONDOWN => wndproc::handle_lbuttondown::<State, Message>(hwnd, lparam),
             WM_MOUSEMOVE => wndproc::handle_mousemove::<State, Message>(hwnd, lparam),
+            WM_MOUSELEAVE => wndproc::handle_mouseleave::<State, Message>(hwnd),
             WM_MOUSEWHEEL => wndproc::handle_mousewheel::<State, Message>(hwnd, wparam, lparam),
             WM_LBUTTONUP => wndproc::handle_lbuttonup::<State, Message>(hwnd, lparam),
 
@@ -194,15 +197,15 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_MBUTTONUP => wndproc::handle_mbuttonup::<State, Message>(hwnd),
 
             // Non-client mouse events for custom titlebar buttons
-            WM_NCMOUSEMOVE => wndproc::handle_ncmousemove::<State, Message>(hwnd, wparam, lparam),
-            WM_NCMOUSELEAVE | WM_MOUSELEAVE => wndproc::handle_mouseleave::<State, Message>(hwnd),
-            WM_NCLBUTTONDOWN => {
+            WM_NCMOUSEMOVE if replace_titlebar => wndproc::handle_ncmousemove::<State, Message>(hwnd, wparam, lparam),
+            WM_NCMOUSELEAVE if replace_titlebar => wndproc::handle_mouseleave::<State, Message>(hwnd),
+            WM_NCLBUTTONDOWN if replace_titlebar => {
                 if let Some(result) = wndproc::handle_nclbuttondown::<State, Message>(hwnd, wparam, lparam) {
                     return result;
                 }
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
-            WM_NCLBUTTONUP => {
+            WM_NCLBUTTONUP if replace_titlebar => {
                 if let Some(result) = wndproc::handle_nclbuttonup::<State, Message>(hwnd, wparam, lparam) {
                     return result;
                 }
@@ -454,7 +457,7 @@ impl<
             wndproc::register_taskbar_created_message();
 
             let window_style = if replace_titlebar {
-                WS_OVERLAPPED | WS_THICKFRAME | WS_MAXIMIZEBOX
+                WS_OVERLAPPED | WS_THICKFRAME | WS_MAXIMIZEBOX 
             } else {
                 WS_OVERLAPPEDWINDOW
             };
