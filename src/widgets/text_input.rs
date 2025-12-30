@@ -380,14 +380,13 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                 // Check if we should start an OLE drag operation
                 if state.is_dragging && state.can_drag_drop && !state.has_started_ole_drag {
                     // Check if we have selected text and the drag started within the selection
-                    if let Some(start_pos) = state.drag_start_position {
-                        if let Some(drag_data) = state.can_ole_drag(start_pos) {
+                    if let Some(start_pos) = state.drag_start_position
+                        && let Some(drag_data) = state.can_ole_drag(start_pos) {
                             // Start OLE drag operation
                             state.handoff_ole_drag(instance.id, shell, &drag_data);
 
                             return; // Don't update text selection when starting OLE drag
                         }
-                    }
                 }
 
                 if state.update_drag(widget_x, widget_y) {
@@ -471,11 +470,10 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                             true
                         }
                         VKey::V if ctrl_down => {
-                            if !state.is_composing() {
-                                if let Some(s) = get_clipboard_text(hwnd) {
+                            if !state.is_composing()
+                                && let Some(s) = get_clipboard_text(hwnd) {
                                     let _ = state.insert_str(&s);
                                 }
-                            }
                             true
                         }
                         VKey::Z if ctrl_down && shift_down => {
@@ -1117,15 +1115,12 @@ impl<Message> WidgetState<Message> {
     fn can_ole_drag(&self, position: PointDIP) -> Option<DragData> {
         // Check if we have selected text and the position is within the selection
         let (sel_start, sel_end) = self.selection_range();
-        if sel_start != sel_end {
-            if let Ok(idx) = self.hit_test_index(position.x, position.y) {
-                if idx >= sel_start && idx <= sel_end {
-                    if let Some(selected_text) = self.selected_text() {
+        if sel_start != sel_end
+            && let Ok(idx) = self.hit_test_index(position.x, position.y)
+                && idx >= sel_start && idx <= sel_end
+                    && let Some(selected_text) = self.selected_text() {
                         return Some(DragData::Text(selected_text.to_owned()));
                     }
-                }
-            }
-        }
         None
     }
 
@@ -1450,11 +1445,10 @@ impl<Message> WidgetState<Message> {
         let byte_idx = self.utf16_index_to_byte(idx16);
         let bytes = self.text.as_bytes();
         let mut start_byte = 0usize;
-        if byte_idx > 0 {
-            if let Some(pos) = bytes[..byte_idx].iter().rposition(|&c| c == b'\n') {
+        if byte_idx > 0
+            && let Some(pos) = bytes[..byte_idx].iter().rposition(|&c| c == b'\n') {
                 start_byte = pos + 1;
             }
-        }
         let mut end_byte = bytes.len();
         if let Some(off) = bytes[byte_idx..].iter().position(|&c| c == b'\n') {
             end_byte = byte_idx + off; // exclude newline
@@ -1498,14 +1492,13 @@ impl<Message> WidgetState<Message> {
             }
 
             // If this segment is the next Unicode word, record it as a word range
-            if let Some(next_word) = words.peek() {
-                if *next_word == seg {
+            if let Some(next_word) = words.peek()
+                && *next_word == seg {
                     starts.push(seg_start);
                     ranges.push((seg_start, seg_start + seg_len16));
                     let _ = words.next();
                     continue;
                 }
-            }
 
             // Otherwise, treat this non-whitespace segment (punct/symbol run)
             // as its own selectable block, kept distinct from adjacent words.

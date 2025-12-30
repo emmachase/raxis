@@ -20,21 +20,18 @@ pub fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
     let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
 
     if let Some(regions) = get_titlebar_hit_regions(hwnd) {
-        if let Some(rc) = regions.close {
-            if x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
+        if let Some(rc) = regions.close
+            && x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
                 return HTCLOSE;
             }
-        }
-        if let Some(rc) = regions.maximize {
-            if x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
+        if let Some(rc) = regions.maximize
+            && x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
                 return HTMAXBUTTON;
             }
-        }
-        if let Some(rc) = regions.minimize {
-            if x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
+        if let Some(rc) = regions.minimize
+            && x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
                 return HTMINBUTTON;
             }
-        }
     }
 
     let mut rc_window = RECT::default();

@@ -746,11 +746,10 @@ impl<Message> Widget<Message> for Text {
         );
 
         // Apply colored spans only if they changed or layout was rebuilt
-        if !self.spans.is_empty() && state.spans_changed(&self.spans) {
-            if let Some(layout) = &state.text_layout {
+        if !self.spans.is_empty() && state.spans_changed(&self.spans)
+            && let Some(layout) = &state.text_layout {
                 let _ = state.apply_spans(layout, &self.spans);
             }
-        }
 
         // Draw the text
         if let Some(layout) = &state.text_layout {

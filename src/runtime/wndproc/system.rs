@@ -96,16 +96,14 @@ pub fn handle_trayicon<State: 'static, Message: 'static + Send + Clone>(
     lparam: LPARAM,
 ) -> LRESULT {
     // Handle tray icon events
-    if let Some(event) = TrayIcon::parse_message(lparam) {
-        if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+    if let Some(event) = TrayIcon::parse_message(lparam)
+        && let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
             let state = state.deref_mut();
-            if let Some(ref handler) = state.tray_event_handler {
-                if let Some(task) = handler(&state.user_state, event) {
+            if let Some(ref handler) = state.tray_event_handler
+                && let Some(task) = handler(&state.user_state, event) {
                     state.task_sender.send(task).ok();
                 }
-            }
         }
-    }
     LRESULT(0)
 }
 

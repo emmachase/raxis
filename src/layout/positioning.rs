@@ -28,8 +28,8 @@ pub fn position_elements<Message>(
 
             // Determine anchor element: default to parent; if anchor_id present, try lookup on root id_map
             let mut anchor = parent;
-            if let Some(f) = &floating {
-                if let Some(anchor_id) = &f.anchor_id {
+            if let Some(f) = &floating
+                && let Some(anchor_id) = &f.anchor_id {
                     if let Some(found) = root_id_map.get(anchor_id).copied() {
                         anchor = Some(found);
                     } else {
@@ -37,7 +37,6 @@ pub fn position_elements<Message>(
                         panic!("Floating element with unknown anchor_id {anchor_id}");
                     }
                 }
-            }
 
             if let Some(a) = anchor {
                 !slots[a].__positioned

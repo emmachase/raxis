@@ -559,11 +559,10 @@ impl<Message> Widget<Message> for Button<Message> {
                 state.is_mouse_over = point.within(bounds.border_box);
                 state.update_state(self.enabled);
 
-                if was_pressed && point.within(bounds.border_box) && self.enabled {
-                    if let Some(handler) = self.on_click.as_ref() {
+                if was_pressed && point.within(bounds.border_box) && self.enabled
+                    && let Some(handler) = self.on_click.as_ref() {
                         handler(arenas, shell);
                     }
-                }
 
                 shell.request_redraw(hwnd, RedrawRequest::Immediate);
             }

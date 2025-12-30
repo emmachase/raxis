@@ -11,11 +11,11 @@ use std::time::{Duration, Instant};
 use crate::widgets::svg_path::ColorChoice;
 use crate::widgets::text::Text;
 use crate::{
-    close_window, minimize_window, toggle_maximize_window, svg, svg_path, w_id,
-    layout::model::{Color, Direction, Element, Sizing, StrokeLineCap},
+    close_window, minimize_window, toggle_maximize_window, w_id,
+    layout::model::{Color, Direction, Element, Sizing},
     layout::helpers::center,
     Animation, HookManager,
-    widgets::{button::{Button, ButtonState}, svg::ViewBox, svg_path::SvgPath},
+    widgets::button::{Button, ButtonState},
     MAGIC_ID_TITLEBAR_CLOSE, MAGIC_ID_TITLEBAR_MAXIMIZE, MAGIC_ID_TITLEBAR_MINIMIZE,
 };
 

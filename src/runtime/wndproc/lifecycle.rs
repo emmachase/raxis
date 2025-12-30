@@ -17,13 +17,13 @@ use windows::Win32::UI::WindowsAndMessaging::{
     GWLP_USERDATA,
 };
 
-use crate::gfx::{RectDIP, color::Color};
+use crate::gfx::RectDIP;
 use crate::gfx::command_executor::CommandExecutor;
 use crate::runtime::util::{client_rect, state_mut_from_hwnd};
 use crate::runtime::titlebar_hit_test::clear_titlebar_hit_regions;
 use crate::widgets::renderer::Renderer;
 use crate::widgets::Event;
-use crate::{RedrawRequest, current_dpi, dips_scale, dips_scale_for_dpi};
+use crate::{RedrawRequest, current_dpi, dips_scale_for_dpi};
 
 use super::super::WinUserData;
 
@@ -186,15 +186,14 @@ pub fn handle_paint<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND)
             renderer.evict_unused_cache_entries();
 
             let end = unsafe { rt.EndDraw(None, None) };
-            if let Err(e) = end {
-                if e.code() == D2DERR_RECREATE_TARGET {
+            if let Err(e) = end
+                && e.code() == D2DERR_RECREATE_TARGET {
                     warn!("Recreating D2D target");
                     device_resources.discard_device_resources();
                     device_resources
                         .create_device_resources(hwnd, device_width, device_height)
                         .expect("Failed to recreate device resources");
                 }
-            }
         }
 
         if let Some(ref swap_chain) = device_resources.dxgi_swapchain {

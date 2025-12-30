@@ -46,13 +46,12 @@ pub fn handle_lbuttondown<State: 'static, Message: 'static + Send + Clone>(
         let y = y_px * to_dip;
 
         // First, check scrollbar thumb hit-testing
-        if state.scroll_drag.is_none() {
-            if let Some(drag) = state.hit_test_scrollbar_thumb(x, y, true) {
+        if state.scroll_drag.is_none()
+            && let Some(drag) = state.hit_test_scrollbar_thumb(x, y, true) {
                 state.scroll_drag = Some(drag);
                 let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
                 return LRESULT(0);
             }
-        }
 
         // Update multi-click tracking
         let click_count = state.mouse_state.update_click_count(POINT { x: xi, y: yi });
@@ -483,7 +482,7 @@ pub fn handle_nclbuttondown<State: 'static, Message: 'static + Send + Clone>(
 /// Handle WM_NCLBUTTONUP - non-client left button up for titlebar buttons
 pub fn handle_nclbuttonup<State: 'static, Message: 'static + Send + Clone>(
     hwnd: HWND,
-    wparam: WPARAM,
+    _wparam: WPARAM,
     lparam: LPARAM,
 ) -> Option<LRESULT> {    
     // Only handle our custom titlebar buttons
@@ -519,7 +518,7 @@ pub fn handle_nclbuttonup<State: 'static, Message: 'static + Send + Clone>(
     let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
     
     // Return Some to indicate we handled it
-    return Some(LRESULT(0));
+    Some(LRESULT(0))
 }
 
 /// Handle WM_NCMOUSELEAVE / WM_MOUSELEAVE - mouse left area
@@ -567,8 +566,8 @@ pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
 ) -> Option<LRESULT> {
     // Set I-beam cursor when hovering over visible text bounds (in client area)
     let hit_test = (lparam.0 & 0xFFFF) as u32;
-    if hit_test == HTCLIENT {
-        if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+    if hit_test == HTCLIENT
+        && let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
             let state = state.deref_mut();
             // Get mouse in client pixels and convert to DIPs
             let mut pt = POINT { x: 0, y: 0 };
@@ -598,16 +597,15 @@ pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
                 for element in ancestry {
                     let bounds = state.ui_tree.slots[element].bounds();
 
-                    if let Some(id) = state.ui_tree.slots[element].id {
-                        if point.within(bounds.border_box)
+                    if let Some(id) = state.ui_tree.slots[element].id
+                        && point.within(bounds.border_box)
                             && Shell::is_point_visible_in_scroll_ancestors(
                                 &mut state.ui_tree,
                                 element,
                                 point,
                             )
-                        {
-                            if let Some(instance) = state.ui_tree.widget_state.get(&id) {
-                                if let Some(ref widget) = state.ui_tree.slots[element].content {
+                            && let Some(instance) = state.ui_tree.widget_state.get(&id)
+                                && let Some(ref widget) = state.ui_tree.slots[element].content {
                                     cursor = widget.cursor(
                                         &state.ui_tree.arenas,
                                         instance,
@@ -615,9 +613,6 @@ pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
                                         bounds,
                                     );
                                 }
-                            }
-                        }
-                    }
 
                     if cursor.is_some() {
                         break;
@@ -630,7 +625,6 @@ pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
                 }
             }
         }
-    }
 
     None
 }

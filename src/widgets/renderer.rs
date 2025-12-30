@@ -300,8 +300,8 @@ impl Renderer<'_> {
                     stroke_width,
                     stroke,
                 );
-            } else if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
-                if let Ok(sink) = path_geometry.Open() {
+            } else if let Ok(path_geometry) = self.factory.CreatePathGeometry()
+                && let Ok(sink) = path_geometry.Open() {
                     self.create_rounded_rectangle_path(&sink, rect, border_radius);
                     let _ = sink.Close();
                     self.render_target.DrawGeometry(
@@ -311,7 +311,6 @@ impl Renderer<'_> {
                         stroke,
                     );
                 }
-            }
         }
     }
 
@@ -519,8 +518,8 @@ impl Renderer<'_> {
                         }
                     } else {
                         // Complex rounded rectangle - use path geometry
-                        if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
-                            if let Ok(sink) = path_geometry.Open() {
+                        if let Ok(path_geometry) = self.factory.CreatePathGeometry()
+                            && let Ok(sink) = path_geometry.Open() {
                                 self.create_rounded_rectangle_path(&sink, rect, border_radius);
                                 let _ = sink.Close();
 
@@ -543,7 +542,6 @@ impl Renderer<'_> {
                                 ManuallyDrop::drop(&mut layer_params.geometricMask);
                                 ManuallyDrop::drop(&mut layer_params.opacityBrush);
                             }
-                        }
                     }
                 } else {
                     // Use simple axis-aligned clip
@@ -583,8 +581,8 @@ impl Renderer<'_> {
                 });
 
                 // Create a frame geometry (outer rect with hole)
-                if let Ok(frame_geometry) = self.factory.CreatePathGeometry() {
-                    if let Ok(sink) = frame_geometry.Open() {
+                if let Ok(frame_geometry) = self.factory.CreatePathGeometry()
+                    && let Ok(sink) = frame_geometry.Open() {
                         // Start the outer rectangle
                         sink.BeginFigure(
                             Vector2::new(outer_rect.x, outer_rect.y),
@@ -634,7 +632,6 @@ impl Renderer<'_> {
                         self.render_target
                             .FillGeometry(&frame_geometry, self.brush, None);
                     }
-                }
 
                 // Pop the clip
                 if border_radius.is_some() {
@@ -690,8 +687,8 @@ impl Renderer<'_> {
                     }
                 } else {
                     // Complex rounded rectangle - use path geometry
-                    if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
-                        if let Ok(sink) = path_geometry.Open() {
+                    if let Ok(path_geometry) = self.factory.CreatePathGeometry()
+                        && let Ok(sink) = path_geometry.Open() {
                             self.create_rounded_rectangle_path(&sink, rect, border_radius);
                             let _ = sink.Close();
 
@@ -714,7 +711,6 @@ impl Renderer<'_> {
                             ManuallyDrop::drop(&mut layer_params.geometricMask);
                             ManuallyDrop::drop(&mut layer_params.opacityBrush);
                         }
-                    }
                 }
             } else {
                 // Use simple axis-aligned clip
@@ -849,8 +845,8 @@ impl Renderer<'_> {
                             bitmap_rt.FillRoundedRectangle(&rounded_rect, &shadow_brush);
                         } else {
                             // Create path geometry for complex rounded rectangle
-                            if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
-                                if let Ok(sink) = path_geometry.Open() {
+                            if let Ok(path_geometry) = self.factory.CreatePathGeometry()
+                                && let Ok(sink) = path_geometry.Open() {
                                     self.create_rounded_rectangle_path(
                                         &sink,
                                         &shadow_rect_in_bitmap,
@@ -859,7 +855,6 @@ impl Renderer<'_> {
                                     let _ = sink.Close();
                                     bitmap_rt.FillGeometry(&path_geometry, &shadow_brush, None);
                                 }
-                            }
                         }
                     } else {
                         // Draw regular rectangle shadow shape
@@ -964,8 +959,8 @@ impl Renderer<'_> {
                     None,
                 ) {
                     // Create a path geometry that represents the frame (outer rect with hole)
-                    if let Ok(frame_geometry) = self.factory.CreatePathGeometry() {
-                        if let Ok(sink) = frame_geometry.Open() {
+                    if let Ok(frame_geometry) = self.factory.CreatePathGeometry()
+                        && let Ok(sink) = frame_geometry.Open() {
                             // Start the outer rectangle
                             sink.BeginFigure(Vector2::new(0.0, 0.0), D2D1_FIGURE_BEGIN_FILLED);
                             sink.AddLine(Vector2::new(expanded_width, 0.0));
@@ -1008,7 +1003,6 @@ impl Renderer<'_> {
                             let _ = sink.Close();
                             bitmap_rt.FillGeometry(&frame_geometry, &white_brush, None);
                         }
-                    }
                 }
 
                 let _ = bitmap_rt.EndDraw(None, None);
@@ -1129,14 +1123,13 @@ impl Renderer<'_> {
                     .FillRoundedRectangle(&rounded_rect, self.brush);
             } else {
                 // Create path geometry for complex rounded rectangle with different corner radii
-                if let Ok(path_geometry) = self.factory.CreatePathGeometry() {
-                    if let Ok(sink) = path_geometry.Open() {
+                if let Ok(path_geometry) = self.factory.CreatePathGeometry()
+                    && let Ok(sink) = path_geometry.Open() {
                         self.create_rounded_rectangle_path(&sink, rect, border_radius);
                         let _ = sink.Close();
                         self.render_target
                             .FillGeometry(&path_geometry, self.brush, None);
                     }
-                }
             }
         }
     }

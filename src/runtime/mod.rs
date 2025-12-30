@@ -43,14 +43,14 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
-use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DCX_INTERSECTRGN, DCX_WINDOW, DFC_CAPTION, DFCS_CAPTIONCLOSE, DeleteObject, DrawFrameControl, FillRect, GetDCEx, HDC, ReleaseDC};
+use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, FillRect, HDC};
 use windows::Win32::System::Com::CoUninitialize;
 use windows::Win32::UI::Controls::{MARGINS, WM_MOUSELEAVE};
 use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_SYSCOMMAND, WM_TIMER, WM_USER, WNDCLASSEXW, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME, WVR_REDRAW
+    HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPED, WS_THICKFRAME
 };
 use windows::{
     Win32::{
@@ -66,13 +66,13 @@ use windows::{
             Input::Ime::{ImmGetContext, ImmReleaseContext},
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW,
-                DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, GetSystemMetrics,
+                DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW,
                 IDC_ARROW, LoadCursorW, MSG, RegisterClassExW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
                 WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
                 WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
                 WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE,
-                WM_NCMOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
+                WM_NCMOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -270,8 +270,8 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                 DeferredControl::StartDrag { data, src_id } => {
                     let DragData::Text(text) = data;
 
-                    if let Ok(effect) = start_text_drag(&text, true) {
-                        if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+                    if let Ok(effect) = start_text_drag(&text, true)
+                        && let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
                             let state = state.deref_mut();
 
                             let event = Event::DragFinish { effect };
@@ -280,7 +280,6 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                                 .shell
                                 .dispatch_event_to(hwnd, &mut state.ui_tree, event, src_id);
                         }
-                    }
                 }
 
                 DeferredControl::DisableIME => unsafe {

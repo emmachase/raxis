@@ -453,12 +453,11 @@ impl<Message> Shell<Message> {
         let mut found_key = None;
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
             let element = &ui_tree.slots[key];
-            if let Some(id) = element.id {
-                if id == target_id {
+            if let Some(id) = element.id
+                && id == target_id {
                     found_key = Some(key);
                     return VisitAction::Exit;
                 }
-            }
             VisitAction::Continue
         });
         found_key
@@ -589,8 +588,8 @@ impl<Message> Shell<Message> {
         self.event_captured_by = None;
 
         // For mouse events, use targeted dispatching
-        if event.is_mouse_event() {
-            if let Some((x, y)) = event.mouse_position() {
+        if event.is_mouse_event()
+            && let Some((x, y)) = event.mouse_position() {
                 // Determine target element ID
                 let innermost_key = Self::find_innermost_element_at(ui_tree, x, y);
                 let target_key = if let Some(active_id) = self.active_element_id {
@@ -658,8 +657,8 @@ impl<Message> Shell<Message> {
                         let element = &mut ui_tree.slots[key];
                         let bounds = element.bounds();
 
-                        if let Some(ref mut widget) = element.content {
-                            if let Some(id) = element.id {
+                        if let Some(ref mut widget) = element.content
+                            && let Some(id) = element.id {
                                 let instance = ui_tree.widget_state.get_mut(&id).unwrap();
                                 widget.update(
                                     &mut ui_tree.arenas,
@@ -674,7 +673,6 @@ impl<Message> Shell<Message> {
                                     break;
                                 }
                             }
-                        }
                     }
 
                     // Update previous ancestry for next event
@@ -706,7 +704,6 @@ impl<Message> Shell<Message> {
                 }
                 return;
             }
-        }
 
         // For non-mouse events, use the original broadcast behavior
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
@@ -872,8 +869,8 @@ impl<Message> Shell<Message> {
                 || matches!(event, DragEvent::DragLeave)
             {
                 let element = &mut ui_tree.slots[key];
-                if let Some(ref mut widget) = element.content {
-                    if let Some(text_input) = widget.as_drop_target()
+                if let Some(ref mut widget) = element.content
+                    && let Some(text_input) = widget.as_drop_target()
                         && let Some(id) = element.id
                         && let Some(instance) = ui_tree.widget_state.get_mut(&id)
                     {
@@ -919,7 +916,6 @@ impl<Message> Shell<Message> {
                             return VisitAction::Exit;
                         }
                     }
-                }
             }
             VisitAction::Continue
         });

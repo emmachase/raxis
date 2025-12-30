@@ -223,11 +223,10 @@ impl<Message: 'static> MouseArea<Message> {
                     MouseAreaEvent::MouseLeft { x: *x, y: *y }
                 };
 
-                if let Some(ref handler) = self.event_handler {
-                    if let Some(message) = handler(synthetic_event, shell) {
+                if let Some(ref handler) = self.event_handler
+                    && let Some(message) = handler(synthetic_event, shell) {
                         shell.publish(message);
                     }
-                }
             } else if inside {
                 state.last_mouse_pos = Some((*x, *y));
             }
@@ -308,13 +307,11 @@ where
         self.handle_synthetic_events(state, event, &bounds, shell);
 
         // Map and handle core mouse events
-        if let Some(mouse_event) = self.map_event(state, event, &bounds) {
-            if let Some(ref handler) = self.event_handler {
-                if let Some(message) = handler(mouse_event, shell) {
+        if let Some(mouse_event) = self.map_event(state, event, &bounds)
+            && let Some(ref handler) = self.event_handler
+                && let Some(message) = handler(mouse_event, shell) {
                     shell.publish(message);
                 }
-            }
-        }
 
         if matches!(event, Event::MouseButtonUp { .. }) {
             state.mouse_held = false;

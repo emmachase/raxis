@@ -373,11 +373,10 @@ impl<Message> Widget<Message> for Svg {
             let state = with_state!(mut instance as SvgWidgetState);
 
             // Ensure SVG document is created/cached in state
-            if state.ensure_svg_document(svg_content, self.recolor).is_ok() {
-                if let Some(ref svg_document) = state.svg_document {
+            if state.ensure_svg_document(svg_content, self.recolor).is_ok()
+                && let Some(ref svg_document) = state.svg_document {
                     recorder.draw_svg(&bounds.content_box, svg_document);
                 }
-            }
         }
     }
 

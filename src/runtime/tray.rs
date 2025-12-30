@@ -120,12 +120,11 @@ impl TrayIcon {
         };
 
         // Load icon
-        if let Some(resource_id) = self.config.icon_resource {
-            if let Ok(icon) = load_icon_from_resource(resource_id) {
+        if let Some(resource_id) = self.config.icon_resource
+            && let Ok(icon) = load_icon_from_resource(resource_id) {
                 nid.hIcon = icon;
                 flags |= NIF_ICON;
             }
-        }
 
         // Set tooltip
         if let Some(ref tooltip) = self.config.tooltip {

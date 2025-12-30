@@ -697,7 +697,7 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        IsZoomed, PostMessageW, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
+        IsZoomed, PostMessageW, SW_HIDE, SW_SHOW,
         ShowWindow, WM_CLOSE,
     };
 
