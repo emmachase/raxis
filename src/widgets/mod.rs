@@ -37,6 +37,7 @@ pub mod svg;
 pub mod svg_path;
 pub mod text;
 pub mod text_input;
+pub mod titlebar_controls;
 pub mod toggle;
 
 pub mod limit_response {

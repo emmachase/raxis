@@ -22,6 +22,7 @@ use crate::runtime::font_manager::{
 };
 use crate::util::str::StableString;
 use crate::util::unique::{combine_id, id_from_location};
+use crate::widgets::svg_path::ColorChoice;
 use crate::widgets::{Bounds, Instance, Widget, widget};
 use crate::{Shell, with_state};
 
@@ -83,7 +84,7 @@ pub struct Text {
     pub text: StableString,
     pub font_size: f32,
     pub line_spacing: Option<LineSpacing>,
-    pub color: Option<Color>,
+    pub color: Option<ColorChoice>,
     pub text_shadows: Vec<TextShadow>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
@@ -186,8 +187,8 @@ impl Text {
         self
     }
 
-    pub fn with_color(mut self, color: Color) -> Self {
-        self.color = Some(color);
+    pub fn with_color(mut self, color: impl Into<ColorChoice>) -> Self {
+        self.color = Some(color.into());
         self
     }
 
@@ -211,8 +212,8 @@ impl Text {
         self
     }
 
-    pub fn with_font_family(mut self, font_id: FontIdentifier) -> Self {
-        self.font_id = font_id;
+    pub fn with_font_family(mut self, font_id: impl Into<FontIdentifier>) -> Self {
+        self.font_id = font_id.into();
         self
     }
 
@@ -763,7 +764,7 @@ impl<Message> Widget<Message> for Text {
             recorder.draw_text(
                 &bounds.content_box,
                 layout,
-                self.color.unwrap_or(style.color.unwrap_or_default()),
+                self.color.unwrap_or(ColorChoice::CurrentColor).or_current_color(style.color).unwrap_or_default(),
                 shadows,
             );
         }

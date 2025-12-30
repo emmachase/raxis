@@ -1506,7 +1506,11 @@ impl Renderer<'_> {
             self.render_target.GetTransform(&mut current_transform);
 
             // Apply translation and scale to position and size the geometry at the target rect
-            let translation_transform = Matrix3x2::translation(rect.x, rect.y);
+            let translation_transform = if stroke_width == 1.0 {
+                Matrix3x2::translation(rect.x - 0.5, rect.y - 0.5) // For 1px stroke, offset by 0.5 to avoid antialiasing
+            } else {
+                Matrix3x2::translation(rect.x, rect.y)
+            };
             let scale_transform = Matrix3x2::scale(scale_x, scale_y);
             let combined_transform = scale_transform * translation_transform * current_transform;
             self.render_target.SetTransform(&combined_transform);

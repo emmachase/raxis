@@ -16,6 +16,8 @@ use windows::Win32::{
     },
 };
 
+extern crate self as raxis;
+
 use crate::{
     gfx::{PointDIP, RectDIP},
     layout::{
@@ -39,6 +41,13 @@ pub mod widgets;
 pub use raxis_core::{PathCommand, SvgPathCommands, SvgPathList, svg};
 pub use raxis_proc_macro::svg_path;
 
+/// Magic ID for the titlebar maximize button, used for hit-testing when replacing the default titlebar
+pub const MAGIC_ID_TITLEBAR_MAXIMIZE: u64 = w_id!();
+/// Magic ID for the titlebar minimize button, used for hit-testing when replacing the default titlebar
+pub const MAGIC_ID_TITLEBAR_MINIMIZE: u64 = w_id!();
+/// Magic ID for the titlebar close button, used for hit-testing when replacing the default titlebar
+pub const MAGIC_ID_TITLEBAR_CLOSE: u64 = w_id!();
+
 #[derive(Default)]
 pub struct HookState {
     // TODO: Discriminate by TypeId?
@@ -55,6 +64,7 @@ pub struct HookManager<'a, Message> {
     requested_animation: bool,
 
     pub window_active: bool,
+    pub window_zoomed: bool,
 }
 
 pub struct HookInstance<'a> {
@@ -290,7 +300,7 @@ pub type EventMapperFn<Message> = fn(Event, Option<u64>) -> Option<Message>;
 pub use runtime::Application;
 pub use runtime::context_menu::{ContextMenu, ContextMenuItem};
 pub use runtime::syscommand::{SystemCommand, SystemCommandResponse};
-pub use runtime::task::show_context_menu;
+pub use runtime::task::{close_window, minimize_window, show_context_menu, toggle_maximize_window};
 pub use runtime::tray::{TrayEvent, TrayIconConfig};
 
 pub enum DeferredControl {
@@ -964,14 +974,14 @@ impl<Message> Shell<Message> {
     }
 }
 
-pub fn current_dpi(hwnd: HWND) -> f32 {
-    unsafe { GetDpiForWindow(hwnd) as f32 }
+pub fn current_dpi(hwnd: HWND) -> u32 {
+    unsafe { GetDpiForWindow(hwnd) }
 }
 
 pub fn dips_scale(hwnd: HWND) -> f32 {
     dips_scale_for_dpi(current_dpi(hwnd))
 }
 
-pub fn dips_scale_for_dpi(dpi: f32) -> f32 {
-    96.0f32 / dpi.max(1.0)
+pub fn dips_scale_for_dpi(dpi: u32) -> f32 {
+    96.0f32 / (dpi as f32).max(1.0)
 }

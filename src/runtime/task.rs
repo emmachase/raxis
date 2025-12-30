@@ -37,6 +37,11 @@ use windows::Win32::UI::Shell::FOLDERID_RoamingAppData;
 use windows::Win32::UI::Shell::KNOWN_FOLDER_FLAG;
 use windows::Win32::UI::Shell::SHGetKnownFolderPath;
 use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
+use windows::Win32::UI::WindowsAndMessaging::SC_CLOSE;
+use windows::Win32::UI::WindowsAndMessaging::SC_MAXIMIZE;
+use windows::Win32::UI::WindowsAndMessaging::SC_MINIMIZE;
+use windows::Win32::UI::WindowsAndMessaging::SC_RESTORE;
+use windows::Win32::UI::WindowsAndMessaging::WM_SYSCOMMAND;
 // use futures::{BoxStream, Send, boxed_stream};
 
 // pub type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
@@ -69,6 +74,9 @@ pub enum WindowAction {
     Activate,
     GetMode(Sender<WindowMode>),
     SetMode(WindowMode),
+    Minimize,
+    ToggleMaximizeRestore,
+    Close,
 }
 
 pub enum SystemAction {
@@ -588,6 +596,21 @@ pub fn hide_window<T>() -> Task<T> {
     set_window_mode(WindowMode::Hidden)
 }
 
+/// Creates a new [`Task`] that minimizes the window.
+pub fn minimize_window<T>() -> Task<T> {
+    effect(Action::Window(WindowAction::Minimize))
+}
+
+/// Creates a new [`Task`] that toggles between maximized and restored window state.
+pub fn toggle_maximize_window<T>() -> Task<T> {
+    effect(Action::Window(WindowAction::ToggleMaximizeRestore))
+}
+
+/// Creates a new [`Task`] that closes the window.
+pub fn close_window<T>() -> Task<T> {
+    effect(Action::Window(WindowAction::Close))
+}
+
 /// Returns the underlying [`Stream`] of the [`Task`].
 pub fn into_stream<T>(task: Task<T>) -> Option<BoxStream<'static, Action<T>>> {
     task.stream
@@ -674,7 +697,8 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        PostMessageW, SW_HIDE, SW_SHOW, ShowWindow, WM_CLOSE,
+        IsZoomed, PostMessageW, SW_HIDE, SW_MAXIMIZE, SW_MINIMIZE, SW_RESTORE, SW_SHOW,
+        ShowWindow, WM_CLOSE,
     };
 
     async fn process_task_stream<Message: Send + Clone + 'static>(
@@ -729,6 +753,17 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                             WindowMode::Hidden => SW_HIDE,
                         };
                         ShowWindow(hwnd.0, show_cmd).ok().ok();
+                    },
+                    WindowAction::Minimize => unsafe {
+                        PostMessageW(Some(hwnd.0), WM_SYSCOMMAND, WPARAM(SC_MINIMIZE as usize), LPARAM(0)).ok();
+                    },
+                    WindowAction::ToggleMaximizeRestore => unsafe {
+                        let is_maximized = IsZoomed(hwnd.0).as_bool();
+                        let show_cmd = if is_maximized { SC_RESTORE } else { SC_MAXIMIZE };
+                        PostMessageW(Some(hwnd.0), WM_SYSCOMMAND, WPARAM(show_cmd as usize), LPARAM(0)).ok();
+                    },
+                    WindowAction::Close => unsafe {
+                        PostMessageW(Some(hwnd.0), WM_SYSCOMMAND, WPARAM(SC_CLOSE as usize), LPARAM(0)).ok();
                     },
                 },
                 Action::System(action) => {

@@ -1,4 +1,5 @@
 use log::{error, warn};
+use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
 use std::ops::DerefMut;
 use std::time::Instant;
 use windows::Win32::Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, RECT};
@@ -11,16 +12,18 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Ole::RevokeDragDrop;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GWLP_USERDATA, GetSystemMetrics, GetWindowLongPtrW, MINMAXINFO, SM_CXFRAME,
-    SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos,
+    GetWindowLongPtrW, PostQuitMessage, SetWindowLongPtrW, SetWindowPos,
+    MINMAXINFO, SM_CXFRAME, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
+    GWLP_USERDATA,
 };
 
-use crate::gfx::RectDIP;
+use crate::gfx::{RectDIP, color::Color};
 use crate::gfx::command_executor::CommandExecutor;
 use crate::runtime::util::{client_rect, state_mut_from_hwnd};
-use crate::widgets::Event;
+use crate::runtime::titlebar_hit_test::clear_titlebar_hit_regions;
 use crate::widgets::renderer::Renderer;
-use crate::{RedrawRequest, dips_scale};
+use crate::widgets::Event;
+use crate::{RedrawRequest, current_dpi, dips_scale, dips_scale_for_dpi};
 
 use super::super::WinUserData;
 
@@ -97,15 +100,16 @@ pub fn handle_getminmaxinfo<State: 'static, Message: 'static + Send + Clone>(
         let root_node = state.ui_tree.slots[state.ui_tree.root].children[0];
         let sentinel_node = &state.ui_tree.slots[root_node];
 
-        let dpi_scale = dips_scale(hwnd);
+        let dpi = current_dpi(hwnd);
+        let dpi_scale = dips_scale_for_dpi(dpi);
 
         unsafe {
             // Set the minimum size of the window
             (*min_max_info).ptMinTrackSize.x = (sentinel_node.min_width / dpi_scale).floor() as i32
-                + GetSystemMetrics(SM_CXFRAME) * 2;
+                + GetSystemMetricsForDpi(SM_CXFRAME, dpi) * 2;
             (*min_max_info).ptMinTrackSize.y = (sentinel_node.min_height / dpi_scale).floor()
                 as i32
-                + GetSystemMetrics(SM_CYFRAME);
+                + GetSystemMetricsForDpi(SM_CYFRAME, dpi);
         }
     }
     LRESULT(0)
@@ -226,6 +230,8 @@ pub fn handle_displaychange<State: 'static, Message: 'static + Send + Clone>(
 pub fn handle_destroy<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND) -> LRESULT {
     let _ = unsafe { RevokeDragDrop(hwnd) };
 
+    clear_titlebar_hit_regions(hwnd);
+
     let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) };
     if ptr != 0 {
         unsafe {
@@ -233,6 +239,6 @@ pub fn handle_destroy<State: 'static, Message: 'static + Send + Clone>(hwnd: HWN
             SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
         }
     }
-    unsafe { windows::Win32::UI::WindowsAndMessaging::PostQuitMessage(0) };
+    unsafe { PostQuitMessage(0) };
     LRESULT(0)
 }

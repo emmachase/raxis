@@ -13,9 +13,10 @@ use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::Task;
+use crate::runtime::titlebar_hit_test::{TitlebarHitRegions, client_origin_screen_px, clear_titlebar_hit_regions, set_titlebar_hit_regions};
 use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig};
 use crate::widgets::Event;
-use crate::{HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, w_id};
+use crate::{HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, MAGIC_ID_TITLEBAR_CLOSE, MAGIC_ID_TITLEBAR_MAXIMIZE, MAGIC_ID_TITLEBAR_MINIMIZE, w_id};
 use log::error;
 use raxis_core::{self as raxis, svg};
 use raxis_proc_macro::svg_path;
@@ -31,7 +32,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1CreateFactory, ID2D1Factory7, ID2D1PathGeometry,
 };
 use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::UI::WindowsAndMessaging::GetCursorPos;
+use windows::Win32::UI::Input::KeyboardAndMouse::TRACKMOUSEEVENT_FLAGS;
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, IsZoomed};
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
@@ -149,6 +151,9 @@ pub struct ApplicationHandle<State, Message> {
     // System command handler
     pub(crate) syscommand_handler:
         Option<Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>>,
+
+    // Active mouse tracking flags for WM_MOUSELEAVE detection
+    pub(crate) active_mouse_tracking_flags: TRACKMOUSEEVENT_FLAGS,
 }
 
 impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, Message> {
@@ -274,6 +279,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                     layout_invalidated: false,
                     requested_animation: false,
                     window_active: GetForegroundWindow() == hwnd,
+                    window_zoomed: IsZoomed(hwnd).as_bool(),
                 },
             );
 
@@ -362,6 +368,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 _tray_icon: tray_icon,
                 tray_event_handler,
                 syscommand_handler,
+                active_mouse_tracking_flags: TRACKMOUSEEVENT_FLAGS(0),
             })
         }
     }
@@ -372,6 +379,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         self.last_frame_time = now;
 
         let window_active = unsafe { GetForegroundWindow() == hwnd };
+        let window_zoomed = unsafe { IsZoomed(hwnd).as_bool() };
 
         // Update middle mouse scrolling first
         let middle_mouse_scrolling = self.update_middle_mouse_scroll(dt);
@@ -386,7 +394,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
             unsafe { GetCursorPos(&mut pt).ok() };
             
             // Convert to client coordinates
-            unsafe { ScreenToClient(hwnd, &mut pt).ok() };
+            let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
             
             // Convert to DIPs
             let to_dip = dips_scale(hwnd);
@@ -410,6 +418,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 layout_invalidated: false,
                 requested_animation: false,
                 window_active,
+                window_zoomed,
             };
 
             create_tree_root(
@@ -442,6 +451,52 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
             if !invalidated {
                 break;
             }
+        }
+
+        // Update non-client hit test regions for custom titlebar buttons.
+        // We capture the final computed border-box rects after layout.
+        let mut regions = TitlebarHitRegions::default();
+        let to_dip = dips_scale(hwnd);
+
+        if let Some(origin) = client_origin_screen_px(hwnd) {
+            let mut stack = vec![self.ui_tree.root];
+            while let Some(key) = stack.pop() {
+                let element = &self.ui_tree.slots[key];
+                if let Some(id) = element.id {
+                    let bounds = element.bounds();
+                    let r = bounds.border_box;
+
+                    let left = origin.x + (r.x / to_dip).round() as i32;
+                    let top = origin.y + (r.y / to_dip).round() as i32;
+                    let right = left + (r.width / to_dip).round() as i32;
+                    let bottom = top + (r.height / to_dip).round() as i32;
+
+                    let rc = windows::Win32::Foundation::RECT {
+                        left,
+                        top,
+                        right,
+                        bottom,
+                    };
+
+                    if id == MAGIC_ID_TITLEBAR_MINIMIZE {
+                        regions.minimize = Some(rc);
+                    } else if id == MAGIC_ID_TITLEBAR_MAXIMIZE {
+                        regions.maximize = Some(rc);
+                    } else if id == MAGIC_ID_TITLEBAR_CLOSE {
+                        regions.close = Some(rc);
+                    }
+                }
+
+                for &child in element.children.iter() {
+                    stack.push(child);
+                }
+            }
+        }
+
+        if regions.minimize.is_some() || regions.maximize.is_some() || regions.close.is_some() {
+            set_titlebar_hit_regions(hwnd, regions);
+        } else {
+            clear_titlebar_hit_regions(hwnd);
         }
 
         let root = self.ui_tree.root;

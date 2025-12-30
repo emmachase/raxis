@@ -3,10 +3,13 @@ use std::ops::DerefMut;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{InvalidateRect, ScreenToClient};
 use windows::Win32::System::SystemServices::MK_SHIFT;
-use windows::Win32::UI::Input::KeyboardAndMouse::{ReleaseCapture, SetCapture, SetFocus};
+use windows::Win32::UI::Input::KeyboardAndMouse::{
+    ReleaseCapture, SetCapture, SetFocus, TME_CANCEL, TME_LEAVE, TME_NONCLIENT, TRACKMOUSEEVENT,
+    TRACKMOUSEEVENT_FLAGS, TrackMouseEvent,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetCursorPos, HTCLIENT, SPI_GETWHEELSCROLLLINES, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS,
-    SystemParametersInfoW,
+    GetCursorPos, HTCLIENT, HTCLOSE, HTMAXBUTTON, HTMINBUTTON, SPI_GETWHEELSCROLLLINES,
+    SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SystemParametersInfoW,
 };
 
 use crate::gfx::PointDIP;
@@ -78,6 +81,10 @@ pub fn handle_mousemove<State: 'static, Message: 'static + Send + Clone>(
 ) -> LRESULT {
     if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
         let state = state.deref_mut();
+
+        // Windows only fires WM_MOUSELEAVE events if the application begins
+        // "tracking" mouse events for a given HWND during WM_MOUSEMOVE events.
+        track_mouse_events(hwnd, &mut state.active_mouse_tracking_flags, TME_LEAVE);
 
         // Current mouse in pixels
         let xi = (lparam.0 & 0xFFFF) as i16 as i32;
@@ -380,6 +387,179 @@ pub fn handle_mbuttonup<State: 'static, Message: 'static + Send + Clone>(hwnd: H
     LRESULT(0)
 }
 
+/// Handle WM_NCMOUSEMOVE - non-client mouse move for titlebar buttons
+pub fn handle_ncmousemove<State: 'static, Message: 'static + Send + Clone>(
+    hwnd: HWND,
+    _wparam: WPARAM,
+    lparam: LPARAM,
+) -> LRESULT {
+    // Always dispatch mouse move for non-client area so hover states update correctly.
+    // When mouse is over caption but not over our buttons, this clears button hover states.
+    if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+        let state = state.deref_mut();
+
+        // Windows only fires WM_NCMOUSELEAVE events if the application begins
+        // "tracking" mouse events for a given HWND during WM_NCMOUSEMOVE events.
+        track_mouse_events(
+            hwnd,
+            &mut state.active_mouse_tracking_flags,
+            TME_NONCLIENT | TME_LEAVE,
+        );
+        
+        // Get screen coordinates from lparam and convert to client coordinates
+        let x_screen = (lparam.0 & 0xFFFF) as i16 as i32;
+        let y_screen = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+        
+        let mut pt = POINT { x: x_screen, y: y_screen };
+        let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
+        
+        let to_dip = dips_scale(hwnd);
+        let x = (pt.x as f32) * to_dip;
+        let y = (pt.y as f32) * to_dip;
+        
+        // Dispatch as regular mouse move event
+        state.shell.dispatch_event(
+            hwnd,
+            &mut state.ui_tree,
+            Event::MouseMove { x, y },
+        );
+        
+        let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
+    }
+    
+    LRESULT(0)
+}
+
+/// Handle WM_NCLBUTTONDOWN - non-client left button down for titlebar buttons
+pub fn handle_nclbuttondown<State: 'static, Message: 'static + Send + Clone>(
+    hwnd: HWND,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> Option<LRESULT> {
+    let hit_test = wparam.0 as u32;
+    
+    // Only handle our custom titlebar buttons
+    if hit_test == HTMINBUTTON || hit_test == HTMAXBUTTON || hit_test == HTCLOSE {
+        let _ = unsafe { SetFocus(Some(hwnd)) };
+        let _ = unsafe { SetCapture(hwnd) };
+
+        if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+            let state = state.deref_mut();
+            
+            // Get screen coordinates and convert to client
+            let x_screen = (lparam.0 & 0xFFFF) as i16 as i32;
+            let y_screen = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+            
+            let mut pt = POINT { x: x_screen, y: y_screen };
+            let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
+            
+            let to_dip = dips_scale(hwnd);
+            let x = (pt.x as f32) * to_dip;
+            let y = (pt.y as f32) * to_dip;
+            
+            let modifiers = get_modifiers();
+            state.shell.dispatch_event(
+                hwnd,
+                &mut state.ui_tree,
+                Event::MouseButtonDown {
+                    x,
+                    y,
+                    click_count: 1,
+                    modifiers,
+                },
+            );
+            
+            let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
+        }
+        
+        // Return Some to indicate we handled it and prevent default behavior
+        return Some(LRESULT(0));
+    }
+    
+    // Let default handling occur for other non-client areas
+    None
+}
+
+/// Handle WM_NCLBUTTONUP - non-client left button up for titlebar buttons
+pub fn handle_nclbuttonup<State: 'static, Message: 'static + Send + Clone>(
+    hwnd: HWND,
+    wparam: WPARAM,
+    lparam: LPARAM,
+) -> Option<LRESULT> {    
+    // Only handle our custom titlebar buttons
+    if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+        let state = state.deref_mut();
+        
+        // Get screen coordinates and convert to client
+        let x_screen = (lparam.0 & 0xFFFF) as i16 as i32;
+        let y_screen = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
+        
+        let mut pt = POINT { x: x_screen, y: y_screen };
+        let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
+        
+        let to_dip = dips_scale(hwnd);
+        let x = (pt.x as f32) * to_dip;
+        let y = (pt.y as f32) * to_dip;
+
+        let modifiers = get_modifiers();
+        state.shell.dispatch_event(
+            hwnd,
+            &mut state.ui_tree,
+            Event::MouseButtonUp {
+                x,
+                y,
+                click_count: 1,
+                modifiers,
+            },
+        );
+    }
+    
+    // Release mouse capture
+    let _ = unsafe { ReleaseCapture() };
+    let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
+    
+    // Return Some to indicate we handled it
+    return Some(LRESULT(0));
+}
+
+/// Handle WM_NCMOUSELEAVE / WM_MOUSELEAVE - mouse left area
+pub fn handle_mouseleave<State: 'static, Message: 'static + Send + Clone>(
+    hwnd: HWND,
+) -> LRESULT {
+    if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
+        let state = state.deref_mut();
+
+        // Reset our tracking flags so future mouse movement over this
+        // window results in a new tracking session.
+        state.active_mouse_tracking_flags = TRACKMOUSEEVENT_FLAGS(0);
+
+        // Only dispatch mouse leave if the cursor is actually outside the window.
+        // WM_MOUSELEAVE/WM_NCMOUSELEAVE are also triggered when moving between
+        // client and non-client areas within the same window.
+        let mut pt = POINT { x: 0, y: 0 };
+        let _ = unsafe { GetCursorPos(&mut pt) };
+        if let Ok(rect) = window_rect(hwnd) {
+            let inside_window = pt.x >= rect.left
+                && pt.x < rect.right
+                && pt.y >= rect.top
+                && pt.y < rect.bottom;
+
+            if !inside_window {
+                // Dispatch mouse leave to clear hover states
+                state.shell.dispatch_event(
+                    hwnd,
+                    &mut state.ui_tree,
+                    Event::MouseMove { x: -1000.0, y: -1000.0 }, // Move far off-screen to clear hovers
+                );
+
+                let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
+            }
+        }
+    }
+
+    LRESULT(0)
+}
+
 /// Handle WM_SETCURSOR
 pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
     hwnd: HWND,
@@ -453,4 +633,32 @@ pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
     }
 
     None
+}
+
+/// Begin tracking mouse events for this HWND so that we get WM_MOUSELEAVE
+/// when the user moves the mouse outside this HWND's bounds.
+fn track_mouse_events(
+    hwnd: HWND,
+    active_flags: &mut TRACKMOUSEEVENT_FLAGS,
+    mouse_tracking_flags: TRACKMOUSEEVENT_FLAGS,
+) {
+    if active_flags.0 == 0 || mouse_tracking_flags.contains(TME_CANCEL) {
+        if mouse_tracking_flags.contains(TME_CANCEL) {
+            // We're about to cancel active mouse tracking, so empty out the stored state.
+            *active_flags = TRACKMOUSEEVENT_FLAGS(0);
+        } else {
+            *active_flags = mouse_tracking_flags;
+        }
+
+        let mut tme = TRACKMOUSEEVENT {
+            cbSize: std::mem::size_of::<TRACKMOUSEEVENT>() as u32,
+            dwFlags: mouse_tracking_flags,
+            hwndTrack: hwnd,
+            dwHoverTime: 0,
+        };
+        let _ = unsafe { TrackMouseEvent(&mut tme) };
+    } else if mouse_tracking_flags != *active_flags {
+        track_mouse_events(hwnd, active_flags, *active_flags | TME_CANCEL);
+        track_mouse_events(hwnd, active_flags, mouse_tracking_flags);
+    }
 }

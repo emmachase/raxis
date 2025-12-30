@@ -4,27 +4,56 @@ use windows::Win32::UI::Controls::{
 };
 use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
-    AdjustWindowRectEx, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT, HTBOTTOMRIGHT, HTCAPTION, HTLEFT,
-    HTNOWHERE, HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, WINDOW_EX_STYLE, WS_CAPTION,
-    WS_EX_NOREDIRECTIONBITMAP, WS_OVERLAPPEDWINDOW,
+    AdjustWindowRectEx, GWL_STYLE, GetWindowLongW, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
+    HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTCLOSE, HTLEFT, HTMAXBUTTON, HTMINBUTTON, HTNOWHERE,
+    HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, WINDOW_EX_STYLE, WINDOW_STYLE, WS_CAPTION,
+    WS_EX_NOREDIRECTIONBITMAP
 };
 use windows::core::w;
 
 use crate::{dips_scale, runtime::Result};
+use crate::runtime::titlebar_hit_test::get_titlebar_hit_regions;
 
 /// Non-client area hit testing for custom titlebar
 pub fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
     let x_px = (lparam.0 & 0xFFFF) as i16 as i32;
     let y_px = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
 
+    if let Some(regions) = get_titlebar_hit_regions(hwnd) {
+        if let Some(rc) = regions.close {
+            if x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
+                return HTCLOSE;
+            }
+        }
+        if let Some(rc) = regions.maximize {
+            if x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
+                return HTMAXBUTTON;
+            }
+        }
+        if let Some(rc) = regions.minimize {
+            if x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
+                return HTMINBUTTON;
+            }
+        }
+    }
+
     let mut rc_window = RECT::default();
     unsafe { GetWindowRect(hwnd, &mut rc_window).unwrap() };
 
+    if x_px < rc_window.left
+        || x_px >= rc_window.right
+        || y_px < rc_window.top
+        || y_px >= rc_window.bottom
+    {
+        return HTNOWHERE;
+    }
+
     let mut rc_frame = RECT::default();
+    let window_style = WINDOW_STYLE(unsafe { GetWindowLongW(hwnd, GWL_STYLE) } as u32);
     unsafe {
         AdjustWindowRectEx(
             &mut rc_frame,
-            WS_OVERLAPPEDWINDOW & !WS_CAPTION,
+            window_style & !WS_CAPTION,
             false,
             WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
         )
@@ -62,7 +91,7 @@ pub fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
             if f_on_resize_border { HTTOP } else { HTCAPTION },
             HTTOPRIGHT,
         ],
-        [HTLEFT, HTNOWHERE, HTRIGHT],
+        [HTLEFT, HTCLIENT, HTRIGHT],
         [HTBOTTOMLEFT, HTBOTTOM, HTBOTTOMRIGHT],
     ];
 

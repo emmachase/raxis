@@ -217,7 +217,7 @@ impl ButtonStyleSet {
 
 pub type OnClickFn<Message> = dyn Fn(&mut UIArenas, &mut Shell<Message>);
 pub type IsFocused = bool;
-pub type AdjustStyleFn = dyn Fn(ButtonState, IsFocused, ElementStyle) -> ElementStyle;
+pub type AdjustStyleFn<Message> = dyn Fn(ButtonState, IsFocused, &mut Shell<Message>, ElementStyle) -> ElementStyle;
 
 /// Button widget with text label and click handling
 pub struct Button<Message> {
@@ -225,7 +225,7 @@ pub struct Button<Message> {
     pub on_click: Option<Box<OnClickFn<Message>>>,
     pub styles: ButtonStyleSet,
     pub cursor: Option<Cursor>,
-    pub adjust_style_fn: Option<Box<AdjustStyleFn>>,
+    pub adjust_style_fn: Option<Box<AdjustStyleFn<Message>>>,
 }
 
 impl<Message> Debug for Button<Message> {
@@ -390,7 +390,7 @@ impl<Message: 'static + Send> Button<Message> {
 
     pub fn with_adjust_style(
         mut self,
-        adjust_fn: impl Fn(ButtonState, IsFocused, ElementStyle) -> ElementStyle + 'static,
+        adjust_fn: impl Fn(ButtonState, IsFocused, &mut Shell<Message>, ElementStyle) -> ElementStyle + 'static,
     ) -> Self {
         self.adjust_style_fn = Some(Box::new(adjust_fn));
         self
@@ -519,6 +519,7 @@ impl<Message> Widget<Message> for Button<Message> {
             adjust_fn(
                 state.state,
                 shell.focus_manager.is_focused(instance.id),
+                shell,
                 adjusted_style,
             )
         } else {

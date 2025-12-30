@@ -9,24 +9,16 @@ use std::{
 
 use lazy_static::lazy_static;
 use raxis::{
-    layout::{
+    ContextMenuItem, HookManager, SvgPathCommands, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig, layout::{
         helpers::{center, spacer},
         model::{
             Alignment, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow, Element, FloatingConfig, ScrollConfig, ScrollbarStyle, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, TextShadow
         },
     }, math::easing::Easing, row, runtime::{
-        context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{hide_window, Task}, Backdrop
+        Backdrop, context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{Task, hide_window}
     }, use_animation, util::{str::StableString, unique::combine_id}, w_id, widgets::{
-        button::Button,
-        image::Image,
-        slider::Slider,
-        svg::ViewBox,
-        svg_path::SvgPath,
-        text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment},
-        text_input::TextInput,
-        toggle::Toggle,
-        widget,
-    }, ContextMenuItem, HookManager, SvgPathCommands, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig
+        button::Button, image::Image, slider::Slider, svg::ViewBox, svg_path::SvgPath, text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment}, text_input::TextInput, titlebar_controls::titlebar_controls, toggle::Toggle, widget
+    }
 };
 use raxis_core::svg;
 use raxis_proc_macro::svg_path;
@@ -1751,6 +1743,11 @@ fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
             //     ],
             //     ..Default::default()
             // },
+            row![
+                titlebar_controls(hook)
+            ]
+                .with_width(Sizing::grow())
+                .with_axis_align_content(Alignment::End),
             Element {
                 id: Some(w_id!()),
                 direction: Direction::TopToBottom,
@@ -1855,6 +1852,7 @@ fn main() {
                 }
             }
         })
+        .replace_titlebar()
         .with_syscommand_handler(|state, command| {
             match command {
                 SystemCommand::Close => {

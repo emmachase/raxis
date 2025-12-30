@@ -138,7 +138,7 @@ impl DeviceResources {
 
             // Create D2D render target bitmap from back buffer
             if self.d2d_target_bitmap.is_none() {
-                let dpi = crate::current_dpi(hwnd);
+                let dpi = crate::current_dpi(hwnd) as f32;
 
                 let bitmap_properties = D2D1_BITMAP_PROPERTIES1 {
                     pixelFormat: D2D1_PIXEL_FORMAT {

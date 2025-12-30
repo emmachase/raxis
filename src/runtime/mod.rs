@@ -10,6 +10,7 @@ pub mod scroll;
 pub mod smooth_scroll;
 pub mod syscommand;
 pub mod task;
+pub mod titlebar_hit_test;
 pub mod tray;
 pub mod util;
 pub mod vkey;
@@ -21,6 +22,7 @@ pub use app_handle::{ApplicationHandle, Result, RuntimeError};
 pub use device::DeviceResources;
 pub use input::{MiddleMouseScrollState, MouseState, ScrollbarDragState};
 pub use window::{Application, Backdrop};
+use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 
 use crate::dips_scale;
 use crate::gfx::PointDIP;
@@ -41,16 +43,14 @@ use windows::Win32::Graphics::Dwm::{
     DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmEnableBlurBehindWindow,
     DwmExtendFrameIntoClientArea, DwmSetWindowAttribute,
 };
-use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, FillRect, HDC};
+use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DCX_INTERSECTRGN, DCX_WINDOW, DFC_CAPTION, DFCS_CAPTIONCLOSE, DeleteObject, DrawFrameControl, FillRect, GetDCEx, HDC, ReleaseDC};
 use windows::Win32::System::Com::CoUninitialize;
-use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::Controls::{MARGINS, WM_MOUSELEAVE};
 use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    HTNOWHERE, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE,
-    WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE,
-    WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_EX_NOREDIRECTIONBITMAP,
+    HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_NCPAINT, WM_SYSCOMMAND, WM_TIMER, WM_USER, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_MINIMIZEBOX, WS_OVERLAPPED, WS_SYSMENU, WS_THICKFRAME, WVR_REDRAW
 };
 use windows::{
     Win32::{
@@ -71,8 +71,8 @@ use windows::{
                 SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WINDOW_EX_STYLE,
                 WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
                 WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
-                WM_MBUTTONUP, WM_MOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW,
-                WS_OVERLAPPEDWINDOW,
+                WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE,
+                WM_NCMOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WNDCLASSW, WS_OVERLAPPEDWINDOW,
             },
         },
     },
@@ -120,9 +120,21 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                 WM_NCCALCSIZE if wparam.0 == 1 => {
                     let pncsp = lparam.0 as *mut NCCALCSIZE_PARAMS;
 
-                    (*pncsp).rgrc[0].left += GetSystemMetrics(SM_CXFRAME);
-                    (*pncsp).rgrc[0].right -= GetSystemMetrics(SM_CXFRAME);
-                    (*pncsp).rgrc[0].bottom -= GetSystemMetrics(SM_CYFRAME);
+                    // Get the DPI for the monitor this window is on
+                    let dpi = GetDpiForWindow(hwnd);
+
+                    // Use DPI-aware metrics
+                    let padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+                    let border_lr = GetSystemMetricsForDpi(SM_CXFRAME, dpi) + padding;
+                    let border_tb = GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
+
+                    (*pncsp).rgrc[0].left += border_lr;
+                    (*pncsp).rgrc[0].right -= border_lr;
+                    (*pncsp).rgrc[0].bottom -= border_tb;
+
+                    if IsZoomed(hwnd).as_bool() {
+                        (*pncsp).rgrc[0].top += border_tb;
+                    }
 
                     return LRESULT(0);
                 }
@@ -180,6 +192,22 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_MBUTTONDOWN => wndproc::handle_mbuttondown::<State, Message>(hwnd, lparam),
 
             WM_MBUTTONUP => wndproc::handle_mbuttonup::<State, Message>(hwnd),
+
+            // Non-client mouse events for custom titlebar buttons
+            WM_NCMOUSEMOVE => wndproc::handle_ncmousemove::<State, Message>(hwnd, wparam, lparam),
+            WM_NCMOUSELEAVE | WM_MOUSELEAVE => wndproc::handle_mouseleave::<State, Message>(hwnd),
+            WM_NCLBUTTONDOWN => {
+                if let Some(result) = wndproc::handle_nclbuttondown::<State, Message>(hwnd, wparam, lparam) {
+                    return result;
+                }
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
+            WM_NCLBUTTONUP => {
+                if let Some(result) = wndproc::handle_nclbuttonup::<State, Message>(hwnd, wparam, lparam) {
+                    return result;
+                }
+                DefWindowProcW(hwnd, msg, wparam, lparam)
+            }
 
             WM_CHAR => wndproc::handle_char::<State, Message>(hwnd, wparam),
             WM_KEYDOWN => wndproc::handle_keydown::<State, Message>(hwnd, wparam),
@@ -409,6 +437,12 @@ impl<
             // Register the TaskbarCreated message for tray icon restoration
             wndproc::register_taskbar_created_message();
 
+            let window_style = if replace_titlebar {
+                WS_OVERLAPPED | WS_THICKFRAME | WS_MAXIMIZEBOX
+            } else {
+                WS_OVERLAPPEDWINDOW
+            };
+
             // Create window first without user data
             let hwnd = CreateWindowExW(
                 WINDOW_EX_STYLE::default() | WS_EX_NOREDIRECTIONBITMAP,
@@ -420,7 +454,7 @@ impl<
                         .collect::<Vec<u16>>()
                         .as_ptr(),
                 ),
-                WS_OVERLAPPEDWINDOW,
+                window_style,
                 CW_USEDEFAULT,
                 CW_USEDEFAULT,
                 width as i32,  // Will be adjusted after DPI calculation
