@@ -12,9 +12,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Ole::RevokeDragDrop;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GetWindowLongPtrW, PostQuitMessage, SetWindowLongPtrW, SetWindowPos,
-    MINMAXINFO, SM_CXFRAME, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER,
-    GWLP_USERDATA,
+    GWLP_USERDATA, GetWindowLongPtrW, MINMAXINFO, PostQuitMessage, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos
 };
 
 use crate::gfx::RectDIP;
@@ -104,12 +102,14 @@ pub fn handle_getminmaxinfo<State: 'static, Message: 'static + Send + Clone>(
         let dpi_scale = dips_scale_for_dpi(dpi);
 
         unsafe {
+            let padding = GetSystemMetricsForDpi(SM_CXPADDEDBORDER, dpi);
+
             // Set the minimum size of the window
             (*min_max_info).ptMinTrackSize.x = (sentinel_node.min_width / dpi_scale).floor() as i32
-                + GetSystemMetricsForDpi(SM_CXFRAME, dpi) * 2;
+                + GetSystemMetricsForDpi(SM_CXFRAME, dpi) * 2 + padding * 2;
             (*min_max_info).ptMinTrackSize.y = (sentinel_node.min_height / dpi_scale).floor()
                 as i32
-                + GetSystemMetricsForDpi(SM_CYFRAME, dpi);
+                + GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
         }
     }
     LRESULT(0)
