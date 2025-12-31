@@ -8,6 +8,7 @@ use std::cell::RefCell;
 use std::rc::Rc;
 use std::time::{Duration, Instant};
 
+use crate::util::windows::is_windows_11;
 use crate::widgets::svg_path::ColorChoice;
 use crate::widgets::text::Text;
 use crate::{
@@ -68,6 +69,17 @@ pub fn titlebar_controls<Message: 'static + Send + Clone>(
     }
 }
 
+const WINDOWS_11_ICON_FONT: &str = "Segoe Fluent Icons";
+const WINDOWS_10_ICON_FONT: &str = "Segoe MDL2 Assets";
+
+fn get_font() -> &'static str {
+    if is_windows_11() {
+        WINDOWS_11_ICON_FONT
+    } else {
+        WINDOWS_10_ICON_FONT
+    }
+}
+
 /// Animation duration for hover/press transitions.
 const ANIMATION_DURATION: Duration = Duration::from_millis(100);
 
@@ -118,7 +130,7 @@ pub fn minimize_button<Message: 'static + Send + Clone>(
                 children: vec![center(
                     Text::new("\u{e921}" /* ChromeMinimize */)
                         .with_font_size(10.0)
-                        .with_font_family("Segoe Fluent Icons")
+                        .with_font_family(get_font())
                         .with_color(ColorChoice::CurrentColor)
                         .as_element()
                 )],
@@ -172,7 +184,7 @@ pub fn maximize_button<Message: 'static + Send + Clone>(
                 children: vec![center(
                     Text::new(if hook.window_zoomed { "\u{e923}" /* ChromeRestore */ } else { "\u{e922}" /* ChromeMaximize */ })
                         .with_font_size(10.0)
-                        .with_font_family("Segoe Fluent Icons")
+                        .with_font_family(get_font())
                         .with_color(ColorChoice::CurrentColor)
                         .as_element()
                 )],
@@ -226,7 +238,7 @@ pub fn close_button<Message: 'static + Send + Clone>(
                 children: vec![center(
                     Text::new("\u{e8bb}" /* ChromeClose */)
                         .with_font_size(10.0)
-                        .with_font_family("Segoe Fluent Icons")
+                        .with_font_family(get_font())
                         .with_color(ColorChoice::CurrentColor)
                         .as_element()
                 )],

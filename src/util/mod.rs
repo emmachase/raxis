@@ -1,5 +1,6 @@
 pub mod str;
 pub mod unique;
+pub mod windows;
 
 #[macro_export]
 macro_rules! impl_numeric {
