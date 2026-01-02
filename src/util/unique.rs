@@ -43,11 +43,13 @@ macro_rules! w_id {
     }};
 }
 
-pub const fn id_from_location(location: &'static Location<'static>) -> u64 {
+pub type WidgetId = u64;
+
+pub const fn id_from_location(location: &'static Location<'static>) -> WidgetId {
     hash("mod", location.file(), location.line(), location.column())
 }
 
-pub fn combine_id(id: u64, child_id: impl Hash) -> u64 {
+pub fn combine_id(id: WidgetId, child_id: impl Hash) -> WidgetId {
     let mut s = DefaultHasher::new();
     s.write_u64(id);
     child_id.hash(&mut s);
