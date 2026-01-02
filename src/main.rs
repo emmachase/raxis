@@ -17,7 +17,7 @@ use raxis::{
     }, math::easing::Easing, row, runtime::{
         Backdrop, context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{Task, hide_window}
     }, use_animation, util::{str::StableString, unique::combine_id}, w_id, widgets::{
-        button::Button, image::Image, slider::Slider, svg::ViewBox, svg_path::SvgPath, text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment}, text_input::TextInput, titlebar_controls::titlebar_controls, toggle::Toggle, widget
+        button::Button, image::Image, slider::Slider, svg::ViewBox, svg_path::SvgPath, text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment, TextSpan}, text_input::TextInput, titlebar_controls::titlebar_controls, toggle::Toggle, widget
     }
 };
 use raxis_core::svg;
@@ -1071,6 +1071,8 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
             ]
             .with_width(Sizing::grow()),
             colored_text_demo(),
+            // Hyperlink demo
+            hyperlink_demo(),
             // Call controls demo
             call_controls_demo(hook),
             // Toggle demos
@@ -1706,6 +1708,94 @@ fn colored_text_demo() -> Element<Message> {
                         ColoredTextSegment::new("() {", Color::from(0xF8F8F2FF)),
                     ])
                     .with_font_size(16.0)
+                ),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
+fn hyperlink_demo() -> Element<Message> {
+    Element {
+        id: Some(w_id!()),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::fit(),
+        child_gap: 12.0,
+        padding: BoxAmount::all(12.0),
+        background_color: Some(Color::WHITE),
+        border: Some(Border {
+            width: 1.0,
+            color: Color {
+                r: 0.85,
+                g: 0.85,
+                b: 0.85,
+                a: 1.0,
+            },
+            ..Default::default()
+        }),
+        border_radius: Some(BorderRadius::all(8.0)),
+        children: vec![
+            // Title
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(Text::new("Hyperlink Spans").with_font_size(20.0)),
+                ..Default::default()
+            },
+            // Example 1: Simple hyperlink
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(
+                    Text::new("Visit the Rust website for more info.")
+                        .with_font_size(16.0)
+                        .with_span(
+                            TextSpan::new(10, 22, Color::from(0x3366CCFF))
+                                .with_url("https://www.rust-lang.org")
+                                .with_hover_color(Color::from(0x6699FFFF))
+                        )
+                ),
+                ..Default::default()
+            },
+            // Example 2: Multiple hyperlinks in one text
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(
+                    Text::new("Check out GitHub or GitLab for code hosting.")
+                        .with_font_size(16.0)
+                        .with_span(
+                            TextSpan::new(10, 16, Color::from(0x3366CCFF))
+                                .with_url("https://github.com")
+                                .with_hover_color(Color::from(0x6699FFFF))
+                        )
+                        .with_span(
+                            TextSpan::new(20, 26, Color::from(0xFC6D26FF))
+                                .with_url("https://gitlab.com")
+                                .with_hover_color(Color::from(0xFCA326FF))
+                        )
+                ),
+                ..Default::default()
+            },
+            // Example 3: Colored text with hyperlink
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(
+                    Text::new("Learn more about Raxis UI framework here.")
+                        .with_font_size(16.0)
+                        .with_span(TextSpan::new(17, 22, Color::from(0xE91E63FF))) // "Raxis" in pink
+                        .with_span(
+                            TextSpan::new(36, 40, Color::from(0x2196F3FF))
+                                .with_url("https://example.com/raxis")
+                                .with_hover_color(Color::from(0x64B5F6FF))
+                        )
                 ),
                 ..Default::default()
             },

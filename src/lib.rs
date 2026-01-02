@@ -310,6 +310,8 @@ pub enum DeferredControl {
     DisableIME,
 
     SetClipboardText(String),
+
+    OpenUrl(String),
 }
 
 pub struct Shell<Message> {
@@ -399,6 +401,10 @@ impl<Message> Shell<Message> {
 
     pub fn queue_deferred_control(&mut self, control: DeferredControl) {
         self.deferred_controls.push(control);
+    }
+
+    pub fn open_url(&mut self, url: &str) {
+        self.deferred_controls.push(DeferredControl::OpenUrl(url.to_string()));
     }
 
     pub fn drain_deferred_controls(&mut self) -> Option<Vec<DeferredControl>> {

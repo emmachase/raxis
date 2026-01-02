@@ -551,6 +551,8 @@ pub fn handle_mouseleave<State: 'static, Message: 'static + Send + Clone>(
                     Event::MouseMove { x: -1000.0, y: -1000.0 }, // Move far off-screen to clear hovers
                 );
 
+                state.shell.scroll_state_manager.set_inactive();
+
                 let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
             }
         }
