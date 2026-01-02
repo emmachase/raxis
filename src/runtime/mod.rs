@@ -625,6 +625,20 @@ impl<
                 let _ = TranslateMessage(&msg);
                 DispatchMessageW(&msg);
             }
+
+            if ptr != 0 {
+                let handle = Box::from_raw(ptr as *mut WinUserData<State, Message>);
+                let task_executor_thread = handle.lock().unwrap().task_executor_thread.take();
+                
+                // Drop the handle to destruct the application state
+                drop(handle);
+
+                // Join the task executor thread
+                if let Some(task_executor_thread) = task_executor_thread {
+                    task_executor_thread.join().ok();
+                }
+            }
+
             // Uninitialize OLE
             OleUninitialize();
             // Uninitialize COM

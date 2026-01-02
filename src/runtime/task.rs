@@ -834,7 +834,10 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
     }
 
     #[cfg(all(feature = "smol-runtime", not(feature = "tokio")))]
-    smol::block_on(run_task_loop(task_receiver, message_sender, hwnd));
+    {
+        let ex = smol::Executor::new();
+        smol::block_on(ex.run(run_task_loop(task_receiver, message_sender, hwnd)));
+    }
 
     #[cfg(feature = "tokio")]
     {
@@ -842,6 +845,7 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
             .enable_all()
             .build()
             .expect("Failed to create tokio runtime");
+        let _guard = rt.enter();
         rt.block_on(run_task_loop(task_receiver, message_sender, hwnd));
     }
 }

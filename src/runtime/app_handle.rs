@@ -142,6 +142,7 @@ pub struct ApplicationHandle<State, Message> {
     // Async task executor
     pub(crate) task_sender: mpsc::Sender<Task<Message>>,
     pub(crate) message_receiver: mpsc::Receiver<Message>,
+    pub(crate) task_executor_thread: Option<std::thread::JoinHandle<()>>,
 
     // System tray icon
     pub(crate) _tray_icon: Option<TrayIcon>,
@@ -301,13 +302,13 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
             );
 
             // Spawn executor thread with selected async runtime
-            {
+            let task_executor_thread = {
                 let message_sender = message_sender.clone();
                 let hwnd = crate::runtime::UncheckedHWND(hwnd);
                 std::thread::spawn(move || {
                     crate::runtime::task::run_task_executor(task_receiver, message_sender, hwnd);
-                });
-            }
+                })
+            };
 
             // Create and add tray icon if configured
             let mut tray_icon = tray_config.map(|config| TrayIcon::new(hwnd, config));
@@ -364,6 +365,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 scroll_icon_vertical,
                 task_sender,
                 message_receiver,
+                task_executor_thread: Some(task_executor_thread),
                 _tray_icon: tray_icon,
                 tray_event_handler,
                 syscommand_handler,

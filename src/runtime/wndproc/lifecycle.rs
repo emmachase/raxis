@@ -231,13 +231,6 @@ pub fn handle_destroy<State: 'static, Message: 'static + Send + Clone>(hwnd: HWN
 
     clear_titlebar_hit_regions(hwnd);
 
-    let ptr = unsafe { GetWindowLongPtrW(hwnd, GWLP_USERDATA) };
-    if ptr != 0 {
-        unsafe {
-            drop(Box::from_raw(ptr as *mut WinUserData<State, Message>));
-            SetWindowLongPtrW(hwnd, GWLP_USERDATA, 0);
-        }
-    }
     unsafe { PostQuitMessage(0) };
     LRESULT(0)
 }
