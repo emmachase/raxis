@@ -667,24 +667,19 @@ impl TextWidgetState {
     }
 
     /// Hit-test a point in DIPs against the text layout, returning the UTF-16 character index.
-    fn hit_test_index(&self, x_dip: f32, y_dip: f32) -> Result<u32> {
+    fn hit_test_index(&self, x_dip: f32, y_dip: f32) -> Option<u32> {
         unsafe {
             let layout = self.text_layout.as_ref().expect("layout not built");
             let mut trailing = windows::core::BOOL(0);
             let mut inside = windows::core::BOOL(0);
             let mut metrics = DWRITE_HIT_TEST_METRICS::default();
-            layout.HitTestPoint(x_dip, y_dip, &mut trailing, &mut inside, &mut metrics)?;
+            layout.HitTestPoint(x_dip, y_dip, &mut trailing, &mut inside, &mut metrics).ok()?;
 
-            let mut idx = if trailing.as_bool() {
-                metrics.textPosition.saturating_add(metrics.length)
-            } else {
-                metrics.textPosition
-            };
-            let total_len = self.cached_text.encode_utf16().count() as u32;
-            if idx > total_len {
-                idx = total_len;
+            if !inside.as_bool() {
+                return None;
             }
-            Ok(idx)
+
+            Some(metrics.textPosition)
         }
     }
 
@@ -878,7 +873,7 @@ impl<Message> Widget<Message> for Text {
                 let widget_x = x - content_box.x;
                 let widget_y = y - content_box.y;
 
-                if let Ok(idx) = state.hit_test_index(widget_x, widget_y) {
+                if let Some(idx) = state.hit_test_index(widget_x, widget_y) {
                     let new_hovered = state.find_hyperlink_at_index(idx, &self.spans);
                     if new_hovered != state.hovered_hyperlink_index {
                         state.hovered_hyperlink_index = new_hovered;
@@ -905,7 +900,7 @@ impl<Message> Widget<Message> for Text {
                 let widget_x = x - content_box.x;
                 let widget_y = y - content_box.y;
 
-                if let Ok(idx) = state.hit_test_index(widget_x, widget_y) {
+                if let Some(idx) = state.hit_test_index(widget_x, widget_y) {
                     if let Some(span_idx) = state.find_hyperlink_at_index(idx, &self.spans) {
                         if let Some(url) = &self.spans[span_idx].url {
                             shell.open_url(url);
@@ -1000,7 +995,7 @@ impl<Message> Widget<Message> for Text {
         let widget_x = point.x - content_box.x;
         let widget_y = point.y - content_box.y;
 
-        if let Ok(idx) = state.hit_test_index(widget_x, widget_y) {
+        if let Some(idx) = state.hit_test_index(widget_x, widget_y) {
             if state.find_hyperlink_at_index(idx, &self.spans).is_some() {
                 return Some(super::Cursor::Pointer);
             }
