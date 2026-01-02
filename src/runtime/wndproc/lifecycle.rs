@@ -12,7 +12,7 @@ use windows::Win32::Graphics::Gdi::{
 use windows::Win32::System::Ole::RevokeDragDrop;
 use windows::Win32::UI::Controls::MARGINS;
 use windows::Win32::UI::WindowsAndMessaging::{
-    GWLP_USERDATA, GetWindowLongPtrW, MINMAXINFO, PostQuitMessage, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowLongPtrW, SetWindowPos
+    MINMAXINFO, PostQuitMessage, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos
 };
 
 use crate::gfx::RectDIP;
@@ -23,7 +23,6 @@ use crate::widgets::renderer::Renderer;
 use crate::widgets::Event;
 use crate::{RedrawRequest, current_dpi, dips_scale_for_dpi};
 
-use super::super::WinUserData;
 
 /// Handle WM_SIZE
 pub fn handle_size<State: 'static, Message: 'static + Send + Clone>(
