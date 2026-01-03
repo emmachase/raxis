@@ -1,6 +1,7 @@
 use std::sync::OnceLock;
 
-use windows::Win32::System::SystemInformation::{GetVersionExW, OSVERSIONINFOW};
+use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
+use windows::Wdk::System::SystemServices::RtlGetVersion;
 
 static IS_WINDOWS_11: OnceLock<bool> = OnceLock::new();
 
@@ -10,7 +11,7 @@ pub fn is_windows_11() -> bool {
             dwOSVersionInfoSize: size_of::<OSVERSIONINFOW>() as u32,
             ..Default::default()
         };
-        unsafe { GetVersionExW(&mut version_info).ok() };
+        let _ = unsafe { RtlGetVersion(&mut version_info) };
         version_info.dwBuildNumber >= 22000 && version_info.dwMajorVersion == 10
     })
 }
