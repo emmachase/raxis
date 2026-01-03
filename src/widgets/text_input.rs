@@ -336,6 +336,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
                 if (PointDIP { x: *x, y: *y }).within(bounds.border_box) {
                     if let Ok(idx) = state.hit_test_index(x - x_dip, y - y_dip) {
+                        shell.capture_event(instance.id);
                         shell.focus_manager.focus(instance.id);
 
                         // Store the drag start position for OLE drag detection
@@ -709,6 +710,7 @@ impl<Message: 'static> WidgetDragDropTarget<Message> for TextInput<Message> {
 
                     if let Some(result) = state.handle_text_drop(text, drop_idx, effect) {
                         state.set_ole_drop_preview(None);
+                        shell.capture_event(instance.id);
                         shell.focus_manager.focus(instance.id);
                         result
                     } else {
