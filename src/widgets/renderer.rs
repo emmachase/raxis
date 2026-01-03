@@ -1637,8 +1637,8 @@ impl Renderer<'_> {
                 return;
             }
 
-            let expanded_width = metrics.width.ceil() + text_shadow.blur_radius * 4.0;
-            let expanded_height = metrics.height.ceil() + text_shadow.blur_radius * 4.0;
+            let expanded_width = metrics.layoutWidth.ceil() + text_shadow.blur_radius * 4.0;
+            let expanded_height = metrics.layoutHeight.ceil() + text_shadow.blur_radius * 4.0;
 
             // Compute hash of text content from the layout pointer
             // Note: We use the layout pointer as a proxy for text content identity
@@ -1722,9 +1722,10 @@ impl Renderer<'_> {
                 .ok();
 
             // Create a compatible render target for the text
+            // Use layoutWidth/layoutHeight to account for text alignment within the layout box
             let size = D2D_SIZE_F {
-                width: metrics.width.ceil() + text_shadow.blur_radius * 4.0,
-                height: metrics.height.ceil() + text_shadow.blur_radius * 4.0,
+                width: metrics.layoutWidth.ceil() + text_shadow.blur_radius * 4.0,
+                height: metrics.layoutHeight.ceil() + text_shadow.blur_radius * 4.0,
             };
 
             let bitmap_rt = self
