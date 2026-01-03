@@ -520,16 +520,8 @@ impl<
 
             SetPreferredAppMode(2); // Force Dark
 
-            // DwmSetWindowAttribute(
-            //     hwnd,
-            //     DWMWA_CAPTION_COLOR,
-            //     &COLORREF(0x000000) as *const _ as _,
-            //     size_of::<COLORREF>() as _,
-            // )
-            // .ok();
-
             // For Mica effect (Windows 11 only)
-            let backdrop_result = DwmSetWindowAttribute(
+            let _ = DwmSetWindowAttribute(
                 hwnd,
                 DWMWA_SYSTEMBACKDROP_TYPE,
                 &match backdrop {
@@ -541,32 +533,8 @@ impl<
                 size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
             );
 
-            // Check if backdrop setting succeeded
-            let backdrop_supported = backdrop_result.is_ok();
-
-            if backdrop_supported && !matches!(backdrop, Backdrop::None) {
-                let bb = DWM_BLURBEHIND {
-                    dwFlags: DWM_BB_ENABLE,
-                    fEnable: true.into(),
-                    ..Default::default()
-                };
-                DwmEnableBlurBehindWindow(hwnd, &bb).ok();
-            }
-
             if replace_titlebar {
                 REPLACE_TITLEBAR.store(true, Ordering::Relaxed);
-
-                let margins = MARGINS {
-                    cxLeftWidth: -1,
-                    cxRightWidth: -1,
-                    cyTopHeight: -1,
-                    cyBottomHeight: -1,
-                    // cxLeftWidth: 0,
-                    // cxRightWidth: 0,
-                    // cyBottomHeight: 0,
-                    // cyTopHeight: compute_standard_caption_height_for_window(hwnd)?,
-                };
-                DwmExtendFrameIntoClientArea(hwnd, &margins).ok();
             }
 
             // Now create the app handle with the hwnd
