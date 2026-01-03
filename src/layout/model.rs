@@ -425,6 +425,18 @@ pub struct TextShadow {
     pub color: Color,
 }
 
+impl std::hash::Hash for TextShadow {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.offset_x.to_bits().hash(state);
+        self.offset_y.to_bits().hash(state);
+        self.blur_radius.to_bits().hash(state);
+        self.color.r.to_bits().hash(state);
+        self.color.g.to_bits().hash(state);
+        self.color.b.to_bits().hash(state);
+        self.color.a.to_bits().hash(state);
+    }
+}
+
 impl TextShadow {
     pub const fn default() -> Self {
         Self {

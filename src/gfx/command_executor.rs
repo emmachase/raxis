@@ -247,6 +247,7 @@ impl CommandExecutor {
                     layout,
                     color,
                     text_shadows,
+                    text_hash,
                 } => {
                     // Draw text shadows first (in order, so first shadow is bottom-most)
                     for shadow in text_shadows.iter() {
@@ -261,6 +262,7 @@ impl CommandExecutor {
                                 &shadow_position,
                                 layout,
                                 shadow,
+                                *text_hash,
                             );
                         } else {
                             // Simple unblurred shadow - just draw text with offset

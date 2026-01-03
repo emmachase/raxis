@@ -27,7 +27,7 @@ use crate::widgets::{Bounds, Instance, Widget, widget};
 use crate::{RedrawRequest, Shell, with_state};
 
 /// Text alignment options
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum TextAlignment {
     Leading,  // Left-aligned
     Center,   // Center-aligned
@@ -35,7 +35,7 @@ pub enum TextAlignment {
 }
 
 /// Paragraph alignment options
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Hash)]
 pub enum ParagraphAlignment {
     Top,
     Center,
@@ -312,6 +312,22 @@ impl Text {
             content: widget(self),
             ..Default::default()
         }
+    }
+
+    /// Compute a hash of all properties that affect text layout rendering.
+    /// Used for shadow cache identity.
+    fn compute_layout_hash(&self, arenas: &UIArenas) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.text.resolve(arenas).expect("intern string missing").hash(&mut hasher);
+        self.font_size.to_bits().hash(&mut hasher);
+        self.line_spacing.hash(&mut hasher);
+        self.text_shadows.hash(&mut hasher);
+        self.text_alignment.hash(&mut hasher);
+        self.paragraph_alignment.hash(&mut hasher);
+        self.font_id.hash(&mut hasher);
+        self.font_axes.hash(&mut hasher);
+        self.word_wrap.hash(&mut hasher);
+        hasher.finish()
     }
 }
 
@@ -968,11 +984,14 @@ impl<Message> Widget<Message> for Text {
                 &style.text_shadows
             };
 
+            let text_hash = self.compute_layout_hash(arenas);
+
             recorder.draw_text(
                 &bounds.content_box,
                 layout,
                 self.color.unwrap_or(ColorChoice::CurrentColor).or_current_color(style.color).unwrap_or_default(),
                 shadows,
+                text_hash,
             );
         }
     }

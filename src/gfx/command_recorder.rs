@@ -94,12 +94,14 @@ impl CommandRecorder {
         layout: &IDWriteTextLayout,
         color: impl Into<Color>,
         text_shadows: &[TextShadow],
+        text_hash: u64,
     ) {
         self.commands.push(DrawCommand::DrawText {
             rect: *rect,
             layout: layout.clone(),
             color: color.into(),
             text_shadows: text_shadows.to_vec(),
+            text_hash,
         });
     }
 

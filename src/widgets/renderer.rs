@@ -1626,11 +1626,9 @@ impl Renderer<'_> {
         position: &Vector2,
         layout: &windows::Win32::Graphics::DirectWrite::IDWriteTextLayout,
         text_shadow: &crate::layout::model::TextShadow,
+        text_hash: u64,
     ) {
         unsafe {
-            use std::collections::hash_map::DefaultHasher;
-            use std::hash::{Hash, Hasher};
-
             // Get text metrics for sizing
             let mut metrics = windows::Win32::Graphics::DirectWrite::DWRITE_TEXT_METRICS::default();
             if layout.GetMetrics(&mut metrics).is_err() {
@@ -1639,14 +1637,6 @@ impl Renderer<'_> {
 
             let expanded_width = metrics.layoutWidth.ceil() + text_shadow.blur_radius * 4.0;
             let expanded_height = metrics.layoutHeight.ceil() + text_shadow.blur_radius * 4.0;
-
-            // Compute hash of text content from the layout pointer
-            // Note: We use the layout pointer as a proxy for text content identity
-            // This assumes layouts are recreated when text changes
-            let mut hasher = DefaultHasher::new();
-            let layout_ptr = layout as *const _ as usize;
-            layout_ptr.hash(&mut hasher);
-            let text_hash = hasher.finish();
 
             // Create cache key for this text shadow
             let cache_key = ShadowCacheKey::from_text_shadow(

@@ -1,5 +1,7 @@
 use std::any::Any;
+use std::collections::hash_map::DefaultHasher;
 use std::fmt::Debug;
+use std::hash::{Hash, Hasher};
 use std::time::{Duration, Instant};
 
 use windows::Win32::Foundation::HWND;
@@ -808,6 +810,20 @@ impl<Message> WidgetState<Message> {
         Ok(s)
     }
 
+    /// Compute a hash of all properties that affect text layout rendering.
+    /// Used for shadow cache identity.
+    fn compute_layout_hash(&self, style: &ElementStyle) -> u64 {
+        let mut hasher = DefaultHasher::new();
+        self.text.hash(&mut hasher);
+        self.cached_font_size.to_bits().hash(&mut hasher);
+        self.cached_line_spacing.hash(&mut hasher);
+        style.text_shadows.hash(&mut hasher);
+        self.cached_text_alignment.hash(&mut hasher);
+        self.cached_paragraph_alignment.hash(&mut hasher);
+        self.cached_font_id.hash(&mut hasher);
+        hasher.finish()
+    }
+
     fn needs_text_format_rebuild(
         &self,
         font_id: &FontIdentifier,
@@ -1020,7 +1036,8 @@ impl<Message> WidgetState<Message> {
 
             // Draw text using command recorder
             let color = style.color.unwrap_or_default();
-            recorder.draw_text(&bounds, layout, color, &style.text_shadows);
+            let text_hash = self.compute_layout_hash(&style);
+            recorder.draw_text(&bounds, layout, color, &style.text_shadows, text_hash);
 
             // OLE drag-over preview caret
             if let Some(drop) = self.ole_drop_preview16 {

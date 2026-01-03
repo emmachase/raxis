@@ -91,6 +91,12 @@ impl FontWeight {
     }
 }
 
+impl std::hash::Hash for FontWeight {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value().to_bits().hash(state);
+    }
+}
+
 /// Font style (italic/oblique)
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum FontStyle {
@@ -115,6 +121,13 @@ impl FontStyle {
             FontStyle::Italic => -20.0, // Standard italic slant
             FontStyle::Oblique(angle) => *angle,
         }
+    }
+}
+
+impl std::hash::Hash for FontStyle {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.italic_value().to_bits().hash(state);
+        self.slant_value().to_bits().hash(state);
     }
 }
 
@@ -151,8 +164,14 @@ impl FontWidth {
     }
 }
 
+impl std::hash::Hash for FontWidth {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.value().to_bits().hash(state);
+    }
+}
+
 /// Collection of font axes for variable font support
-#[derive(Debug, Clone, Copy, PartialEq, Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default, Hash)]
 pub struct FontAxes {
     pub weight: FontWeight,
     pub style: FontStyle,
@@ -184,6 +203,13 @@ impl FontAxes {
 pub struct LineSpacing {
     pub height: f32,
     pub baseline: f32,
+}
+
+impl std::hash::Hash for LineSpacing {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.height.to_bits().hash(state);
+        self.baseline.to_bits().hash(state);
+    }
 }
 
 impl LineSpacing {

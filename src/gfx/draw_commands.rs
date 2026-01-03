@@ -36,6 +36,8 @@ pub enum DrawCommand {
         layout: IDWriteTextLayout,
         color: Color,
         text_shadows: Vec<TextShadow>,
+        /// Hash of the text layout content for cache identity
+        text_hash: u64,
     },
     /// Draw a rectangle outline (stroke)
     DrawRectangleOutline {
