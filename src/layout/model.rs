@@ -1108,6 +1108,16 @@ impl<Message> Element<Message> {
             ..self
         }
     }
+
+    pub fn map_children<F>(self, f: F) -> Element<Message>
+    where
+        F: Fn(Element<Message>) -> Element<Message> + Clone,
+    {
+        Element {
+            children: self.children.into_iter().map(|c| f(c)).collect(),
+            ..self
+        }
+    }
 }
 
 impl<Message> Default for Element<Message> {
