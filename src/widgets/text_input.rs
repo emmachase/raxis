@@ -250,6 +250,9 @@ struct WidgetState<Message> {
     // Undo/redo system
     undo_stack: Vec<UndoState>,
     redo_stack: Vec<UndoState>,
+
+    // Flag to request scroll-into-view after caret moves
+    needs_scroll_into_view: bool,
 }
 
 impl<Message: 'static> WidgetState<Message> {
@@ -640,6 +643,12 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                 cb(&state.text, shell);
             }
         }
+
+        // Request scroll-into-view if caret moved
+        if state.needs_scroll_into_view {
+            state.needs_scroll_into_view = false;
+            shell.request_scroll_into_view(instance.id);
+        }
     }
 
     fn paint(
@@ -703,6 +712,22 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
 
     fn as_drop_target(&mut self) -> Option<&mut dyn WidgetDragDropTarget<Message>> {
         Some(self)
+    }
+
+    fn focus_rect(&self, instance: &Instance) -> Option<RectDIP> {
+        let state = with_state!(instance as WidgetState<Message>);
+        if let Ok((x, y, h)) = state.caret_pos_dip(state.caret_active16()) {
+            // Return caret rect with some padding for visibility
+            const PADDING: f32 = 12.0;
+            Some(RectDIP {
+                x: x - PADDING,
+                y: y - PADDING,
+                width: CARET_WIDTH + PADDING * 2.0,
+                height: h + PADDING * 2.0,
+            })
+        } else {
+            None
+        }
     }
 }
 
@@ -869,6 +894,7 @@ impl<Message> WidgetState<Message> {
             undo_stack: Vec::new(),
             redo_stack: Vec::new(),
             last_emitted_text: String::new(),
+            needs_scroll_into_view: false,
         };
         s.recompute_text_boundaries();
         s.build_text_layout()?;
@@ -1188,8 +1214,11 @@ impl<Message> WidgetState<Message> {
         }
     }
 
-    fn force_blink(&mut self) {
+    /// Reset blink timer and request scroll-into-view.
+    /// Called whenever caret position changes.
+    fn on_caret_move(&mut self) {
         self.focused_at = Some(Instant::now());
+        self.needs_scroll_into_view = true;
     }
 
     fn clear_sticky_x(&mut self) {
@@ -1258,7 +1287,7 @@ impl<Message> WidgetState<Message> {
         }
 
         self.is_dragging = true;
-        self.force_blink();
+        self.on_caret_move();
     }
 
     pub fn update_drag(&mut self, x_dip: f32, y_dip: f32) -> bool {
@@ -1297,7 +1326,7 @@ impl<Message> WidgetState<Message> {
             self.clamp_sel_to_len();
             let changed = self.selection_anchor != old_a || self.selection_active != old_b;
             if changed {
-                self.force_blink();
+                self.on_caret_move();
             }
             changed
         }
@@ -1416,21 +1445,21 @@ impl<Message> WidgetState<Message> {
 
         self.ime_text = Some(String::new());
         self.ime_cursor16 = 0;
-        self.force_blink();
+        self.on_caret_move();
         self.build_text_layout().unwrap();
     }
 
     pub fn ime_update(&mut self, s: String, cursor16: u32) {
         self.ime_text = Some(s);
         self.ime_cursor16 = cursor16;
-        self.force_blink();
+        self.on_caret_move();
         self.build_text_layout().unwrap();
     }
 
     pub fn ime_commit(&mut self, s: String) -> Result<()> {
         // Commit replaces current selection with final string.
         self.insert_str(&s)?;
-        self.force_blink();
+        self.on_caret_move();
         self.build_text_layout().unwrap();
         Ok(())
     }
@@ -1438,7 +1467,7 @@ impl<Message> WidgetState<Message> {
     pub fn ime_end(&mut self) {
         self.ime_text = None;
         self.ime_cursor16 = 0;
-        self.force_blink();
+        self.on_caret_move();
         self.build_text_layout().unwrap();
     }
 
@@ -1463,7 +1492,7 @@ impl<Message> WidgetState<Message> {
     pub fn set_ole_drop_preview(&mut self, idx: Option<u32>) -> bool {
         if self.ole_drop_preview16 != idx {
             self.ole_drop_preview16 = idx.map(|i| self.snap_to_scalar_boundary(i));
-            self.force_blink();
+            self.on_caret_move();
             true
         } else {
             false
@@ -1477,7 +1506,7 @@ impl<Message> WidgetState<Message> {
         self.selection_anchor = idx;
         self.selection_active = idx;
         self.clamp_sel_to_len();
-        self.force_blink();
+        self.on_caret_move();
     }
 
     pub fn has_selection(&self) -> bool {
@@ -1486,7 +1515,7 @@ impl<Message> WidgetState<Message> {
 
     pub fn clear_selection(&mut self) {
         self.selection_active = self.selection_anchor;
-        self.force_blink();
+        self.on_caret_move();
     }
 
     // ===== Editing helpers =====
@@ -1767,7 +1796,7 @@ impl<Message> WidgetState<Message> {
         self.build_text_layout()?;
         self.recalc_metrics()?;
 
-        self.force_blink();
+        self.on_caret_move();
         Ok(())
     }
 
@@ -1787,7 +1816,7 @@ impl<Message> WidgetState<Message> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
             self.clear_sticky_x();
-            self.force_blink();
+            self.on_caret_move();
             return self.insert_str("");
         }
         if start16 == 0 {
@@ -1808,14 +1837,14 @@ impl<Message> WidgetState<Message> {
         self.recalc_metrics()?;
         self.clear_sticky_x();
 
-        self.force_blink();
+        self.on_caret_move();
         Ok(())
     }
 
     pub fn delete_forward(&mut self) -> Result<()> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
-            self.force_blink();
+            self.on_caret_move();
             return self.insert_str("");
         }
         let total16 = self.text.encode_utf16().count() as u32;
@@ -1834,7 +1863,7 @@ impl<Message> WidgetState<Message> {
         // Caret stays at start16
         self.rebuild_layout_and_metrics()?;
         self.clear_sticky_x();
-        self.force_blink();
+        self.on_caret_move();
         Ok(())
     }
 
@@ -1843,7 +1872,7 @@ impl<Message> WidgetState<Message> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
             self.clear_sticky_x();
-            self.force_blink();
+            self.on_caret_move();
             return self.insert_str("");
         }
         if start16 == 0 {
@@ -1863,7 +1892,7 @@ impl<Message> WidgetState<Message> {
         self.recalc_metrics()?;
         self.clear_sticky_x();
 
-        self.force_blink();
+        self.on_caret_move();
         Ok(())
     }
 
@@ -1872,7 +1901,7 @@ impl<Message> WidgetState<Message> {
         let (start16, end16) = self.selection_range();
         if start16 != end16 {
             self.clear_sticky_x();
-            self.force_blink();
+            self.on_caret_move();
             return self.insert_str("");
         }
         let total16 = self.text.encode_utf16().count() as u32;
@@ -1892,7 +1921,7 @@ impl<Message> WidgetState<Message> {
         self.recalc_metrics()?;
         self.clear_sticky_x();
 
-        self.force_blink();
+        self.on_caret_move();
         Ok(())
     }
 
@@ -1908,7 +1937,7 @@ impl<Message> WidgetState<Message> {
         }
         self.clamp_sel_to_len();
 
-        self.force_blink();
+        self.on_caret_move();
     }
 
     pub fn move_left(&mut self, extend: bool) {
@@ -2085,7 +2114,7 @@ impl<Message> WidgetState<Message> {
             self.recompute_text_boundaries();
             self.build_text_layout()?;
             self.recalc_metrics()?;
-            self.force_blink();
+            self.on_caret_move();
 
             Ok(true)
         } else {
@@ -2115,7 +2144,7 @@ impl<Message> WidgetState<Message> {
             self.recompute_text_boundaries();
             self.build_text_layout()?;
             self.recalc_metrics()?;
-            self.force_blink();
+            self.on_caret_move();
 
             Ok(true)
         } else {

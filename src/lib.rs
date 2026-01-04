@@ -26,7 +26,7 @@ use crate::{
         visitors::{self, VisitAction},
     },
     math::easing::Easing,
-    runtime::{focus::FocusManager, scroll::ScrollStateManager, task::Task},
+    runtime::{focus::FocusManager, scroll::{ScrollPosition, ScrollStateManager}, task::Task},
     widgets::{DragData, DragEvent, DropResult, Event, Operation, dispatch_operation},
 };
 
@@ -339,6 +339,9 @@ pub struct Shell<Message> {
 
     deferred_controls: Vec<DeferredControl>,
 
+    /// Pending request to scroll a widget's focus_rect into view (widget ID)
+    pending_scroll_into_view: Option<u64>,
+
     event_mapper: EventMapperFn<Message>,
     message_sender: mpsc::Sender<Message>,
     pending_messages: bool,
@@ -383,6 +386,7 @@ impl<Message> Shell<Message> {
             operation_queue: Vec::new(),
             redraw_request: RedrawRequest::Wait,
             deferred_controls: Vec::new(),
+            pending_scroll_into_view: None,
             message_sender,
             pending_messages: false,
             task_dispatcher,
@@ -413,6 +417,12 @@ impl<Message> Shell<Message> {
         } else {
             Some(std::mem::take(&mut self.deferred_controls))
         }
+    }
+
+    /// Request that the given widget's focus_rect be scrolled into view.
+    /// The scroll will be deferred until after event dispatch completes.
+    pub fn request_scroll_into_view(&mut self, widget_id: u64) {
+        self.pending_scroll_into_view = Some(widget_id);
     }
 
     /// Replaces the current redraw request with the given request.
@@ -732,6 +742,9 @@ impl<Message> Shell<Message> {
         if let Some(message) = (self.event_mapper)(event, self.event_captured_by) {
             self.publish(message);
         }
+
+        // Process any pending scroll-into-view request
+        self.process_pending_scroll_into_view(ui_tree);
     }
 
     pub fn dispatch_event_to(
@@ -750,6 +763,119 @@ impl<Message> Shell<Message> {
             if let Some(ref mut widget) = element.content {
                 let instance = ui_tree.widget_state.get_mut(&target_id).unwrap();
                 widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
+            }
+        }
+    }
+
+    /// Processes any pending scroll-into-view request.
+    fn process_pending_scroll_into_view(&mut self, ui_tree: BorrowedUITree<Message>) {
+        let Some(widget_id) = self.pending_scroll_into_view.take() else {
+            return;
+        };
+        self.scroll_widget_into_view(ui_tree, widget_id);
+    }
+
+    /// Scrolls any scroll containers to keep the given widget's focus_rect visible.
+    pub fn scroll_widget_into_view(&mut self, ui_tree: BorrowedUITree<Message>, widget_id: u64) {
+        let Some(widget_key) = Self::find_key_by_id(ui_tree, widget_id) else {
+            return;
+        };
+
+        // Get the focus rect from the widget (in widget-local coordinates)
+        let widget_element = &mut ui_tree.slots[widget_key];
+        let widget_bounds = widget_element.bounds();
+        let focus_rect = if let Some(ref mut widget) = widget_element.content
+            && let Some(instance) = ui_tree.widget_state.get(&widget_id)
+        {
+            widget.focus_rect(instance)
+        } else {
+            None
+        };
+
+        let Some(focus_rect) = focus_rect else {
+            return;
+        };
+
+        // Convert focus_rect to absolute coordinates
+        let absolute_focus_rect = gfx::RectDIP {
+            x: widget_bounds.content_box.x + focus_rect.x,
+            y: widget_bounds.content_box.y + focus_rect.y,
+            width: focus_rect.width,
+            height: focus_rect.height,
+        };
+
+        // Walk up the ancestry to find scroll containers and adjust their scroll positions
+        let ancestry = Self::collect_ancestry(ui_tree, widget_key);
+        for &ancestor_key in &ancestry {
+            let ancestor = &ui_tree.slots[ancestor_key];
+            if ancestor.scroll.is_none() {
+                continue;
+            }
+
+            let Some(ancestor_id) = ancestor.id else {
+                continue;
+            };
+
+            let scroll_cfg = ancestor.scroll.as_ref().unwrap();
+            let has_scroll_x = scroll_cfg.horizontal.unwrap_or(false);
+            let has_scroll_y = scroll_cfg.vertical.unwrap_or(false);
+
+            if !has_scroll_x && !has_scroll_y {
+                continue;
+            }
+
+            let viewport = gfx::RectDIP {
+                x: ancestor.x + ancestor.padding.left,
+                y: ancestor.y + ancestor.padding.top,
+                width: ancestor.computed_width - ancestor.padding.left - ancestor.padding.right,
+                height: ancestor.computed_height - ancestor.padding.top - ancestor.padding.bottom,
+            };
+
+            let current_scroll = self.scroll_state_manager.get_scroll_position(ancestor_id);
+            let mut new_scroll_x = current_scroll.x;
+            let mut new_scroll_y = current_scroll.y;
+
+            // Check horizontal scrolling
+            if has_scroll_x {
+                let focus_left = absolute_focus_rect.x;
+                let focus_right = absolute_focus_rect.x + absolute_focus_rect.width;
+                let viewport_left = viewport.x;
+                let viewport_right = viewport.x + viewport.width;
+
+                if focus_left < viewport_left {
+                    // Focus rect is to the left of viewport - scroll left
+                    new_scroll_x -= viewport_left - focus_left;
+                } else if focus_right > viewport_right {
+                    // Focus rect is to the right of viewport - scroll right
+                    new_scroll_x += focus_right - viewport_right;
+                }
+            }
+
+            // Check vertical scrolling
+            if has_scroll_y {
+                let focus_top = absolute_focus_rect.y;
+                let focus_bottom = absolute_focus_rect.y + absolute_focus_rect.height;
+                let viewport_top = viewport.y;
+                let viewport_bottom = viewport.y + viewport.height;
+
+                if focus_top < viewport_top {
+                    // Focus rect is above viewport - scroll up
+                    new_scroll_y -= viewport_top - focus_top;
+                } else if focus_bottom > viewport_bottom {
+                    // Focus rect is below viewport - scroll down
+                    new_scroll_y += focus_bottom - viewport_bottom;
+                }
+            }
+
+            // Apply new scroll position if changed
+            if new_scroll_x != current_scroll.x || new_scroll_y != current_scroll.y {
+                self.scroll_state_manager.set_scroll_position(
+                    ancestor_id,
+                    ScrollPosition {
+                        x: new_scroll_x.max(0.0),
+                        y: new_scroll_y.max(0.0),
+                    },
+                );
             }
         }
     }

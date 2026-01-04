@@ -351,6 +351,13 @@ pub trait Widget<Message>: std::fmt::Debug {
         None
     }
 
+    /// Returns the rectangle that should be kept visible when this widget is focused.
+    /// Used by scroll containers to automatically scroll focused content into view.
+    /// The returned rect should be in widget-local coordinates (relative to content_box origin).
+    fn focus_rect(&self, instance: &Instance) -> Option<RectDIP> {
+        None
+    }
+
     // fn capture_device_resources(
     //     &mut self,
     //     instance: &mut Instance,
