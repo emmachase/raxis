@@ -207,8 +207,6 @@ impl<Message: 'static> MouseArea<Message> {
         bounds: &Bounds,
         shell: &mut Shell<Message>,
     ) {
-        // if let Event::MouseMove { x, y } = event {
-
         if let Event::MouseMove { x, y } = event {
             let point = PointDIP { x: *x, y: *y };
             let inside = point.within(bounds.border_box);
@@ -230,6 +228,18 @@ impl<Message: 'static> MouseArea<Message> {
             } else if inside {
                 state.last_mouse_pos = Some((*x, *y));
             }
+        } else if let Event::MouseLeave { x, y } = event {
+            if state.mouse_inside {
+                state.mouse_inside = false;
+                state.last_mouse_pos = Some((*x, *y));
+
+                if let Some(ref handler) = self.event_handler
+                    && let Some(message) = handler(MouseAreaEvent::MouseLeft { x: *x, y: *y }, shell) {
+                        shell.publish(message);
+                    }
+            }
+
+            // TODO: Replace synthetic handling with framework enter/leave events 
         }
     }
 
