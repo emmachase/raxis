@@ -26,7 +26,7 @@ use crate::widgets::{
     Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
     widget,
 };
-use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
+use crate::{DeferredControl, InputMethod, RedrawRequest, RequestAnimation, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
@@ -63,6 +63,7 @@ pub type TextInputEventHandler<Message> = Box<dyn Fn(&str, &mut Shell<Message>) 
 pub struct TextInput<Message> {
     _marker: std::marker::PhantomData<Message>,
 
+    on_text_input: Option<TextInputEventHandler<Message>>,
     on_text_changed: Option<TextInputEventHandler<Message>>,
     pub text_alignment: TextAlignment,
     pub paragraph_alignment: ParagraphAlignment,
@@ -70,12 +71,14 @@ pub struct TextInput<Message> {
     pub line_spacing: Option<LineSpacing>,
     pub font_id: FontIdentifier,
     pub initial_text: String,
+    pub text: Option<String>,
 }
 
 impl<Message> Default for TextInput<Message> {
     fn default() -> Self {
         Self {
             _marker: std::marker::PhantomData,
+            on_text_input: None,
             on_text_changed: None,
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
@@ -83,6 +86,7 @@ impl<Message> Default for TextInput<Message> {
             line_spacing: None,
             font_id: FontIdentifier::system("Segoe UI"),
             initial_text: String::new(),
+            text: None,
         }
     }
 }
@@ -99,6 +103,7 @@ impl<Message: 'static> TextInput<Message> {
     pub fn new() -> Self {
         Self {
             _marker: std::marker::PhantomData,
+            on_text_input: None,
             on_text_changed: None,
             text_alignment: TextAlignment::Leading,
             paragraph_alignment: ParagraphAlignment::Top,
@@ -106,11 +111,25 @@ impl<Message: 'static> TextInput<Message> {
             line_spacing: None,
             font_id: FontIdentifier::system("Segoe UI"),
             initial_text: String::new(),
+            text: None,
         }
     }
 
     pub fn with_initial_text(mut self, text: impl Into<String>) -> Self {
         self.initial_text = text.into();
+        self
+    }
+
+    pub fn with_text(mut self, text: impl Into<String>) -> Self {
+        self.text = Some(text.into());
+        self
+    }
+
+    pub fn with_text_input_handler<F>(mut self, handler: F) -> Self
+    where
+        F: Fn(&str, &mut Shell<Message>) + 'static,
+    {
+        self.on_text_input = Some(Box::new(handler));
         self
     }
 
@@ -199,7 +218,7 @@ struct WidgetState<Message> {
 
     // caret_blink_timer: f64,
     // caret_visible: bool,
-    focused_at: Instant,
+    focused_at: Option<Instant>,
     created_at: Instant,
 
     // Preferred horizontal position (DIPs) for vertical navigation (sticky X)
@@ -328,6 +347,42 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         bounds: Bounds,
     ) {
         let state = with_state!(mut instance as WidgetState<Message>);
+
+        let mut maybe_state_invalid = false;
+        if state.focused_at.is_none() && shell.focus_manager.is_focused(instance.id) {
+            state.focused_at = Some(Instant::now());
+        } else if state.focused_at.is_some() && !shell.focus_manager.is_focused(instance.id) {
+            state.focused_at = None;
+            if self.on_text_input.is_some() {
+                self.on_text_input.as_ref().unwrap()(state.text.as_str(), shell);
+                
+                // Request another view pass
+                // This will potentially update the passed text value, so we mark the state as invalid
+                shell.request_animation();
+                maybe_state_invalid = true;
+            }
+        }
+
+        // Sync value to state only when unfocused
+        // Ignore first pass if notified to avoid prematurely updating to old state
+        // i.e. wait for next view pass to determine if text has changed
+        if !maybe_state_invalid && let Some(text) = &self.text {
+            if !shell.focus_manager.is_focused(instance.id) && state.text != *text {
+                state.text = text.clone();
+                state.recompute_text_boundaries();
+                let _ = state.build_text_layout();
+                let _ = state.recalc_metrics();
+
+                // Only reset selection if it's now out of bounds
+                let max_pos = state.text.encode_utf16().count() as u32;
+                if state.selection_anchor > max_pos {
+                    state.selection_anchor = max_pos;
+                }
+                if state.selection_active > max_pos {
+                    state.selection_active = max_pos;
+                }
+            }
+        }
 
         let RectDIP {
             x: x_dip, y: y_dip, ..
@@ -553,9 +608,9 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                 }
             }
             super::Event::Redraw { now } => {
-                if shell.focus_manager.is_focused(instance.id) {
+                if shell.focus_manager.is_focused(instance.id) && let Some(focused_at) = state.focused_at {
                     let next_blink =
-                        (0.05 + BLINK_TIME) - (*now - state.focused_at).as_secs_f64() % BLINK_TIME;
+                        (0.05 + BLINK_TIME) - (*now - focused_at).as_secs_f64() % BLINK_TIME;
                     shell.request_redraw(
                         hwnd,
                         RedrawRequest::At(*now + Duration::from_secs_f64(next_blink)),
@@ -798,7 +853,7 @@ impl<Message> WidgetState<Message> {
             is_dragging: false,
             has_started_ole_drag: false,
             drag_start_position: None,
-            focused_at: Instant::now(),
+            focused_at: None,
             created_at: Instant::now(),
             sticky_x_dip: None,
             metric_bounds: RectDIP::default(),
@@ -1039,7 +1094,7 @@ impl<Message> WidgetState<Message> {
         unsafe {
             let layout = self.layout.as_ref().expect("layout not built");
 
-            let caret_visible = (((now - self.focused_at).as_secs_f64()) / BLINK_TIME) % 2.0 < 1.0;
+            let caret_visible = (((now - self.focused_at.unwrap_or(now)).as_secs_f64()) / BLINK_TIME) % 2.0 < 1.0;
 
             // Normal rendering: selection, base text, caret
             self.draw_selection_with_recorder(layout, recorder, bounds)?;
@@ -1134,7 +1189,7 @@ impl<Message> WidgetState<Message> {
     }
 
     fn force_blink(&mut self) {
-        self.focused_at = Instant::now();
+        self.focused_at = Some(Instant::now());
     }
 
     fn clear_sticky_x(&mut self) {
