@@ -21,6 +21,7 @@ use crate::layout::model::{Element, ElementStyle};
 use crate::runtime::clipboard::get_clipboard_text;
 use crate::runtime::font_manager::{FontAxes, FontIdentifier, GlobalFontManager, LineSpacing};
 use crate::runtime::vkey::VKey;
+use crate::util::unique::WidgetId;
 use crate::widgets::text::{ParagraphAlignment, TextAlignment};
 use crate::widgets::{
     Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
@@ -351,7 +352,6 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
     ) {
         let state = with_state!(mut instance as WidgetState<Message>);
 
-        let mut maybe_state_invalid = false;
         if state.focused_at.is_none() && shell.focus_manager.is_focused(instance.id) {
             state.focused_at = Some(Instant::now());
         } else if state.focused_at.is_some() && !shell.focus_manager.is_focused(instance.id) {
@@ -360,31 +360,16 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                 self.on_text_input.as_ref().unwrap()(state.text.as_str(), shell);
                 
                 // Request another view pass
-                // This will potentially update the passed text value, so we mark the state as invalid
-                shell.request_animation();
-                maybe_state_invalid = true;
+                // This will potentially update the passed text value
+                shell.request_redraw(hwnd, RedrawRequest::Immediate);
             }
         }
 
         // Sync value to state only when unfocused
         // Ignore first pass if notified to avoid prematurely updating to old state
         // i.e. wait for next view pass to determine if text has changed
-        if !maybe_state_invalid && let Some(text) = &self.text {
-            if !shell.focus_manager.is_focused(instance.id) && state.text != *text {
-                state.text = text.clone();
-                state.recompute_text_boundaries();
-                let _ = state.build_text_layout();
-                let _ = state.recalc_metrics();
-
-                // Only reset selection if it's now out of bounds
-                let max_pos = state.text.encode_utf16().count() as u32;
-                if state.selection_anchor > max_pos {
-                    state.selection_anchor = max_pos;
-                }
-                if state.selection_active > max_pos {
-                    state.selection_active = max_pos;
-                }
-            }
+        if state.ensure_text(shell, instance.id, self.text.as_deref()) {
+            shell.request_redraw(hwnd, RedrawRequest::Immediate);
         }
 
         let RectDIP {
@@ -662,6 +647,8 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
         _now: Instant,
     ) {
         let state = with_state!(mut instance as WidgetState<Message>);
+
+        state.ensure_text(shell, instance.id, self.text.as_deref());
 
         // Rebuild text format if needed
         if state.needs_text_format_rebuild(
@@ -2150,5 +2137,30 @@ impl<Message> WidgetState<Message> {
         } else {
             Ok(false)
         }
+    }
+
+    pub fn ensure_text(&mut self, shell: &Shell<Message>, id: WidgetId, text: Option<&str>) -> bool {
+        if let Some(text) = text {
+            if !shell.focus_manager.is_focused(id) && self.text != text {
+                self.text = text.to_string();
+                self.recompute_text_boundaries();
+                let _ = self.build_text_layout();
+                let _ = self.recalc_metrics();
+
+                // Only reset selection if it's now out of bounds
+                let max_pos = self.text.encode_utf16().count() as u32;
+                if self.selection_anchor > max_pos {
+                    self.selection_anchor = max_pos;
+                }
+                if self.selection_active > max_pos {
+                    self.selection_active = max_pos;
+                }
+
+                // Request draw
+                return true;
+            }
+        }
+
+        false
     }
 }

@@ -1133,12 +1133,13 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                             padding: BoxAmount::new(5.0, 12.0, 5.0, 12.0),
                             content: widget(
                                 TextInput::new()
-                                    .with_text_changed_handler({
+                                    .with_text_input_handler({
                                         let todo_state = todo_state.clone();
                                         move |text, _| {
                                             todo_state.borrow_mut().input_text = text.to_string();
                                         }
                                     })
+                                    .with_text(todo_state.borrow().input_text.clone())
                                     .with_paragraph_alignment(ParagraphAlignment::Center),
                             ),
                             ..Default::default()
@@ -1178,7 +1179,7 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                                                 completed: false,
                                             });
                                             state.next_id += 1;
-                                            // state.input_text.clear();
+                                            state.input_text.clear();
                                         }
                                     }
                                 }),
@@ -1806,6 +1807,11 @@ fn hyperlink_demo() -> Element<Message> {
 
 fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
     Element {
+        background_color: if hook.window_active {
+            Some(Color::from_rgba(1.0, 1.0, 1.0, 0.02))
+        } else {
+            None
+        },
         direction: Direction::TopToBottom,
         width: Sizing::Grow {
             min: 600.0,
