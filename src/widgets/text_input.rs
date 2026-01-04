@@ -69,6 +69,7 @@ pub struct TextInput<Message> {
     pub font_size: f32,
     pub line_spacing: Option<LineSpacing>,
     pub font_id: FontIdentifier,
+    pub initial_text: String,
 }
 
 impl<Message> Default for TextInput<Message> {
@@ -81,6 +82,7 @@ impl<Message> Default for TextInput<Message> {
             font_size: 14.0,
             line_spacing: None,
             font_id: FontIdentifier::system("Segoe UI"),
+            initial_text: String::new(),
         }
     }
 }
@@ -103,7 +105,13 @@ impl<Message: 'static> TextInput<Message> {
             font_size: 14.0,
             line_spacing: None,
             font_id: FontIdentifier::system("Segoe UI"),
+            initial_text: String::new(),
         }
+    }
+
+    pub fn with_initial_text(mut self, text: impl Into<String>) -> Self {
+        self.initial_text = text.into();
+        self
     }
 
     pub fn with_text_changed_handler<F>(mut self, handler: F) -> Self
@@ -251,6 +259,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
             self.line_spacing,
             self.text_alignment,
             self.paragraph_alignment,
+            self.initial_text.clone(),
         ) {
             Ok(state) => Some(state.into_any()),
             Err(_) => None,
@@ -734,6 +743,7 @@ impl<Message> WidgetState<Message> {
         line_spacing: Option<LineSpacing>,
         text_alignment: TextAlignment,
         paragraph_alignment: ParagraphAlignment,
+        initial_text: String,
     ) -> Result<Self> {
         let text_format = GlobalFontManager::create_text_format(
             font_id,
@@ -775,7 +785,7 @@ impl<Message> WidgetState<Message> {
             _marker: std::marker::PhantomData,
             dwrite_factory,
             text_format,
-            text: String::new(),
+            text: initial_text,
             cached_font_size: font_size,
             cached_line_spacing: line_spacing,
             cached_font_id: font_id.clone(),
