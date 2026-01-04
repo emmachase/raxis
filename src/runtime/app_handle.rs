@@ -668,6 +668,10 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
 
     // Process async messages from executor thread
     pub fn process_async_messages(&mut self, hwnd: HWND) {
+        use windows::Win32::Foundation::{LPARAM, WPARAM};
+        use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
+        use windows::Win32::Graphics::Gdi::InvalidateRect;
+
         let mut cap = 100;
         while let Ok(message) = self.message_receiver.try_recv() {
             if let Some(task) = (self.update_fn)(&mut self.user_state, message) {
@@ -679,6 +683,40 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
             if cap == 0 {
                 // Post a message to the window to continue processing later
                 unsafe {
+                    PostMessageW(
+                        Some(hwnd),
+                        crate::runtime::WM_ASYNC_MESSAGE,
+                        WPARAM(0),
+                        LPARAM(0),
+                    )
+                    .ok();
+                }
+
+                unsafe {
+                    let _ = InvalidateRect(Some(hwnd), None, false);
+                }
+
+                return;
+            }
+        }
+
+        unsafe {
+            let _ = InvalidateRect(Some(hwnd), None, false);
+        }
+
+        PENDING_MESSAGE_PROCESSING.store(false, Ordering::SeqCst);
+
+        // Re-check for messages after clearing the flag to avoid race condition:
+        // If a message was sent between exiting try_recv loop and storing false,
+        // the sender would see PENDING=true and not post WM_ASYNC_MESSAGE.
+        // We peek by trying to receive, and if successful, process it and re-trigger.
+        if let Ok(message) = self.message_receiver.try_recv() {
+            if let Some(task) = (self.update_fn)(&mut self.user_state, message) {
+                self.spawn_task(task);
+            }
+
+            if !PENDING_MESSAGE_PROCESSING.swap(true, Ordering::SeqCst) {
+                unsafe {
                     use windows::Win32::Foundation::{LPARAM, WPARAM};
                     use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
                     PostMessageW(
@@ -689,16 +727,8 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                     )
                     .ok();
                 }
-                break;
             }
         }
-
-        unsafe {
-            use windows::Win32::Graphics::Gdi::InvalidateRect;
-            let _ = InvalidateRect(Some(hwnd), None, false);
-        }
-
-        PENDING_MESSAGE_PROCESSING.store(false, Ordering::SeqCst);
     }
 
     // Spawn a task on the executor thread
