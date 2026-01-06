@@ -27,7 +27,7 @@ use crate::widgets::{
     Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
     widget,
 };
-use crate::{DeferredControl, InputMethod, RedrawRequest, RequestAnimation, Shell, with_state};
+use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;

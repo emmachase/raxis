@@ -15,7 +15,7 @@ use raxis::{
             Alignment, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow, Element, FloatingConfig, ScrollConfig, ScrollbarStyle, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, TextShadow
         },
     }, math::easing::Easing, row, runtime::{
-        Backdrop, context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{Task, hide_window}
+        Backdrop, context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{Task, hide_window}, window::builder::InitialDisplay
     }, use_animation, util::{str::StableString, unique::combine_id}, w_id, widgets::{
         button::Button, image::Image, slider::Slider, svg::ViewBox, svg_path::SvgPath, text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment, TextSpan}, text_input::TextInput, titlebar_controls::titlebar_controls, toggle::Toggle, widget
     }
@@ -1948,6 +1948,7 @@ fn main() {
                 }
             }
         })
+        .with_initial_display(InitialDisplay::Minimized)
         .replace_titlebar()
         .with_syscommand_handler(|state, command| {
             match command {

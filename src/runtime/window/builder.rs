@@ -13,6 +13,15 @@ pub enum Backdrop {
     Acrylic,
 }
 
+#[derive(Debug, Default)]
+pub enum InitialDisplay {
+    #[default]
+    Shown,
+    Minimized,
+    /// The application will not be initially shown on the taskbar. Provide an alternative method of showing the window if using this option.
+    Hidden,
+}
+
 /// Builder for creating and configuring a Raxis application window
 pub struct Application<
     B: Fn(&State) -> Option<Task<Message>> + 'static,
@@ -31,6 +40,8 @@ pub struct Application<
 
     pub(crate) backdrop: Backdrop,
     pub(crate) replace_titlebar: bool,
+
+    pub(crate) initial_display: InitialDisplay,
 
     pub(crate) tray_config: Option<TrayIconConfig>,
     pub(crate) tray_event_handler: Option<Box<dyn Fn(&State, TrayEvent) -> Option<Task<Message>>>>,
@@ -69,6 +80,8 @@ impl<
 
             backdrop: Backdrop::default(),
             replace_titlebar: false,
+
+            initial_display: InitialDisplay::Shown,
 
             tray_config: None,
             tray_event_handler: None,
@@ -111,6 +124,13 @@ impl<
     pub fn replace_titlebar(self) -> Self {
         Self {
             replace_titlebar: true,
+            ..self
+        }
+    }
+
+    pub fn with_initial_display(self, mode: InitialDisplay) -> Self {
+        Self {
+            initial_display: mode,
             ..self
         }
     }
