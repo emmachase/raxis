@@ -569,7 +569,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
 
             // Append the icon commands to the main command list
             let icon_commands = recorder.take_commands();
-            commands.commands.extend(icon_commands.commands);
+            commands.extend(icon_commands);
         }
 
         self.clock += dt;

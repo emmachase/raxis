@@ -1,13 +1,13 @@
 use crate::gfx::RectDIP;
 use crate::layout::model::{
-    BorderRadius, Color, DropShadow, TextShadow, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
+    BackdropFilter, BorderRadius, Color, DropShadow, TextShadow, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
 };
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1Bitmap, ID2D1PathGeometry, ID2D1SvgDocument};
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
 /// A single drawing command that can be executed later
-#[derive(Debug)]
+#[derive(Clone, Debug)]
 pub enum DrawCommand {
     /// Clear the entire render target with a color
     Clear {
@@ -23,6 +23,13 @@ pub enum DrawCommand {
         rect: RectDIP,
         border_radius: BorderRadius,
         color: Color,
+    },
+    /// Fill a rectangle with backdrop filter applied to content behind it
+    FillRectangleWithBackdropFilter {
+        rect: RectDIP,
+        color: Color,
+        filter: BackdropFilter,
+        border_radius: Option<BorderRadius>,
     },
     /// Draw a blurred shadow
     DrawBlurredShadow {
@@ -132,41 +139,4 @@ pub enum DrawCommand {
 }
 
 /// A list of drawing commands that can be generated and executed separately
-#[derive(Debug, Default)]
-pub struct DrawCommandList {
-    pub commands: Vec<DrawCommand>,
-}
-
-impl DrawCommandList {
-    /// Create a new empty command list
-    pub fn new() -> Self {
-        Self {
-            commands: Vec::new(),
-        }
-    }
-
-    /// Add a command to the list
-    pub fn push(&mut self, command: DrawCommand) {
-        self.commands.push(command);
-    }
-
-    /// Clear all commands
-    pub fn clear(&mut self) {
-        self.commands.clear();
-    }
-
-    /// Get the number of commands
-    pub fn len(&self) -> usize {
-        self.commands.len()
-    }
-
-    /// Check if the command list is empty
-    pub fn is_empty(&self) -> bool {
-        self.commands.is_empty()
-    }
-
-    /// Iterate over commands
-    pub fn iter(&self) -> impl Iterator<Item = &DrawCommand> {
-        self.commands.iter()
-    }
-}
+pub type DrawCommandList = Vec<DrawCommand>;

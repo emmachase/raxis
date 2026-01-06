@@ -12,7 +12,7 @@ use raxis::{
     ContextMenuItem, HookManager, SvgPathCommands, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig, layout::{
         helpers::{center, spacer},
         model::{
-            Alignment, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow, Element, FloatingConfig, ScrollConfig, ScrollbarStyle, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, TextShadow
+            Alignment, BackdropFilter, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow, Element, FloatingConfig, ScrollConfig, ScrollbarStyle, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, TextShadow
         },
     }, math::easing::Easing, row, runtime::{
         Backdrop, context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{Task, hide_window}
@@ -1020,6 +1020,44 @@ fn toggle_demos(hook: &mut HookManager<Message>) -> Element<Message> {
     }
 }
 
+fn backdrop_filter_demo() -> Element<Message> {
+    Element {
+        id: Some(w_id!()),
+        direction: Direction::TopToBottom,
+        width: Sizing::grow(),
+        height: Sizing::fixed(200.0),
+        padding: BoxAmount::all(12.0),
+        background_color: Some(Color::from(0xF0F0F000)), // Light background
+        border_radius: Some(BorderRadius::all(8.0)),
+        child_gap: 10.0,
+        children: vec![
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                content: widget(Text::new("Backdrop Filter Demo").with_font_size(20.0)),
+                ..Default::default()
+            },
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::fixed(350.0),
+                height: Sizing::fixed(100.0),
+                background_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.25)), // Semi-transparent white
+                backdrop_filter: Some(BackdropFilter::blur(10.0)), // Apply blur
+                border_radius: Some(BorderRadius::all(15.0)),
+                content: widget(
+                    Text::new("Blurred Background")
+                        .with_paragraph_alignment(ParagraphAlignment::Center)
+                        .with_text_alignment(TextAlignment::Center)
+                        .with_color(Color::BLACK),
+                ),
+                ..Default::default()
+            },
+        ],
+        ..Default::default()
+    }
+}
+
 fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
     let todo_state = instance
@@ -1090,7 +1128,14 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                     .with_click_handler(|_, s| s.publish(Message::ShowContextMenu))
                     .as_element(w_id!(), Text::new("Show Context Menu"))
             ],
-            pixie.as_element(w_id!()),
+            Element {
+                id: Some(w_id!()),
+                direction: Direction::ZStack,
+                width: Sizing::grow(),
+                height: Sizing::fit(),
+                children: vec![pixie.as_element(w_id!()), backdrop_filter_demo()],
+                ..Default::default()
+            },
             // Input section
             Element {
                 id: Some(w_id!()),

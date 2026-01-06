@@ -1,15 +1,17 @@
 use crate::gfx::RectDIP;
 use crate::gfx::draw_commands::{DrawCommand, DrawCommandList};
+use crate::layout::model::{BackdropFilter, BorderRadius, Color};
 use crate::widgets::renderer::Renderer;
 use std::mem::ManuallyDrop;
 use windows::Win32::Graphics::Direct2D::{
-    Common::{D2D_RECT_F, D2D1_COLOR_F},
+    Common::{D2D_RECT_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER},
     D2D1_LAYER_PARAMETERS1,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, ID2D1Brush,
-    ID2D1Geometry,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, D2D1_INTERPOLATION_MODE_LINEAR,
+    ID2D1Brush, ID2D1Geometry, ID2D1Image,
 };
+use windows_core::Interface;
 use windows_numerics::{Matrix3x2, Vector2};
 
 /// Executes drawing commands using a Direct2D renderer
@@ -32,18 +34,18 @@ impl CommandExecutor {
     ) -> windows::core::Result<()> {
         let Some(bounds) = screen_bounds else {
             // No culling if no bounds provided - execute all commands
-            for command in commands.iter() {
-                Self::execute_command(renderer, command)?;
+            for i in 0..commands.len() {
+                Self::execute_command(renderer, commands, i)?;
             }
             return Ok(());
         };
 
         let mut skip_depth = 0u32; // Track depth of skipped clip regions
 
-        for command in commands.iter() {
+        for i in 0..commands.len() {
             let should_execute = if skip_depth > 0 {
                 // We're inside a skipped clip region - only process clip commands to track nesting
-                match command {
+                match commands[i] {
                     DrawCommand::PushAxisAlignedClip { .. }
                     | DrawCommand::PushRoundedClip { .. } => {
                         skip_depth += 1;
@@ -57,29 +59,11 @@ impl CommandExecutor {
                 }
             } else {
                 // Not in a skipped region - check if we should execute normally
-                match command {
-                    DrawCommand::PushAxisAlignedClip { rect } => {
-                        if Self::rect_intersects_bounds(rect, &bounds) {
-                            true // Execute the push
-                        } else {
-                            skip_depth += 1; // Start skipping
-                            false // Skip this push
-                        }
-                    }
-                    DrawCommand::PushRoundedClip { rect, .. } => {
-                        if Self::rect_intersects_bounds(rect, &bounds) {
-                            true // Execute the push
-                        } else {
-                            skip_depth += 1; // Start skipping
-                            false // Skip this push
-                        }
-                    }
-                    _ => Self::should_execute_command_simple(command, &bounds),
-                }
+                Self::should_execute_command_simple(&commands[i], &bounds, &mut skip_depth)
             };
 
             if should_execute {
-                Self::execute_command(renderer, command)?;
+                Self::execute_command(renderer, commands, i)?;
             }
         }
         Ok(())
@@ -87,7 +71,7 @@ impl CommandExecutor {
 
     /// Check if a non-clip command should be executed based on screen bounds
     /// This excludes clip push/pop commands which are handled separately
-    fn should_execute_command_simple(command: &DrawCommand, bounds: &RectDIP) -> bool {
+    fn should_execute_command_simple(command: &DrawCommand, bounds: &RectDIP, skip_depth: &mut u32) -> bool {
         match command {
             // Commands that always execute regardless of bounds
             DrawCommand::Clear { .. } => true,
@@ -100,6 +84,9 @@ impl CommandExecutor {
             // Commands with rectangles that can be culled
             DrawCommand::FillRectangle { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
             DrawCommand::FillRoundedRectangle { rect, .. } => {
+                Self::rect_intersects_bounds(rect, bounds)
+            }
+            DrawCommand::FillRectangleWithBackdropFilter { rect, .. } => {
                 Self::rect_intersects_bounds(rect, bounds)
             }
             DrawCommand::DrawBlurredShadow { rect, shadow, .. } => {
@@ -122,12 +109,21 @@ impl CommandExecutor {
             }
             DrawCommand::DrawBorder { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
 
-            // Clip commands should not be processed here
-            DrawCommand::PushAxisAlignedClip { .. } => {
-                panic!("Clip push commands should be handled in execute_commands_with_bounds")
+            DrawCommand::PushAxisAlignedClip { rect } => {
+                if Self::rect_intersects_bounds(rect, &bounds) {
+                    true // Execute the push
+                } else {
+                    *skip_depth += 1; // Start skipping
+                    false // Skip this push
+                }
             }
-            DrawCommand::PushRoundedClip { .. } => {
-                panic!("Clip push commands should be handled in execute_commands_with_bounds")
+            DrawCommand::PushRoundedClip { rect, .. } => {
+                if Self::rect_intersects_bounds(rect, &bounds) {
+                    true // Execute the push
+                } else {
+                    *skip_depth += 1; // Start skipping
+                    false // Skip this push
+                }
             }
 
             // Rectangle-based commands
@@ -205,7 +201,9 @@ impl CommandExecutor {
     }
 
     /// Execute a single drawing command
-    fn execute_command(renderer: &Renderer, command: &DrawCommand) -> windows::core::Result<()> {
+    pub fn execute_command(renderer: &Renderer, command_list: &[DrawCommand], command_index: usize) -> windows::core::Result<()> {
+        let command = &command_list[command_index];
+
         unsafe {
             match command {
                 DrawCommand::Clear { color } => {
@@ -528,8 +526,177 @@ impl CommandExecutor {
                         *stroke_cap,
                     );
                 }
+
+                DrawCommand::FillRectangleWithBackdropFilter { rect, border_radius, color, filter } => {
+                    // Backdrop-filter commands are handled separately in execute_commands_with_bounds
+                    // This should not be reached in normal execution
+                    Self::execute_backdrop_filter(
+                        renderer,
+                        command_list,
+                        command_index,
+                        *rect,
+                        *color,
+                        *border_radius,
+                        *filter,
+                    )?;
+                }
             }
         }
+        Ok(())
+    }
+
+    /// Execute a backdrop-filter command: render background, apply filter, composite, render element
+    fn execute_backdrop_filter(
+        renderer: &Renderer,
+        commands: &[DrawCommand],
+        command_index: usize,
+        bounds: RectDIP,
+        color: Color,
+        border_radius: Option<BorderRadius>,
+        filter: BackdropFilter,
+    ) -> windows::core::Result<()> {
+        // Find background commands (commands before this one that intersect filter bounds)
+        let mut background_commands = Vec::new();
+        let mut skip_depth = 0;
+        for (index, command) in commands.iter().enumerate() {
+            if index >= command_index {
+                break;
+            }
+
+            let should_execute = if skip_depth > 0 {
+                // We're inside a skipped clip region - only process clip commands to track nesting
+                match commands[index] {
+                    DrawCommand::PushAxisAlignedClip { .. }
+                    | DrawCommand::PushRoundedClip { .. } => {
+                        skip_depth += 1;
+                        false // Skip the push
+                    }
+                    DrawCommand::PopAxisAlignedClip | DrawCommand::PopRoundedClip => {
+                        skip_depth -= 1;
+                        false // Skip the pop
+                    }
+                    _ => false, // Skip all other commands
+                }
+            } else {
+                // Not in a skipped region - check if we should execute normally
+                Self::should_execute_command_simple(&commands[index], &bounds, &mut skip_depth)
+            };
+
+            if should_execute {
+                background_commands.push((index, command));
+            }
+        }
+
+        // Get blur radius from filter
+        let blur_radius = match filter {
+            BackdropFilter::Blur { radius } => radius,
+        };
+
+        // Expand bounds for blur bleed
+        let blur_padding = blur_radius * 3.0;
+        let expanded_bounds = RectDIP {
+            x: bounds.x - blur_padding,
+            y: bounds.y - blur_padding,
+            width: bounds.width + blur_padding * 2.0,
+            height: bounds.height + blur_padding * 2.0,
+        };
+
+        // Render background commands to offscreen bitmap
+        // Collect commands into a vector we can pass as a slice
+        let background_cmds: Vec<DrawCommand> = background_commands
+            .iter()
+            .map(|(_, cmd)| (*cmd).clone())
+            .collect();
+        let background_bitmap = renderer.render_commands_to_bitmap(
+            &background_cmds,
+            &expanded_bounds,
+        )?;
+
+        // Apply blur effect
+        let blur_effect = renderer.apply_gaussian_blur(&background_bitmap, blur_radius)?;
+
+        let clip_rect = D2D_RECT_F {
+            left: bounds.x,
+            top: bounds.y,
+            right: bounds.x + bounds.width,
+            bottom: bounds.y + bounds.height,
+        };
+
+        // Composite blurred background to main render target
+        unsafe {
+            // Push layer with border-radius mask if needed
+            if let Some(border_radius) = border_radius {
+                if let Ok(path_geometry) = renderer.factory.CreatePathGeometry()
+                    && let Ok(sink) = path_geometry.Open()
+                {
+                    renderer.create_rounded_rectangle_path(&sink, &bounds, &border_radius);
+                    let _ = sink.Close();
+
+                    let layer_params = D2D1_LAYER_PARAMETERS1 {
+                        contentBounds: clip_rect,
+                        geometricMask: ManuallyDrop::new(Some(path_geometry.into())),
+                        maskAntialiasMode: D2D1_ANTIALIAS_MODE_PER_PRIMITIVE,
+                        maskTransform: Matrix3x2::identity(),
+                        opacity: 1.0,
+                        opacityBrush: ManuallyDrop::new(None),
+                        layerOptions: Default::default(),
+                    };
+
+                    let layer = None; // We don't need to keep the layer reference
+                    renderer.render_target.PushLayer(&layer_params, layer);
+
+                    let d2d_color = D2D1_COLOR_F {
+                        r: 0.0,
+                        g: 0.0,
+                        b: 0.0,
+                        a: 1.0,
+                    };
+                    renderer.render_target.Clear(Some(&d2d_color));
+
+                    // Draw blurred background
+                    let blur_image: ID2D1Image = Interface::cast(&blur_effect)?;
+                    renderer.render_target.DrawImage(
+                        &blur_image,
+                        Some(&Vector2::new(expanded_bounds.x, expanded_bounds.y)),
+                        None,
+                        D2D1_INTERPOLATION_MODE_LINEAR,
+                        D2D1_COMPOSITE_MODE_SOURCE_OVER,
+                    );
+
+                    // Fill the element on top of the blurred background (within the layer)
+                    // renderer.fill_rounded_rectangle(&bounds, &border_radius, color);
+                    renderer.fill_rectangle(&bounds, color);
+
+                    renderer.render_target.PopLayer();
+
+                    // Clean up ManuallyDrop
+                    drop(ManuallyDrop::<Option<ID2D1Geometry>>::into_inner(
+                        layer_params.geometricMask,
+                    ));
+                    drop(ManuallyDrop::<Option<ID2D1Brush>>::into_inner(
+                        layer_params.opacityBrush,
+                    ));
+                }
+            } else {
+                // No border radius - just draw blurred background
+                renderer.render_target.PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+
+                let blur_image: ID2D1Image = Interface::cast(&blur_effect)?;
+                renderer.render_target.DrawImage(
+                    &blur_image,
+                    Some(&Vector2::new(expanded_bounds.x, expanded_bounds.y)),
+                    None,
+                    D2D1_INTERPOLATION_MODE_LINEAR,
+                    D2D1_COMPOSITE_MODE_SOURCE_OVER,
+                );
+
+                // Render element fill on top (no border radius, so no layer needed)
+                renderer.fill_rectangle(&bounds, color);
+
+                renderer.render_target.PopAxisAlignedClip();
+            }
+        }
+
         Ok(())
     }
 }

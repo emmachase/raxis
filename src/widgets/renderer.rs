@@ -1,22 +1,25 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, collections::hash_map, mem::ManuallyDrop};
+use windows::Win32::Graphics::Direct2D::Common::D2D1_BORDER_MODE_HARD;
+use windows::Win32::Graphics::Direct2D::{D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED, D2D1_LAYER_PARAMETERS, D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_INT32, D2D1_PROPERTY_TYPE_UINT32};
 use windows::Win32::Graphics::Direct2D::{
-    CLSID_D2D1Shadow,
+    CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow,
     Common::{
         D2D_RECT_F, D2D_SIZE_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
         D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED,
     },
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL, D2D1_CAP_STYLE_FLAT,
-    D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_ARC_SEGMENT, D2D1_ARC_SIZE_SMALL,
+    D2D1_CAP_STYLE_FLAT, D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE,
     D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH,
     D2D1_DASH_STYLE_DASH_DOT, D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT,
-    D2D1_DASH_STYLE_SOLID, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_PARAMETERS1,
+    D2D1_DASH_STYLE_SOLID, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
+    D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_PARAMETERS1,
     D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER, D2D1_LINE_JOIN_MITER_OR_BEVEL,
-    D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT,
-    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES,
-    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, ID2D1DeviceContext6,
-    ID2D1Effect, ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
-    ID2D1StrokeStyle,
+    D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4,
+    D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
+    D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
+    ID2D1Bitmap, ID2D1Brush, ID2D1DeviceContext6, ID2D1Effect, ID2D1Factory,
+    ID2D1Geometry, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows_core::Interface;
 use windows_numerics::{Matrix3x2, Vector2, Vector4};
@@ -1763,6 +1766,131 @@ impl Renderer<'_> {
             shadow_effect.SetInput(0, Some(&bitmap.cast::<ID2D1Image>().unwrap()), true);
 
             Some(shadow_effect)
+        }
+    }
+
+    /// Apply Gaussian blur effect to a bitmap
+    pub fn apply_gaussian_blur(
+        &self,
+        bitmap: &ID2D1Bitmap,
+        radius: f32,
+    ) -> windows::core::Result<ID2D1Effect> {
+        unsafe {
+            let blur_effect = self.render_target.CreateEffect(&CLSID_D2D1GaussianBlur)?;
+            blur_effect.SetInput(0, Some(&bitmap.cast::<ID2D1Image>().unwrap()), true);
+
+            // Set blur standard deviation
+            blur_effect.SetValue(
+                D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0 as u32,
+                D2D1_PROPERTY_TYPE_FLOAT,
+                &(radius / 2.0).to_le_bytes(), 
+                // TODO: Audit the expanded size of the incoming bitmap (does it actually need to be so big?)
+                // As well as the radius, since it is technically supposed to be * 3 of stddev according to the docs...
+            )?;
+
+            // Set border mode to hard since we don't care about soft edges as this will get clipped by the layout bounds
+            let border_mode: i32 = D2D1_BORDER_MODE_HARD.0;
+            blur_effect.SetValue(
+                D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0 as u32,
+                D2D1_PROPERTY_TYPE_ENUM,
+                &border_mode.to_le_bytes(),
+            )?;
+
+            // Set optimization mode
+            let optimization: i32 = D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED.0;
+            blur_effect.SetValue(
+                D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION.0 as u32,
+                D2D1_PROPERTY_TYPE_ENUM,
+                &optimization.to_le_bytes(),
+            )?;
+
+            Ok(blur_effect)
+        }
+    }
+
+    /// Render a subset of commands to an offscreen bitmap, maintaining clip state
+    pub fn render_commands_to_bitmap(
+        &self,
+        commands: &[crate::gfx::draw_commands::DrawCommand],
+        bounds: &RectDIP,
+    ) -> windows::core::Result<ID2D1Bitmap> {
+        use crate::gfx::command_executor::CommandExecutor;
+
+        unsafe {
+            let size = D2D_SIZE_F {
+                width: bounds.width,
+                height: bounds.height,
+            };
+
+            let bitmap_rt = self.render_target.CreateCompatibleRenderTarget(
+                Some(&size),
+                None,
+                None,
+                D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+            )?;
+
+            // Set up coordinate system: translate so bounds start at (0,0)
+            let transform = Matrix3x2::translation(-bounds.x, -bounds.y);
+            bitmap_rt.SetTransform(&transform);
+
+            // Clear with transparent background
+            bitmap_rt.BeginDraw();
+            bitmap_rt.Clear(Some(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            }));
+
+            // Create a temporary renderer for the offscreen target
+            let offscreen_renderer = Renderer {
+                factory: self.factory,
+                render_target: &bitmap_rt.cast::<ID2D1DeviceContext6>().unwrap(),
+                brush: self.brush,
+                shadow_cache: self.shadow_cache,
+            };
+
+            // Execute commands, track clip state
+            let mut cur_clip_stack = Vec::new();
+            for i in 0..commands.len() {
+                let command = &commands[i];
+                match command {
+                    crate::gfx::draw_commands::DrawCommand::PushAxisAlignedClip { .. } |
+                    crate::gfx::draw_commands::DrawCommand::PushRoundedClip { .. } |
+                    crate::gfx::draw_commands::DrawCommand::PushLayer { .. } => {
+                        cur_clip_stack.push(command.clone());
+                    },
+                    crate::gfx::draw_commands::DrawCommand::PopAxisAlignedClip |
+                    crate::gfx::draw_commands::DrawCommand::PopRoundedClip | 
+                    crate::gfx::draw_commands::DrawCommand::PopLayer => {
+                        cur_clip_stack.pop();
+                    },
+                    _ => {},
+                }
+
+                CommandExecutor::execute_command(&offscreen_renderer, commands, i)?;
+            }
+
+            // Pop any remaining clips
+            while let Some(command) = cur_clip_stack.pop() {
+                match command {
+                    crate::gfx::draw_commands::DrawCommand::PushAxisAlignedClip { .. } => {
+                        bitmap_rt.PopAxisAlignedClip();
+                    }
+                    crate::gfx::draw_commands::DrawCommand::PushRoundedClip { .. } => {
+                        bitmap_rt.PopLayer();
+                    },
+                    crate::gfx::draw_commands::DrawCommand::PushLayer { .. } => {
+                        bitmap_rt.PopLayer();
+                    },
+                    _ => {},
+                }
+            }
+
+            bitmap_rt.EndDraw(None, None)?;
+
+            // Get bitmap from render target
+            bitmap_rt.GetBitmap()
         }
     }
 }
