@@ -493,6 +493,20 @@ impl TextShadow {
     }
 }
 
+// ---------- Backdrop Filter ----------
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum BackdropFilter {
+    /// Apply a Gaussian blur to the backdrop
+    Blur { radius: f32 },
+}
+
+impl BackdropFilter {
+    pub fn blur(radius: f32) -> Self {
+        Self::Blur { radius }
+    }
+}
+
 // ---------- Border ----------
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
@@ -709,6 +723,7 @@ pub struct ElementStyle {
     pub drop_shadows: Vec<DropShadow>,
     pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
+    pub backdrop_filter: Option<BackdropFilter>,
     pub snap: bool,
 }
 
@@ -722,6 +737,7 @@ impl<Message> From<&UIElement<Message>> for ElementStyle {
             drop_shadows: value.drop_shadows.clone(),
             text_shadows: value.text_shadows.clone(),
             border: value.border,
+            backdrop_filter: value.backdrop_filter,
             snap: value.snap,
         }
     }
@@ -778,6 +794,7 @@ pub struct UIElement<Message> {
     pub drop_shadows: Vec<DropShadow>,
     pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
+    pub backdrop_filter: Option<BackdropFilter>,
     pub z_index: Option<i32>,
     pub opacity: Option<f32>,
     pub snap: bool,
@@ -824,6 +841,7 @@ impl<Message> Default for UIElement<Message> {
             drop_shadows: Vec::new(),
             text_shadows: Vec::new(),
             border: None,
+            backdrop_filter: None,
             z_index: None,
             opacity: None,
             #[cfg(feature = "snap")]
@@ -912,6 +930,7 @@ pub struct Element<Message> {
     pub drop_shadows: Vec<DropShadow>,
     pub text_shadows: Vec<TextShadow>,
     pub border: Option<Border>,
+    pub backdrop_filter: Option<BackdropFilter>,
     pub z_index: Option<i32>,
     pub opacity: Option<f32>,
     pub snap: bool,
@@ -1099,9 +1118,23 @@ impl<Message> Element<Message> {
         }
     }
 
+    pub fn with_backdrop_filter(self, backdrop_filter: BackdropFilter) -> Self {
+        Self {
+            backdrop_filter: Some(backdrop_filter),
+            ..self
+        }
+    }
+
     pub fn with_z_index(self, z_index: i32) -> Self {
         Self {
             z_index: Some(z_index),
+            ..self
+        }
+    }
+
+    pub fn with_opacity(self, opacity: f32) -> Self {
+        Self {
+            opacity: Some(opacity),
             ..self
         }
     }
@@ -1126,7 +1159,7 @@ impl<Message> Element<Message> {
         F: Fn(Element<Message>) -> Element<Message> + Clone,
     {
         Element {
-            children: self.children.into_iter().map(|c| f(c)).collect(),
+            children: self.children.into_iter().map(f).collect(),
             ..self
         }
     }
@@ -1156,6 +1189,7 @@ impl<Message> Default for Element<Message> {
             drop_shadows: Vec::new(),
             text_shadows: Vec::new(),
             border: None,
+            backdrop_filter: None,
             z_index: None,
             opacity: None,
             #[cfg(feature = "snap")]
@@ -1193,6 +1227,7 @@ fn to_shell<Message>(element: Element<Message>) -> (UIElement<Message>, Vec<Elem
             drop_shadows: element.drop_shadows,
             text_shadows: element.text_shadows,
             border: element.border,
+            backdrop_filter: element.backdrop_filter,
             z_index: element.z_index,
             opacity: element.opacity,
             snap: element.snap,

@@ -7,7 +7,8 @@ use windows::Win32::{
             Shell_NotifyIconW,
         },
         WindowsAndMessaging::{
-            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LR_SHARED, LoadImageW, WM_LBUTTONDBLCLK, WM_LBUTTONUP, WM_RBUTTONUP
+            HICON, IMAGE_ICON, LR_DEFAULTSIZE, LR_SHARED, LoadImageW, WM_LBUTTONDBLCLK,
+            WM_LBUTTONUP, WM_RBUTTONUP,
         },
     },
 };
@@ -121,10 +122,11 @@ impl TrayIcon {
 
         // Load icon
         if let Some(resource_id) = self.config.icon_resource
-            && let Ok(icon) = load_icon_from_resource(resource_id) {
-                nid.hIcon = icon;
-                flags |= NIF_ICON;
-            }
+            && let Ok(icon) = load_icon_from_resource(resource_id)
+        {
+            nid.hIcon = icon;
+            flags |= NIF_ICON;
+        }
 
         // Set tooltip
         if let Some(ref tooltip) = self.config.tooltip {

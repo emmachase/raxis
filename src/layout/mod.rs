@@ -198,7 +198,16 @@ pub fn generate_paint_commands<Message>(
                             height,
                         };
 
-                        if let Some(border_radius) = &style.border_radius {
+                        // Check if backdrop filter is specified
+                        if let Some(backdrop_filter) = style.backdrop_filter {
+                            // Use backdrop filter rendering
+                            recorder.fill_rectangle_with_backdrop_filter(
+                                &element_rect,
+                                color,
+                                backdrop_filter,
+                                style.border_radius.as_ref(),
+                            );
+                        } else if let Some(border_radius) = &style.border_radius {
                             // Use rounded rectangle rendering
                             recorder.fill_rounded_rectangle(&element_rect, border_radius, color);
                         } else {

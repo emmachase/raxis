@@ -1,5 +1,4 @@
 use log::{error, warn};
-use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
 use std::ops::DerefMut;
 use std::time::Instant;
 use windows::Win32::Foundation::{D2DERR_RECREATE_TARGET, HWND, LPARAM, LRESULT, RECT};
@@ -11,18 +10,19 @@ use windows::Win32::Graphics::Gdi::{
 };
 use windows::Win32::System::Ole::RevokeDragDrop;
 use windows::Win32::UI::Controls::MARGINS;
+use windows::Win32::UI::HiDpi::GetSystemMetricsForDpi;
 use windows::Win32::UI::WindowsAndMessaging::{
-    MINMAXINFO, PostQuitMessage, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_FRAMECHANGED, SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos
+    MINMAXINFO, PostQuitMessage, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SWP_FRAMECHANGED,
+    SWP_NOACTIVATE, SWP_NOZORDER, SetWindowPos,
 };
 
 use crate::gfx::RectDIP;
 use crate::gfx::command_executor::CommandExecutor;
-use crate::runtime::util::{client_rect, state_mut_from_hwnd};
 use crate::runtime::titlebar_hit_test::clear_titlebar_hit_regions;
-use crate::widgets::renderer::Renderer;
+use crate::runtime::util::{client_rect, state_mut_from_hwnd};
 use crate::widgets::Event;
+use crate::widgets::renderer::Renderer;
 use crate::{RedrawRequest, current_dpi, dips_scale_for_dpi};
-
 
 /// Handle WM_SIZE
 pub fn handle_size<State: 'static, Message: 'static + Send + Clone>(
@@ -105,10 +105,12 @@ pub fn handle_getminmaxinfo<State: 'static, Message: 'static + Send + Clone>(
 
             // Set the minimum size of the window
             (*min_max_info).ptMinTrackSize.x = (sentinel_node.min_width / dpi_scale).floor() as i32
-                + GetSystemMetricsForDpi(SM_CXFRAME, dpi) * 2 + padding * 2;
+                + GetSystemMetricsForDpi(SM_CXFRAME, dpi) * 2
+                + padding * 2;
             (*min_max_info).ptMinTrackSize.y = (sentinel_node.min_height / dpi_scale).floor()
                 as i32
-                + GetSystemMetricsForDpi(SM_CYFRAME, dpi) + padding;
+                + GetSystemMetricsForDpi(SM_CYFRAME, dpi)
+                + padding;
         }
     }
     LRESULT(0)
@@ -186,13 +188,14 @@ pub fn handle_paint<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND)
 
             let end = unsafe { rt.EndDraw(None, None) };
             if let Err(e) = end
-                && e.code() == D2DERR_RECREATE_TARGET {
-                    warn!("Recreating D2D target");
-                    device_resources.discard_device_resources();
-                    device_resources
-                        .create_device_resources(hwnd, device_width, device_height)
-                        .expect("Failed to recreate device resources");
-                }
+                && e.code() == D2DERR_RECREATE_TARGET
+            {
+                warn!("Recreating D2D target");
+                device_resources.discard_device_resources();
+                device_resources
+                    .create_device_resources(hwnd, device_width, device_height)
+                    .expect("Failed to recreate device resources");
+            }
         }
 
         if let Some(ref swap_chain) = device_resources.dxgi_swapchain {

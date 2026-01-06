@@ -65,8 +65,7 @@ pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey
         // For ZStack, always use max of children (like cross-axis)
         if element!().direction == Direction::ZStack {
             // Cross-axis sizing: max of child sizes + padding
-            let (children_max_size, children_max_min_size) = if non_floating_children.is_empty()
-            {
+            let (children_max_size, children_max_min_size) = if non_floating_children.is_empty() {
                 (0.0_f32, 0.0_f32)
             } else {
                 non_floating_children

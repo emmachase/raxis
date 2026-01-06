@@ -318,7 +318,10 @@ impl Text {
     /// Used for shadow cache identity.
     fn compute_layout_hash(&self, arenas: &UIArenas) -> u64 {
         let mut hasher = DefaultHasher::new();
-        self.text.resolve(arenas).expect("intern string missing").hash(&mut hasher);
+        self.text
+            .resolve(arenas)
+            .expect("intern string missing")
+            .hash(&mut hasher);
         self.font_size.to_bits().hash(&mut hasher);
         self.line_spacing.hash(&mut hasher);
         self.text_shadows.hash(&mut hasher);
@@ -689,7 +692,9 @@ impl TextWidgetState {
             let mut trailing = windows::core::BOOL(0);
             let mut inside = windows::core::BOOL(0);
             let mut metrics = DWRITE_HIT_TEST_METRICS::default();
-            layout.HitTestPoint(x_dip, y_dip, &mut trailing, &mut inside, &mut metrics).ok()?;
+            layout
+                .HitTestPoint(x_dip, y_dip, &mut trailing, &mut inside, &mut metrics)
+                .ok()?;
 
             if !inside.as_bool() {
                 return None;
@@ -703,7 +708,7 @@ impl TextWidgetState {
     fn find_hyperlink_at_index(&self, idx: u32, spans: &[TextSpan]) -> Option<usize> {
         // Convert UTF-16 index to byte index for comparison with span ranges
         let byte_idx = self.utf16_to_byte_index(idx as usize);
-        
+
         for (i, span) in spans.iter().enumerate() {
             if span.is_hyperlink() && byte_idx >= span.start && byte_idx < span.end {
                 return Some(i);
@@ -716,7 +721,7 @@ impl TextWidgetState {
     fn utf16_to_byte_index(&self, utf16_idx: usize) -> usize {
         let mut byte_idx = 0;
         let mut utf16_count = 0;
-        
+
         for ch in self.cached_text.chars() {
             if utf16_count >= utf16_idx {
                 break;
@@ -744,7 +749,7 @@ impl TextWidgetState {
                 // Convert byte indices to UTF-16 indices for DirectWrite
                 let start_utf16 = self.byte_to_utf16_index(span.start);
                 let end_utf16 = self.byte_to_utf16_index(span.end);
-                
+
                 let range = DWRITE_TEXT_RANGE {
                     startPosition: start_utf16 as u32,
                     length: (end_utf16 - start_utf16) as u32,
@@ -780,7 +785,7 @@ impl TextWidgetState {
     fn byte_to_utf16_index(&self, byte_idx: usize) -> usize {
         let mut utf16_count = 0;
         let mut current_byte = 0;
-        
+
         for ch in self.cached_text.chars() {
             if current_byte >= byte_idx {
                 break;
@@ -884,8 +889,7 @@ impl<Message> Widget<Message> for Text {
         let content_box = bounds.content_box;
 
         match event {
-            super::Event::MouseMove { x, y }
-            | super::Event::MouseEnter { x, y } => {
+            super::Event::MouseMove { x, y } | super::Event::MouseEnter { x, y } => {
                 let widget_x = x - content_box.x;
                 let widget_y = y - content_box.y;
 
@@ -897,12 +901,10 @@ impl<Message> Widget<Message> for Text {
                         state.cached_spans_hash = None;
                         shell.request_redraw(hwnd, RedrawRequest::Immediate);
                     }
-                } else {
-                    if state.hovered_hyperlink_index.is_some() {
-                        state.hovered_hyperlink_index = None;
-                        state.cached_spans_hash = None;
-                        shell.request_redraw(hwnd, RedrawRequest::Immediate);
-                    }
+                } else if state.hovered_hyperlink_index.is_some() {
+                    state.hovered_hyperlink_index = None;
+                    state.cached_spans_hash = None;
+                    shell.request_redraw(hwnd, RedrawRequest::Immediate);
                 }
             }
             super::Event::MouseLeave { .. } => {
@@ -916,12 +918,11 @@ impl<Message> Widget<Message> for Text {
                 let widget_x = x - content_box.x;
                 let widget_y = y - content_box.y;
 
-                if let Some(idx) = state.hit_test_index(widget_x, widget_y) {
-                    if let Some(span_idx) = state.find_hyperlink_at_index(idx, &self.spans) {
-                        if let Some(url) = &self.spans[span_idx].url {
-                            shell.open_url(url);
-                        }
-                    }
+                if let Some(idx) = state.hit_test_index(widget_x, widget_y)
+                    && let Some(span_idx) = state.find_hyperlink_at_index(idx, &self.spans)
+                    && let Some(url) = &self.spans[span_idx].url
+                {
+                    shell.open_url(url);
                 }
             }
             _ => {}
@@ -968,12 +969,18 @@ impl<Message> Widget<Message> for Text {
         );
 
         // Apply span styles (colors and hyperlink underlines) if they changed or layout was rebuilt
-        if !self.spans.is_empty() && state.spans_changed(&self.spans)
-            && let Some(layout) = &state.text_layout {
-                let _ = state.apply_spans(layout, &self.spans);
-                // Apply hyperlink underlines for spans with URLs
-                let _ = state.apply_hyperlink_underlines(layout, &self.spans, state.hovered_hyperlink_index);
-            }
+        if !self.spans.is_empty()
+            && state.spans_changed(&self.spans)
+            && let Some(layout) = &state.text_layout
+        {
+            let _ = state.apply_spans(layout, &self.spans);
+            // Apply hyperlink underlines for spans with URLs
+            let _ = state.apply_hyperlink_underlines(
+                layout,
+                &self.spans,
+                state.hovered_hyperlink_index,
+            );
+        }
 
         // Draw the text
         if let Some(layout) = &state.text_layout {
@@ -989,7 +996,10 @@ impl<Message> Widget<Message> for Text {
             recorder.draw_text(
                 &bounds.content_box,
                 layout,
-                self.color.unwrap_or(ColorChoice::CurrentColor).or_current_color(style.color).unwrap_or_default(),
+                self.color
+                    .unwrap_or(ColorChoice::CurrentColor)
+                    .or_current_color(style.color)
+                    .unwrap_or_default(),
                 shadows,
                 text_hash,
             );
@@ -1014,10 +1024,10 @@ impl<Message> Widget<Message> for Text {
         let widget_x = point.x - content_box.x;
         let widget_y = point.y - content_box.y;
 
-        if let Some(idx) = state.hit_test_index(widget_x, widget_y) {
-            if state.find_hyperlink_at_index(idx, &self.spans).is_some() {
-                return Some(super::Cursor::Pointer);
-            }
+        if let Some(idx) = state.hit_test_index(widget_x, widget_y)
+            && state.find_hyperlink_at_index(idx, &self.spans).is_some()
+        {
+            return Some(super::Cursor::Pointer);
         }
         None // Text widget doesn't change cursor otherwise
     }

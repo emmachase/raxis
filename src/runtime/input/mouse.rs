@@ -1,6 +1,8 @@
 use windows::Win32::Foundation::POINT;
 use windows::Win32::UI::Input::KeyboardAndMouse::GetDoubleClickTime;
-use windows::Win32::UI::WindowsAndMessaging::{GetMessageTime, GetSystemMetrics, SM_CXDOUBLECLK, SM_CYDOUBLECLK};
+use windows::Win32::UI::WindowsAndMessaging::{
+    GetMessageTime, GetSystemMetrics, SM_CXDOUBLECLK, SM_CYDOUBLECLK,
+};
 
 /// Tracks multi-click state for mouse button events
 #[derive(Debug, Clone, Copy)]

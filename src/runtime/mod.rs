@@ -50,7 +50,10 @@ use windows::Win32::UI::Input::Ime::{
     CANDIDATEFORM, CFS_POINT, CPS_COMPLETE, ImmNotifyIME, ImmSetCandidateWindow, NI_COMPOSITIONSTR,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER, SM_CYFRAME, SW_HIDE, SW_MINIMIZE, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP, WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WNDCLASSEXW, WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPED, WS_THICKFRAME
+    HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER,
+    SM_CYFRAME, SW_HIDE, SW_MINIMIZE, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
+    WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WNDCLASSEXW,
+    WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPED, WS_THICKFRAME,
 };
 use windows::{
     Win32::{
@@ -66,10 +69,10 @@ use windows::{
             Input::Ime::{ImmGetContext, ImmReleaseContext},
             WindowsAndMessaging::{
                 CS_HREDRAW, CS_VREDRAW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW,
-                DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW,
-                IDC_ARROW, LoadCursorW, MSG, RegisterClassExW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
-                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage,
-                WM_CHAR, WM_DESTROY, WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+                DispatchMessageW, GWLP_USERDATA, GetClientRect, GetMessageW, IDC_ARROW,
+                LoadCursorW, MSG, RegisterClassExW, SW_SHOW, SWP_NOACTIVATE, SWP_NOZORDER,
+                SetWindowLongPtrW, SetWindowPos, ShowWindow, TranslateMessage, WM_CHAR, WM_DESTROY,
+                WM_DISPLAYCHANGE, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
                 WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MBUTTONDOWN,
                 WM_MBUTTONUP, WM_MOUSEMOVE, WM_NCLBUTTONDOWN, WM_NCLBUTTONUP, WM_NCMOUSELEAVE,
                 WM_NCMOUSEMOVE, WM_PAINT, WM_SETCURSOR, WM_SIZE, WS_OVERLAPPEDWINDOW,
@@ -197,16 +200,24 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
             WM_MBUTTONUP => wndproc::handle_mbuttonup::<State, Message>(hwnd),
 
             // Non-client mouse events for custom titlebar buttons
-            WM_NCMOUSEMOVE if replace_titlebar => wndproc::handle_ncmousemove::<State, Message>(hwnd, wparam, lparam),
-            WM_NCMOUSELEAVE if replace_titlebar => wndproc::handle_mouseleave::<State, Message>(hwnd),
+            WM_NCMOUSEMOVE if replace_titlebar => {
+                wndproc::handle_ncmousemove::<State, Message>(hwnd, wparam, lparam)
+            }
+            WM_NCMOUSELEAVE if replace_titlebar => {
+                wndproc::handle_mouseleave::<State, Message>(hwnd)
+            }
             WM_NCLBUTTONDOWN if replace_titlebar => {
-                if let Some(result) = wndproc::handle_nclbuttondown::<State, Message>(hwnd, wparam, lparam) {
+                if let Some(result) =
+                    wndproc::handle_nclbuttondown::<State, Message>(hwnd, wparam, lparam)
+                {
                     return result;
                 }
                 DefWindowProcW(hwnd, msg, wparam, lparam)
             }
             WM_NCLBUTTONUP if replace_titlebar => {
-                if let Some(result) = wndproc::handle_nclbuttonup::<State, Message>(hwnd, wparam, lparam) {
+                if let Some(result) =
+                    wndproc::handle_nclbuttonup::<State, Message>(hwnd, wparam, lparam)
+                {
                     return result;
                 }
                 DefWindowProcW(hwnd, msg, wparam, lparam)
@@ -271,15 +282,16 @@ fn wndproc_impl<State: 'static, Message: 'static + Send + Clone>(
                     let DragData::Text(text) = data;
 
                     if let Ok(effect) = start_text_drag(&text, true)
-                        && let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
-                            let state = state.deref_mut();
+                        && let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd)
+                    {
+                        let state = state.deref_mut();
 
-                            let event = Event::DragFinish { effect };
+                        let event = Event::DragFinish { effect };
 
-                            state
-                                .shell
-                                .dispatch_event_to(hwnd, &mut state.ui_tree, event, src_id);
-                        }
+                        state
+                            .shell
+                            .dispatch_event_to(hwnd, &mut state.ui_tree, event, src_id);
+                    }
                 }
 
                 DeferredControl::DisableIME => unsafe {
@@ -476,7 +488,7 @@ impl<
             wndproc::register_taskbar_created_message();
 
             let window_style = if replace_titlebar {
-                WS_OVERLAPPED | WS_THICKFRAME | WS_MAXIMIZEBOX 
+                WS_OVERLAPPED | WS_THICKFRAME | WS_MAXIMIZEBOX
             } else {
                 WS_OVERLAPPEDWINDOW
             };
@@ -621,7 +633,7 @@ impl<
             if ptr != 0 {
                 let handle = Box::from_raw(ptr as *mut WinUserData<State, Message>);
                 let task_executor_thread = handle.lock().unwrap().task_executor_thread.take();
-                
+
                 // Drop the handle to destruct the application state
                 drop(handle);
 

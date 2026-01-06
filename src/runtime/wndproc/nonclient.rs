@@ -6,13 +6,12 @@ use windows::Win32::UI::HiDpi::GetDpiForWindow;
 use windows::Win32::UI::WindowsAndMessaging::{
     AdjustWindowRectEx, GWL_STYLE, GetWindowLongW, GetWindowRect, HTBOTTOM, HTBOTTOMLEFT,
     HTBOTTOMRIGHT, HTCAPTION, HTCLIENT, HTCLOSE, HTLEFT, HTMAXBUTTON, HTMINBUTTON, HTNOWHERE,
-    HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, WINDOW_STYLE, WS_CAPTION,
-    WS_EX_NOREDIRECTIONBITMAP
+    HTRIGHT, HTTOP, HTTOPLEFT, HTTOPRIGHT, WINDOW_STYLE, WS_CAPTION, WS_EX_NOREDIRECTIONBITMAP,
 };
 use windows::core::w;
 
-use crate::{dips_scale, runtime::Result};
 use crate::runtime::titlebar_hit_test::get_titlebar_hit_regions;
+use crate::{dips_scale, runtime::Result};
 
 /// Non-client area hit testing for custom titlebar
 pub fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
@@ -21,17 +20,29 @@ pub fn hit_test_nca(hwnd: HWND, _wparam: WPARAM, lparam: LPARAM) -> u32 {
 
     if let Some(regions) = get_titlebar_hit_regions(hwnd) {
         if let Some(rc) = regions.close
-            && x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
-                return HTCLOSE;
-            }
+            && x_px >= rc.left
+            && x_px < rc.right
+            && y_px >= rc.top
+            && y_px < rc.bottom
+        {
+            return HTCLOSE;
+        }
         if let Some(rc) = regions.maximize
-            && x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
-                return HTMAXBUTTON;
-            }
+            && x_px >= rc.left
+            && x_px < rc.right
+            && y_px >= rc.top
+            && y_px < rc.bottom
+        {
+            return HTMAXBUTTON;
+        }
         if let Some(rc) = regions.minimize
-            && x_px >= rc.left && x_px < rc.right && y_px >= rc.top && y_px < rc.bottom {
-                return HTMINBUTTON;
-            }
+            && x_px >= rc.left
+            && x_px < rc.right
+            && y_px >= rc.top
+            && y_px < rc.bottom
+        {
+            return HTMINBUTTON;
+        }
     }
 
     let mut rc_window = RECT::default();

@@ -25,8 +25,7 @@ use windows::Win32::{
 };
 
 /// Image fit modes similar to CSS object-fit
-#[derive(Debug, Clone, Copy, PartialEq)]
-#[derive(Default)]
+#[derive(Debug, Clone, Copy, PartialEq, Default)]
 pub enum ImageFit {
     /// Stretch to fill the container (default)
     #[default]
@@ -40,7 +39,6 @@ pub enum ImageFit {
     /// Display at intrinsic size with no scaling
     None,
 }
-
 
 /// Image widget for displaying bitmap images using WIC
 #[derive(Debug)]
@@ -279,14 +277,15 @@ impl<Message> Widget<Message> for Image {
 
             // Load image if needed
             if state.load_image(image_path).is_ok()
-                && let Some(ref bitmap) = state.d2d_bitmap {
-                    let dest_rect = self.calculate_dest_rect(
-                        &bounds.content_box,
-                        state.intrinsic_width,
-                        state.intrinsic_height,
-                    );
-                    recorder.draw_bitmap(&dest_rect, bitmap, self.opacity);
-                }
+                && let Some(ref bitmap) = state.d2d_bitmap
+            {
+                let dest_rect = self.calculate_dest_rect(
+                    &bounds.content_box,
+                    state.intrinsic_width,
+                    state.intrinsic_height,
+                );
+                recorder.draw_bitmap(&dest_rect, bitmap, self.opacity);
+            }
         }
     }
 

@@ -1,7 +1,8 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, collections::hash_map, mem::ManuallyDrop};
+use windows::Win32::Graphics::Direct2D::Common::D2D1_BORDER_MODE_HARD;
 use windows::Win32::Graphics::Direct2D::{
-    CLSID_D2D1Shadow,
+    CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow,
     Common::{
         D2D_RECT_F, D2D_SIZE_F, D2D1_COLOR_F, D2D1_COMPOSITE_MODE_SOURCE_OVER,
         D2D1_FIGURE_BEGIN_FILLED, D2D1_FIGURE_END_CLOSED,
@@ -10,13 +11,18 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_CAP_STYLE_ROUND, D2D1_CAP_STYLE_SQUARE, D2D1_CAP_STYLE_TRIANGLE,
     D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE, D2D1_DASH_STYLE_CUSTOM, D2D1_DASH_STYLE_DASH,
     D2D1_DASH_STYLE_DASH_DOT, D2D1_DASH_STYLE_DASH_DOT_DOT, D2D1_DASH_STYLE_DOT,
-    D2D1_DASH_STYLE_SOLID, D2D1_INTERPOLATION_MODE_LINEAR, D2D1_LAYER_PARAMETERS1,
-    D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER, D2D1_LINE_JOIN_MITER_OR_BEVEL,
-    D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT,
-    D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES,
-    D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, ID2D1DeviceContext6,
-    ID2D1Effect, ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
+    D2D1_DASH_STYLE_SOLID, D2D1_GAUSSIANBLUR_PROP_BORDER_MODE, D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION,
+    D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION, D2D1_INTERPOLATION_MODE_LINEAR,
+    D2D1_LAYER_PARAMETERS1, D2D1_LINE_JOIN_BEVEL, D2D1_LINE_JOIN_MITER,
+    D2D1_LINE_JOIN_MITER_OR_BEVEL, D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT,
+    D2D1_PROPERTY_TYPE_VECTOR4, D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION,
+    D2D1_SHADOW_PROP_COLOR, D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE,
+    D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE, ID2D1Bitmap, ID2D1DeviceContext6, ID2D1Effect,
+    ID2D1Factory, ID2D1Geometry, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush,
     ID2D1StrokeStyle,
+};
+use windows::Win32::Graphics::Direct2D::{
+    D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED, D2D1_PROPERTY_TYPE_ENUM,
 };
 use windows_core::Interface;
 use windows_numerics::{Matrix3x2, Vector2, Vector4};
@@ -301,16 +307,13 @@ impl Renderer<'_> {
                     stroke,
                 );
             } else if let Ok(path_geometry) = self.factory.CreatePathGeometry()
-                && let Ok(sink) = path_geometry.Open() {
-                    self.create_rounded_rectangle_path(&sink, rect, border_radius);
-                    let _ = sink.Close();
-                    self.render_target.DrawGeometry(
-                        &path_geometry,
-                        self.brush,
-                        stroke_width,
-                        stroke,
-                    );
-                }
+                && let Ok(sink) = path_geometry.Open()
+            {
+                self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                let _ = sink.Close();
+                self.render_target
+                    .DrawGeometry(&path_geometry, self.brush, stroke_width, stroke);
+            }
         }
     }
 
@@ -519,11 +522,12 @@ impl Renderer<'_> {
                     } else {
                         // Complex rounded rectangle - use path geometry
                         if let Ok(path_geometry) = self.factory.CreatePathGeometry()
-                            && let Ok(sink) = path_geometry.Open() {
-                                self.create_rounded_rectangle_path(&sink, rect, border_radius);
-                                let _ = sink.Close();
+                            && let Ok(sink) = path_geometry.Open()
+                        {
+                            self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                            let _ = sink.Close();
 
-                                let mut layer_params = D2D1_LAYER_PARAMETERS1 {
+                            let mut layer_params = D2D1_LAYER_PARAMETERS1 {
                                     contentBounds: D2D_RECT_F {
                                         left: rect.x,
                                         top: rect.y,
@@ -537,11 +541,11 @@ impl Renderer<'_> {
                                     opacityBrush: ManuallyDrop::new(None),
                                     layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
                                 };
-                                self.render_target.PushLayer(&layer_params, None);
-                                // Manually drop the ManuallyDrop fields to prevent leaks
-                                ManuallyDrop::drop(&mut layer_params.geometricMask);
-                                ManuallyDrop::drop(&mut layer_params.opacityBrush);
-                            }
+                            self.render_target.PushLayer(&layer_params, None);
+                            // Manually drop the ManuallyDrop fields to prevent leaks
+                            ManuallyDrop::drop(&mut layer_params.geometricMask);
+                            ManuallyDrop::drop(&mut layer_params.opacityBrush);
+                        }
                     }
                 } else {
                     // Use simple axis-aligned clip
@@ -582,56 +586,54 @@ impl Renderer<'_> {
 
                 // Create a frame geometry (outer rect with hole)
                 if let Ok(frame_geometry) = self.factory.CreatePathGeometry()
-                    && let Ok(sink) = frame_geometry.Open() {
-                        // Start the outer rectangle
+                    && let Ok(sink) = frame_geometry.Open()
+                {
+                    // Start the outer rectangle
+                    sink.BeginFigure(
+                        Vector2::new(outer_rect.x, outer_rect.y),
+                        D2D1_FIGURE_BEGIN_FILLED,
+                    );
+                    sink.AddLine(Vector2::new(outer_rect.x + outer_rect.width, outer_rect.y));
+                    sink.AddLine(Vector2::new(
+                        outer_rect.x + outer_rect.width,
+                        outer_rect.y + outer_rect.height,
+                    ));
+                    sink.AddLine(Vector2::new(outer_rect.x, outer_rect.y + outer_rect.height));
+                    sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+
+                    // Add the inner hole (reverse winding)
+                    if let Some(border_radius) = border_radius {
+                        // Add rounded rectangle hole
+                        self.create_rounded_rectangle_path_reverse(
+                            &sink,
+                            &element_rect_with_spread,
+                            border_radius,
+                        );
+                    } else {
+                        // Add rectangular hole (reverse winding - counterclockwise)
                         sink.BeginFigure(
-                            Vector2::new(outer_rect.x, outer_rect.y),
+                            Vector2::new(element_rect_with_spread.x, element_rect_with_spread.y),
                             D2D1_FIGURE_BEGIN_FILLED,
                         );
-                        sink.AddLine(Vector2::new(outer_rect.x + outer_rect.width, outer_rect.y));
                         sink.AddLine(Vector2::new(
-                            outer_rect.x + outer_rect.width,
-                            outer_rect.y + outer_rect.height,
+                            element_rect_with_spread.x,
+                            element_rect_with_spread.y + element_rect_with_spread.height,
                         ));
-                        sink.AddLine(Vector2::new(outer_rect.x, outer_rect.y + outer_rect.height));
+                        sink.AddLine(Vector2::new(
+                            element_rect_with_spread.x + element_rect_with_spread.width,
+                            element_rect_with_spread.y + element_rect_with_spread.height,
+                        ));
+                        sink.AddLine(Vector2::new(
+                            element_rect_with_spread.x + element_rect_with_spread.width,
+                            element_rect_with_spread.y,
+                        ));
                         sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-
-                        // Add the inner hole (reverse winding)
-                        if let Some(border_radius) = border_radius {
-                            // Add rounded rectangle hole
-                            self.create_rounded_rectangle_path_reverse(
-                                &sink,
-                                &element_rect_with_spread,
-                                border_radius,
-                            );
-                        } else {
-                            // Add rectangular hole (reverse winding - counterclockwise)
-                            sink.BeginFigure(
-                                Vector2::new(
-                                    element_rect_with_spread.x,
-                                    element_rect_with_spread.y,
-                                ),
-                                D2D1_FIGURE_BEGIN_FILLED,
-                            );
-                            sink.AddLine(Vector2::new(
-                                element_rect_with_spread.x,
-                                element_rect_with_spread.y + element_rect_with_spread.height,
-                            ));
-                            sink.AddLine(Vector2::new(
-                                element_rect_with_spread.x + element_rect_with_spread.width,
-                                element_rect_with_spread.y + element_rect_with_spread.height,
-                            ));
-                            sink.AddLine(Vector2::new(
-                                element_rect_with_spread.x + element_rect_with_spread.width,
-                                element_rect_with_spread.y,
-                            ));
-                            sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                        }
-
-                        let _ = sink.Close();
-                        self.render_target
-                            .FillGeometry(&frame_geometry, self.brush, None);
                     }
+
+                    let _ = sink.Close();
+                    self.render_target
+                        .FillGeometry(&frame_geometry, self.brush, None);
+                }
 
                 // Pop the clip
                 if border_radius.is_some() {
@@ -688,11 +690,12 @@ impl Renderer<'_> {
                 } else {
                     // Complex rounded rectangle - use path geometry
                     if let Ok(path_geometry) = self.factory.CreatePathGeometry()
-                        && let Ok(sink) = path_geometry.Open() {
-                            self.create_rounded_rectangle_path(&sink, rect, border_radius);
-                            let _ = sink.Close();
+                        && let Ok(sink) = path_geometry.Open()
+                    {
+                        self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                        let _ = sink.Close();
 
-                            let mut layer_params = D2D1_LAYER_PARAMETERS1 {
+                        let mut layer_params = D2D1_LAYER_PARAMETERS1 {
                                 contentBounds: D2D_RECT_F {
                                     left: rect.x,
                                     top: rect.y,
@@ -706,11 +709,11 @@ impl Renderer<'_> {
                                 opacityBrush: ManuallyDrop::new(None),
                                 layerOptions: windows::Win32::Graphics::Direct2D::D2D1_LAYER_OPTIONS1_INITIALIZE_FROM_BACKGROUND,
                             };
-                            self.render_target.PushLayer(&layer_params, None);
-                            // Manually drop the ManuallyDrop fields to prevent leaks
-                            ManuallyDrop::drop(&mut layer_params.geometricMask);
-                            ManuallyDrop::drop(&mut layer_params.opacityBrush);
-                        }
+                        self.render_target.PushLayer(&layer_params, None);
+                        // Manually drop the ManuallyDrop fields to prevent leaks
+                        ManuallyDrop::drop(&mut layer_params.geometricMask);
+                        ManuallyDrop::drop(&mut layer_params.opacityBrush);
+                    }
                 }
             } else {
                 // Use simple axis-aligned clip
@@ -846,15 +849,16 @@ impl Renderer<'_> {
                         } else {
                             // Create path geometry for complex rounded rectangle
                             if let Ok(path_geometry) = self.factory.CreatePathGeometry()
-                                && let Ok(sink) = path_geometry.Open() {
-                                    self.create_rounded_rectangle_path(
-                                        &sink,
-                                        &shadow_rect_in_bitmap,
-                                        border_radius,
-                                    );
-                                    let _ = sink.Close();
-                                    bitmap_rt.FillGeometry(&path_geometry, &shadow_brush, None);
-                                }
+                                && let Ok(sink) = path_geometry.Open()
+                            {
+                                self.create_rounded_rectangle_path(
+                                    &sink,
+                                    &shadow_rect_in_bitmap,
+                                    border_radius,
+                                );
+                                let _ = sink.Close();
+                                bitmap_rt.FillGeometry(&path_geometry, &shadow_brush, None);
+                            }
                         }
                     } else {
                         // Draw regular rectangle shadow shape
@@ -960,49 +964,47 @@ impl Renderer<'_> {
                 ) {
                     // Create a path geometry that represents the frame (outer rect with hole)
                     if let Ok(frame_geometry) = self.factory.CreatePathGeometry()
-                        && let Ok(sink) = frame_geometry.Open() {
-                            // Start the outer rectangle
-                            sink.BeginFigure(Vector2::new(0.0, 0.0), D2D1_FIGURE_BEGIN_FILLED);
-                            sink.AddLine(Vector2::new(expanded_width, 0.0));
-                            sink.AddLine(Vector2::new(expanded_width, expanded_height));
-                            sink.AddLine(Vector2::new(0.0, expanded_height));
+                        && let Ok(sink) = frame_geometry.Open()
+                    {
+                        // Start the outer rectangle
+                        sink.BeginFigure(Vector2::new(0.0, 0.0), D2D1_FIGURE_BEGIN_FILLED);
+                        sink.AddLine(Vector2::new(expanded_width, 0.0));
+                        sink.AddLine(Vector2::new(expanded_width, expanded_height));
+                        sink.AddLine(Vector2::new(0.0, expanded_height));
+                        sink.EndFigure(D2D1_FIGURE_END_CLOSED);
+
+                        // Now add the inner shape as a hole (reverse winding)
+                        if let Some(border_radius) = border_radius {
+                            // Add rounded rectangle hole
+                            self.create_rounded_rectangle_path_reverse(
+                                &sink,
+                                &element_rect_in_bitmap,
+                                border_radius,
+                            );
+                        } else {
+                            // Add rectangular hole (reverse winding - counterclockwise)
+                            sink.BeginFigure(
+                                Vector2::new(element_rect_in_bitmap.x, element_rect_in_bitmap.y),
+                                D2D1_FIGURE_BEGIN_FILLED,
+                            );
+                            sink.AddLine(Vector2::new(
+                                element_rect_in_bitmap.x,
+                                element_rect_in_bitmap.y + element_rect_in_bitmap.height,
+                            ));
+                            sink.AddLine(Vector2::new(
+                                element_rect_in_bitmap.x + element_rect_in_bitmap.width,
+                                element_rect_in_bitmap.y + element_rect_in_bitmap.height,
+                            ));
+                            sink.AddLine(Vector2::new(
+                                element_rect_in_bitmap.x + element_rect_in_bitmap.width,
+                                element_rect_in_bitmap.y,
+                            ));
                             sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-
-                            // Now add the inner shape as a hole (reverse winding)
-                            if let Some(border_radius) = border_radius {
-                                // Add rounded rectangle hole
-                                self.create_rounded_rectangle_path_reverse(
-                                    &sink,
-                                    &element_rect_in_bitmap,
-                                    border_radius,
-                                );
-                            } else {
-                                // Add rectangular hole (reverse winding - counterclockwise)
-                                sink.BeginFigure(
-                                    Vector2::new(
-                                        element_rect_in_bitmap.x,
-                                        element_rect_in_bitmap.y,
-                                    ),
-                                    D2D1_FIGURE_BEGIN_FILLED,
-                                );
-                                sink.AddLine(Vector2::new(
-                                    element_rect_in_bitmap.x,
-                                    element_rect_in_bitmap.y + element_rect_in_bitmap.height,
-                                ));
-                                sink.AddLine(Vector2::new(
-                                    element_rect_in_bitmap.x + element_rect_in_bitmap.width,
-                                    element_rect_in_bitmap.y + element_rect_in_bitmap.height,
-                                ));
-                                sink.AddLine(Vector2::new(
-                                    element_rect_in_bitmap.x + element_rect_in_bitmap.width,
-                                    element_rect_in_bitmap.y,
-                                ));
-                                sink.EndFigure(D2D1_FIGURE_END_CLOSED);
-                            }
-
-                            let _ = sink.Close();
-                            bitmap_rt.FillGeometry(&frame_geometry, &white_brush, None);
                         }
+
+                        let _ = sink.Close();
+                        bitmap_rt.FillGeometry(&frame_geometry, &white_brush, None);
+                    }
                 }
 
                 let _ = bitmap_rt.EndDraw(None, None);
@@ -1124,12 +1126,13 @@ impl Renderer<'_> {
             } else {
                 // Create path geometry for complex rounded rectangle with different corner radii
                 if let Ok(path_geometry) = self.factory.CreatePathGeometry()
-                    && let Ok(sink) = path_geometry.Open() {
-                        self.create_rounded_rectangle_path(&sink, rect, border_radius);
-                        let _ = sink.Close();
-                        self.render_target
-                            .FillGeometry(&path_geometry, self.brush, None);
-                    }
+                    && let Ok(sink) = path_geometry.Open()
+                {
+                    self.create_rounded_rectangle_path(&sink, rect, border_radius);
+                    let _ = sink.Close();
+                    self.render_target
+                        .FillGeometry(&path_geometry, self.brush, None);
+                }
             }
         }
     }
@@ -1763,6 +1766,131 @@ impl Renderer<'_> {
             shadow_effect.SetInput(0, Some(&bitmap.cast::<ID2D1Image>().unwrap()), true);
 
             Some(shadow_effect)
+        }
+    }
+
+    /// Apply Gaussian blur effect to a bitmap
+    pub fn apply_gaussian_blur(
+        &self,
+        bitmap: &ID2D1Bitmap,
+        radius: f32,
+    ) -> windows::core::Result<ID2D1Effect> {
+        unsafe {
+            let blur_effect = self.render_target.CreateEffect(&CLSID_D2D1GaussianBlur)?;
+            blur_effect.SetInput(0, Some(&bitmap.cast::<ID2D1Image>().unwrap()), true);
+
+            // Set blur standard deviation
+            blur_effect.SetValue(
+                D2D1_GAUSSIANBLUR_PROP_STANDARD_DEVIATION.0 as u32,
+                D2D1_PROPERTY_TYPE_FLOAT,
+                &(radius / 2.0).to_le_bytes(),
+                // TODO: Audit the expanded size of the incoming bitmap (does it actually need to be so big?)
+                // As well as the radius, since it is technically supposed to be * 3 of stddev according to the docs...
+            )?;
+
+            // Set border mode to hard since we don't care about soft edges as this will get clipped by the layout bounds
+            let border_mode: i32 = D2D1_BORDER_MODE_HARD.0;
+            blur_effect.SetValue(
+                D2D1_GAUSSIANBLUR_PROP_BORDER_MODE.0 as u32,
+                D2D1_PROPERTY_TYPE_ENUM,
+                &border_mode.to_le_bytes(),
+            )?;
+
+            // Set optimization mode
+            let optimization: i32 = D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED.0;
+            blur_effect.SetValue(
+                D2D1_GAUSSIANBLUR_PROP_OPTIMIZATION.0 as u32,
+                D2D1_PROPERTY_TYPE_ENUM,
+                &optimization.to_le_bytes(),
+            )?;
+
+            Ok(blur_effect)
+        }
+    }
+
+    /// Render a subset of commands to an offscreen bitmap, maintaining clip state
+    pub fn render_commands_to_bitmap(
+        &self,
+        commands: &[crate::gfx::draw_commands::DrawCommand],
+        bounds: &RectDIP,
+    ) -> windows::core::Result<ID2D1Bitmap> {
+        use crate::gfx::command_executor::CommandExecutor;
+
+        unsafe {
+            let size = D2D_SIZE_F {
+                width: bounds.width,
+                height: bounds.height,
+            };
+
+            let bitmap_rt = self.render_target.CreateCompatibleRenderTarget(
+                Some(&size),
+                None,
+                None,
+                D2D1_COMPATIBLE_RENDER_TARGET_OPTIONS_NONE,
+            )?;
+
+            // Set up coordinate system: translate so bounds start at (0,0)
+            let transform = Matrix3x2::translation(-bounds.x, -bounds.y);
+            bitmap_rt.SetTransform(&transform);
+
+            // Clear with transparent background
+            bitmap_rt.BeginDraw();
+            bitmap_rt.Clear(Some(&D2D1_COLOR_F {
+                r: 0.0,
+                g: 0.0,
+                b: 0.0,
+                a: 0.0,
+            }));
+
+            // Create a temporary renderer for the offscreen target
+            let offscreen_renderer = Renderer {
+                factory: self.factory,
+                render_target: &bitmap_rt.cast::<ID2D1DeviceContext6>().unwrap(),
+                brush: self.brush,
+                shadow_cache: self.shadow_cache,
+            };
+
+            // Execute commands, track clip state
+            let mut cur_clip_stack = Vec::new();
+            for i in 0..commands.len() {
+                let command = &commands[i];
+                match command {
+                    crate::gfx::draw_commands::DrawCommand::PushAxisAlignedClip { .. }
+                    | crate::gfx::draw_commands::DrawCommand::PushRoundedClip { .. }
+                    | crate::gfx::draw_commands::DrawCommand::PushLayer { .. } => {
+                        cur_clip_stack.push(command.clone());
+                    }
+                    crate::gfx::draw_commands::DrawCommand::PopAxisAlignedClip
+                    | crate::gfx::draw_commands::DrawCommand::PopRoundedClip
+                    | crate::gfx::draw_commands::DrawCommand::PopLayer => {
+                        cur_clip_stack.pop();
+                    }
+                    _ => {}
+                }
+
+                CommandExecutor::execute_command(&offscreen_renderer, commands, i)?;
+            }
+
+            // Pop any remaining clips
+            while let Some(command) = cur_clip_stack.pop() {
+                match command {
+                    crate::gfx::draw_commands::DrawCommand::PushAxisAlignedClip { .. } => {
+                        bitmap_rt.PopAxisAlignedClip();
+                    }
+                    crate::gfx::draw_commands::DrawCommand::PushRoundedClip { .. } => {
+                        bitmap_rt.PopLayer();
+                    }
+                    crate::gfx::draw_commands::DrawCommand::PushLayer { .. } => {
+                        bitmap_rt.PopLayer();
+                    }
+                    _ => {}
+                }
+            }
+
+            bitmap_rt.EndDraw(None, None)?;
+
+            // Get bitmap from render target
+            bitmap_rt.GetBitmap()
         }
     }
 }

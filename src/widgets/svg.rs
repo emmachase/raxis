@@ -374,9 +374,10 @@ impl<Message> Widget<Message> for Svg {
 
             // Ensure SVG document is created/cached in state
             if state.ensure_svg_document(svg_content, self.recolor).is_ok()
-                && let Some(ref svg_document) = state.svg_document {
-                    recorder.draw_svg(&bounds.content_box, svg_document);
-                }
+                && let Some(ref svg_document) = state.svg_document
+            {
+                recorder.draw_svg(&bounds.content_box, svg_document);
+            }
         }
     }
 

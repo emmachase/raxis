@@ -47,11 +47,12 @@ pub fn handle_lbuttondown<State: 'static, Message: 'static + Send + Clone>(
 
         // First, check scrollbar thumb hit-testing
         if state.scroll_drag.is_none()
-            && let Some(drag) = state.hit_test_scrollbar_thumb(x, y, true) {
-                state.scroll_drag = Some(drag);
-                let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
-                return LRESULT(0);
-            }
+            && let Some(drag) = state.hit_test_scrollbar_thumb(x, y, true)
+        {
+            state.scroll_drag = Some(drag);
+            let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
+            return LRESULT(0);
+        }
 
         // Update multi-click tracking
         let click_count = state.mouse_state.update_click_count(POINT { x: xi, y: yi });
@@ -404,28 +405,29 @@ pub fn handle_ncmousemove<State: 'static, Message: 'static + Send + Clone>(
             &mut state.active_mouse_tracking_flags,
             TME_NONCLIENT | TME_LEAVE,
         );
-        
+
         // Get screen coordinates from lparam and convert to client coordinates
         let x_screen = (lparam.0 & 0xFFFF) as i16 as i32;
         let y_screen = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-        
-        let mut pt = POINT { x: x_screen, y: y_screen };
+
+        let mut pt = POINT {
+            x: x_screen,
+            y: y_screen,
+        };
         let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
-        
+
         let to_dip = dips_scale(hwnd);
         let x = (pt.x as f32) * to_dip;
         let y = (pt.y as f32) * to_dip;
-        
+
         // Dispatch as regular mouse move event
-        state.shell.dispatch_event(
-            hwnd,
-            &mut state.ui_tree,
-            Event::MouseMove { x, y },
-        );
-        
+        state
+            .shell
+            .dispatch_event(hwnd, &mut state.ui_tree, Event::MouseMove { x, y });
+
         let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
     }
-    
+
     LRESULT(0)
 }
 
@@ -436,7 +438,7 @@ pub fn handle_nclbuttondown<State: 'static, Message: 'static + Send + Clone>(
     lparam: LPARAM,
 ) -> Option<LRESULT> {
     let hit_test = wparam.0 as u32;
-    
+
     // Only handle our custom titlebar buttons
     if hit_test == HTMINBUTTON || hit_test == HTMAXBUTTON || hit_test == HTCLOSE {
         let _ = unsafe { SetFocus(Some(hwnd)) };
@@ -444,18 +446,21 @@ pub fn handle_nclbuttondown<State: 'static, Message: 'static + Send + Clone>(
 
         if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
             let state = state.deref_mut();
-            
+
             // Get screen coordinates and convert to client
             let x_screen = (lparam.0 & 0xFFFF) as i16 as i32;
             let y_screen = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-            
-            let mut pt = POINT { x: x_screen, y: y_screen };
+
+            let mut pt = POINT {
+                x: x_screen,
+                y: y_screen,
+            };
             let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
-            
+
             let to_dip = dips_scale(hwnd);
             let x = (pt.x as f32) * to_dip;
             let y = (pt.y as f32) * to_dip;
-            
+
             let modifiers = get_modifiers();
             state.shell.dispatch_event(
                 hwnd,
@@ -467,14 +472,14 @@ pub fn handle_nclbuttondown<State: 'static, Message: 'static + Send + Clone>(
                     modifiers,
                 },
             );
-            
+
             let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
         }
-        
+
         // Return Some to indicate we handled it and prevent default behavior
         return Some(LRESULT(0));
     }
-    
+
     // Let default handling occur for other non-client areas
     None
 }
@@ -484,18 +489,21 @@ pub fn handle_nclbuttonup<State: 'static, Message: 'static + Send + Clone>(
     hwnd: HWND,
     _wparam: WPARAM,
     lparam: LPARAM,
-) -> Option<LRESULT> {    
+) -> Option<LRESULT> {
     // Only handle our custom titlebar buttons
     if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
         let state = state.deref_mut();
-        
+
         // Get screen coordinates and convert to client
         let x_screen = (lparam.0 & 0xFFFF) as i16 as i32;
         let y_screen = ((lparam.0 >> 16) & 0xFFFF) as i16 as i32;
-        
-        let mut pt = POINT { x: x_screen, y: y_screen };
+
+        let mut pt = POINT {
+            x: x_screen,
+            y: y_screen,
+        };
         let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
-        
+
         let to_dip = dips_scale(hwnd);
         let x = (pt.x as f32) * to_dip;
         let y = (pt.y as f32) * to_dip;
@@ -512,19 +520,17 @@ pub fn handle_nclbuttonup<State: 'static, Message: 'static + Send + Clone>(
             },
         );
     }
-    
+
     // Release mouse capture
     let _ = unsafe { ReleaseCapture() };
     let _ = unsafe { InvalidateRect(Some(hwnd), None, false) };
-    
+
     // Return Some to indicate we handled it
     Some(LRESULT(0))
 }
 
 /// Handle WM_NCMOUSELEAVE / WM_MOUSELEAVE - mouse left area
-pub fn handle_mouseleave<State: 'static, Message: 'static + Send + Clone>(
-    hwnd: HWND,
-) -> LRESULT {
+pub fn handle_mouseleave<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND) -> LRESULT {
     if let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
         let state = state.deref_mut();
 
@@ -538,17 +544,18 @@ pub fn handle_mouseleave<State: 'static, Message: 'static + Send + Clone>(
         let mut pt = POINT { x: 0, y: 0 };
         let _ = unsafe { GetCursorPos(&mut pt) };
         if let Ok(rect) = window_rect(hwnd) {
-            let inside_window = pt.x >= rect.left
-                && pt.x < rect.right
-                && pt.y >= rect.top
-                && pt.y < rect.bottom;
+            let inside_window =
+                pt.x >= rect.left && pt.x < rect.right && pt.y >= rect.top && pt.y < rect.bottom;
 
             if !inside_window {
                 // Dispatch mouse leave to clear hover states
                 state.shell.dispatch_event(
                     hwnd,
                     &mut state.ui_tree,
-                    Event::MouseMove { x: -1000.0, y: -1000.0 }, // Move far off-screen to clear hovers
+                    Event::MouseMove {
+                        x: -1000.0,
+                        y: -1000.0,
+                    }, // Move far off-screen to clear hovers
                 );
 
                 state.shell.scroll_state_manager.set_inactive();
@@ -569,64 +576,60 @@ pub fn handle_setcursor<State: 'static, Message: 'static + Send + Clone>(
     // Set I-beam cursor when hovering over visible text bounds (in client area)
     let hit_test = (lparam.0 & 0xFFFF) as u32;
     if hit_test == HTCLIENT
-        && let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd) {
-            let state = state.deref_mut();
-            // Get mouse in client pixels and convert to DIPs
-            let mut pt = POINT { x: 0, y: 0 };
-            let _ = unsafe { GetCursorPos(&mut pt) };
-            let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
-            let to_dip = dips_scale(hwnd);
-            let x_dip = (pt.x as f32) * to_dip;
-            let y_dip = (pt.y as f32) * to_dip;
-            let point = PointDIP { x: x_dip, y: y_dip };
+        && let Some(mut state) = state_mut_from_hwnd::<State, Message>(hwnd)
+    {
+        let state = state.deref_mut();
+        // Get mouse in client pixels and convert to DIPs
+        let mut pt = POINT { x: 0, y: 0 };
+        let _ = unsafe { GetCursorPos(&mut pt) };
+        let _ = unsafe { ScreenToClient(hwnd, &mut pt) };
+        let to_dip = dips_scale(hwnd);
+        let x_dip = (pt.x as f32) * to_dip;
+        let y_dip = (pt.y as f32) * to_dip;
+        let point = PointDIP { x: x_dip, y: y_dip };
 
-            // Check if hovering over a scrollbar first
-            if state
-                .hit_test_scrollbar_thumb(x_dip, y_dip, false)
-                .is_some()
-            {
-                Cursor::Arrow.set();
+        // Check if hovering over a scrollbar first
+        if state
+            .hit_test_scrollbar_thumb(x_dip, y_dip, false)
+            .is_some()
+        {
+            Cursor::Arrow.set();
+            return Some(LRESULT(1));
+        }
+
+        let mut cursor = None;
+
+        if let Some(target_key) = Shell::find_innermost_element_at(&mut state.ui_tree, x_dip, y_dip)
+        {
+            let ancestry = Shell::collect_ancestry(&mut state.ui_tree, target_key);
+
+            for element in ancestry {
+                let bounds = state.ui_tree.slots[element].bounds();
+
+                if let Some(id) = state.ui_tree.slots[element].id
+                    && point.within(bounds.border_box)
+                    && Shell::is_point_visible_in_scroll_ancestors(
+                        &mut state.ui_tree,
+                        element,
+                        point,
+                    )
+                    && let Some(instance) = state.ui_tree.widget_state.get(&id)
+                    && let Some(ref widget) = state.ui_tree.slots[element].content
+                {
+                    cursor = widget.cursor(&state.ui_tree.arenas, instance, point, bounds);
+                }
+
+                if cursor.is_some() {
+                    break;
+                }
+            }
+
+            if let Some(cursor) = cursor {
+                cursor.set();
                 return Some(LRESULT(1));
             }
-
-            let mut cursor = None;
-
-            if let Some(target_key) =
-                Shell::find_innermost_element_at(&mut state.ui_tree, x_dip, y_dip)
-            {
-                let ancestry = Shell::collect_ancestry(&mut state.ui_tree, target_key);
-
-                for element in ancestry {
-                    let bounds = state.ui_tree.slots[element].bounds();
-
-                    if let Some(id) = state.ui_tree.slots[element].id
-                        && point.within(bounds.border_box)
-                            && Shell::is_point_visible_in_scroll_ancestors(
-                                &mut state.ui_tree,
-                                element,
-                                point,
-                            )
-                            && let Some(instance) = state.ui_tree.widget_state.get(&id)
-                                && let Some(ref widget) = state.ui_tree.slots[element].content {
-                                    cursor = widget.cursor(
-                                        &state.ui_tree.arenas,
-                                        instance,
-                                        point,
-                                        bounds,
-                                    );
-                                }
-
-                    if cursor.is_some() {
-                        break;
-                    }
-                }
-
-                if let Some(cursor) = cursor {
-                    cursor.set();
-                    return Some(LRESULT(1));
-                }
-            }
         }
+    }
 
     None
 }

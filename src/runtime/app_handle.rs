@@ -13,10 +13,16 @@ use crate::runtime::scroll::{ScrollPosition, ScrollStateManager};
 use crate::runtime::smooth_scroll::SmoothScrollManager;
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::Task;
-use crate::runtime::titlebar_hit_test::{TitlebarHitRegions, client_origin_screen_px, clear_titlebar_hit_regions, set_titlebar_hit_regions};
+use crate::runtime::titlebar_hit_test::{
+    TitlebarHitRegions, clear_titlebar_hit_regions, client_origin_screen_px,
+    set_titlebar_hit_regions,
+};
 use crate::runtime::tray::{TrayEvent, TrayIcon, TrayIconConfig};
 use crate::widgets::Event;
-use crate::{HookManager, RedrawRequest, Shell, UpdateFn, ViewFn, MAGIC_ID_TITLEBAR_CLOSE, MAGIC_ID_TITLEBAR_MAXIMIZE, MAGIC_ID_TITLEBAR_MINIMIZE, w_id};
+use crate::{
+    HookManager, MAGIC_ID_TITLEBAR_CLOSE, MAGIC_ID_TITLEBAR_MAXIMIZE, MAGIC_ID_TITLEBAR_MINIMIZE,
+    RedrawRequest, Shell, UpdateFn, ViewFn, w_id,
+};
 use raxis_core::{self as raxis, svg};
 use raxis_proc_macro::svg_path;
 use std::cell::RefCell;
@@ -30,9 +36,6 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_DEBUG_LEVEL_NONE, D2D1_DEVICE_CONTEXT_OPTIONS_NONE, D2D1_FACTORY_OPTIONS,
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1CreateFactory, ID2D1Factory7, ID2D1PathGeometry,
 };
-use windows::Win32::Graphics::Gdi::ScreenToClient;
-use windows::Win32::UI::Input::KeyboardAndMouse::TRACKMOUSEEVENT_FLAGS;
-use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, IsZoomed};
 use windows::Win32::Graphics::Direct3D::{
     D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
     D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
@@ -45,8 +48,11 @@ use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory6,
 };
 use windows::Win32::Graphics::Dxgi::{IDXGIDevice4, IDXGIFactory7};
+use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Ole::IDropTarget;
+use windows::Win32::UI::Input::KeyboardAndMouse::TRACKMOUSEEVENT_FLAGS;
 use windows::Win32::UI::WindowsAndMessaging::GetForegroundWindow;
+use windows::Win32::UI::WindowsAndMessaging::{GetCursorPos, IsZoomed};
 use windows_core::{Error as WinError, Interface};
 
 pub static PENDING_MESSAGE_PROCESSING: AtomicBool = AtomicBool::new(false);
@@ -569,7 +575,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
 
             // Append the icon commands to the main command list
             let icon_commands = recorder.take_commands();
-            commands.commands.extend(icon_commands.commands);
+            commands.extend(icon_commands);
         }
 
         self.clock += dt;
@@ -649,15 +655,19 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         // Apply current animated positions to the scroll state manager
         for (&element_id, animation) in self.smooth_scroll_manager.get_active_animations() {
             let current_pos = animation.current_position(std::time::Instant::now());
-            let prev_pos = self.shell.scroll_state_manager.get_scroll_position(element_id);
-            
+            let prev_pos = self
+                .shell
+                .scroll_state_manager
+                .get_scroll_position(element_id);
+
             // Check if position actually changed (with small epsilon to avoid floating point issues)
             const EPSILON: f32 = 0.01;
-            if (current_pos.x - prev_pos.x).abs() > EPSILON 
-                || (current_pos.y - prev_pos.y).abs() > EPSILON {
+            if (current_pos.x - prev_pos.x).abs() > EPSILON
+                || (current_pos.y - prev_pos.y).abs() > EPSILON
+            {
                 any_scrolling = true;
             }
-            
+
             self.shell
                 .scroll_state_manager
                 .set_scroll_position(element_id, current_pos);
@@ -669,8 +679,8 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
     // Process async messages from executor thread
     pub fn process_async_messages(&mut self, hwnd: HWND) {
         use windows::Win32::Foundation::{LPARAM, WPARAM};
-        use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
         use windows::Win32::Graphics::Gdi::InvalidateRect;
+        use windows::Win32::UI::WindowsAndMessaging::PostMessageW;
 
         let mut cap = 100;
         while let Ok(message) = self.message_receiver.try_recv() {
