@@ -1,23 +1,30 @@
 use crate::widgets::renderer::ShadowCache;
 use std::cell::RefCell;
+use std::mem::ManuallyDrop;
 use thiserror::Error;
 use windows::Win32::Foundation::HWND;
-use windows::Win32::Graphics::Direct2D::Common::{D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT};
+use windows::Win32::Graphics::Direct2D::Common::{
+    D2D1_ALPHA_MODE_PREMULTIPLIED, D2D1_COLOR_F, D2D1_PIXEL_FORMAT,
+};
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
     ID2D1Bitmap1, ID2D1Device6, ID2D1DeviceContext6, ID2D1Factory7, ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D};
-use windows::Win32::Graphics::DirectComposition::{IDCompositionDevice, IDCompositionTarget, IDCompositionVisual};
-use windows::Win32::Graphics::DirectWrite::IDWriteFactory6;
-use windows::Win32::Graphics::Dxgi::Common::{DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
-use windows::Win32::Graphics::Dxgi::{
-    DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG, DXGI_SWAP_EFFECT_FLIP_DISCARD,
-    DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4, IDXGIFactory7, IDXGISurface, IDXGISwapChain1,
+use windows::Win32::Graphics::DirectComposition::{
+    IDCompositionDevice, IDCompositionTarget, IDCompositionVisual,
 };
+use windows::Win32::Graphics::DirectWrite::IDWriteFactory6;
 use windows::Win32::Graphics::Dxgi::Common::DXGI_FORMAT_UNKNOWN;
+use windows::Win32::Graphics::Dxgi::Common::{
+    DXGI_ALPHA_MODE_PREMULTIPLIED, DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC,
+};
+use windows::Win32::Graphics::Dxgi::{
+    DXGI_SCALING_STRETCH, DXGI_SWAP_CHAIN_DESC1, DXGI_SWAP_CHAIN_FLAG,
+    DXGI_SWAP_EFFECT_FLIP_DISCARD, DXGI_USAGE_RENDER_TARGET_OUTPUT, IDXGIAdapter, IDXGIDevice4,
+    IDXGIFactory7, IDXGISurface, IDXGISwapChain1,
+};
 use windows_core::{Error as WinError, IUnknown, Interface};
-use std::mem::ManuallyDrop;
 
 #[derive(Debug, Error)]
 pub enum DeviceError {

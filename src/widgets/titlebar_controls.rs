@@ -12,12 +12,12 @@ use crate::util::windows::is_windows_11;
 use crate::widgets::svg_path::ColorChoice;
 use crate::widgets::text::Text;
 use crate::{
-    close_window, minimize_window, toggle_maximize_window, w_id,
-    layout::model::{Color, Direction, Element, Sizing},
+    Animation, HookManager, MAGIC_ID_TITLEBAR_CLOSE, MAGIC_ID_TITLEBAR_MAXIMIZE,
+    MAGIC_ID_TITLEBAR_MINIMIZE, close_window,
     layout::helpers::center,
-    Animation, HookManager,
+    layout::model::{Color, Direction, Element, Sizing},
+    minimize_window, toggle_maximize_window, w_id,
     widgets::button::{Button, ButtonState},
-    MAGIC_ID_TITLEBAR_CLOSE, MAGIC_ID_TITLEBAR_MAXIMIZE, MAGIC_ID_TITLEBAR_MINIMIZE,
 };
 
 /// Default button width for Windows-style caption buttons (46px at 100% DPI).
@@ -88,8 +88,20 @@ pub fn minimize_button<Message: 'static + Send + Clone>(
     hook: &mut HookManager<Message>,
 ) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
-    let hover_anim = instance.use_hook(|| Rc::new(RefCell::new(Animation::new(false).duration(ANIMATION_DURATION)))).clone();
-    let press_anim = instance.use_hook(|| Rc::new(RefCell::new(Animation::new(false).duration(ANIMATION_DURATION)))).clone();
+    let hover_anim = instance
+        .use_hook(|| {
+            Rc::new(RefCell::new(
+                Animation::new(false).duration(ANIMATION_DURATION),
+            ))
+        })
+        .clone();
+    let press_anim = instance
+        .use_hook(|| {
+            Rc::new(RefCell::new(
+                Animation::new(false).duration(ANIMATION_DURATION),
+            ))
+        })
+        .clone();
 
     let normal_color = Color::TRANSPARENT;
     let hover_color = Color::from(0xFFFFFF1A); // ~10% white overlay
@@ -100,8 +112,12 @@ pub fn minimize_button<Message: 'static + Send + Clone>(
         .with_bg_color(Color::TRANSPARENT)
         .with_adjust_style(move |state, _focused, shell, mut style| {
             let now = Instant::now();
-            hover_anim.borrow_mut().update(matches!(state, ButtonState::Hover | ButtonState::Pressed));
-            press_anim.borrow_mut().update(matches!(state, ButtonState::Pressed));
+            hover_anim
+                .borrow_mut()
+                .update(matches!(state, ButtonState::Hover | ButtonState::Pressed));
+            press_anim
+                .borrow_mut()
+                .update(matches!(state, ButtonState::Pressed));
 
             // Interpolate from normal -> hover
             let base_color = hover_anim.borrow().interpolate_using(
@@ -132,7 +148,7 @@ pub fn minimize_button<Message: 'static + Send + Clone>(
                         .with_font_size(10.0)
                         .with_font_family(get_font())
                         .with_color(ColorChoice::CurrentColor)
-                        .as_element()
+                        .as_element(),
                 )],
                 ..Default::default()
             },
@@ -144,8 +160,20 @@ pub fn maximize_button<Message: 'static + Send + Clone>(
     hook: &mut HookManager<Message>,
 ) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
-    let hover_anim = instance.use_hook(|| Rc::new(RefCell::new(Animation::new(false).duration(ANIMATION_DURATION)))).clone();
-    let press_anim = instance.use_hook(|| Rc::new(RefCell::new(Animation::new(false).duration(ANIMATION_DURATION)))).clone();
+    let hover_anim = instance
+        .use_hook(|| {
+            Rc::new(RefCell::new(
+                Animation::new(false).duration(ANIMATION_DURATION),
+            ))
+        })
+        .clone();
+    let press_anim = instance
+        .use_hook(|| {
+            Rc::new(RefCell::new(
+                Animation::new(false).duration(ANIMATION_DURATION),
+            ))
+        })
+        .clone();
 
     let normal_color = Color::TRANSPARENT;
     let hover_color = Color::from(0xFFFFFF1A); // ~10% white overlay
@@ -156,8 +184,12 @@ pub fn maximize_button<Message: 'static + Send + Clone>(
         .with_bg_color(Color::TRANSPARENT)
         .with_adjust_style(move |state, _focused, shell, mut style| {
             let now = Instant::now();
-            hover_anim.borrow_mut().update(matches!(state, ButtonState::Hover | ButtonState::Pressed));
-            press_anim.borrow_mut().update(matches!(state, ButtonState::Pressed));
+            hover_anim
+                .borrow_mut()
+                .update(matches!(state, ButtonState::Hover | ButtonState::Pressed));
+            press_anim
+                .borrow_mut()
+                .update(matches!(state, ButtonState::Pressed));
 
             let base_color = hover_anim.borrow().interpolate_using(
                 shell,
@@ -182,11 +214,15 @@ pub fn maximize_button<Message: 'static + Send + Clone>(
                 width: Sizing::fixed(CAPTION_BUTTON_WIDTH),
                 height: Sizing::fixed(CAPTION_BUTTON_HEIGHT),
                 children: vec![center(
-                    Text::new(if hook.window_zoomed { "\u{e923}" /* ChromeRestore */ } else { "\u{e922}" /* ChromeMaximize */ })
-                        .with_font_size(10.0)
-                        .with_font_family(get_font())
-                        .with_color(ColorChoice::CurrentColor)
-                        .as_element()
+                    Text::new(if hook.window_zoomed {
+                        "\u{e923}" /* ChromeRestore */
+                    } else {
+                        "\u{e922}" /* ChromeMaximize */
+                    })
+                    .with_font_size(10.0)
+                    .with_font_family(get_font())
+                    .with_color(ColorChoice::CurrentColor)
+                    .as_element(),
                 )],
                 ..Default::default()
             },
@@ -198,8 +234,20 @@ pub fn close_button<Message: 'static + Send + Clone>(
     hook: &mut HookManager<Message>,
 ) -> Element<Message> {
     let mut instance = hook.instance(w_id!());
-    let hover_anim = instance.use_hook(|| Rc::new(RefCell::new(Animation::new(false).duration(ANIMATION_DURATION)))).clone();
-    let press_anim = instance.use_hook(|| Rc::new(RefCell::new(Animation::new(false).duration(ANIMATION_DURATION)))).clone();
+    let hover_anim = instance
+        .use_hook(|| {
+            Rc::new(RefCell::new(
+                Animation::new(false).duration(ANIMATION_DURATION),
+            ))
+        })
+        .clone();
+    let press_anim = instance
+        .use_hook(|| {
+            Rc::new(RefCell::new(
+                Animation::new(false).duration(ANIMATION_DURATION),
+            ))
+        })
+        .clone();
 
     let normal_color = Color::TRANSPARENT;
     let hover_color = Color::from(0xE81123FF); // Windows red
@@ -210,8 +258,12 @@ pub fn close_button<Message: 'static + Send + Clone>(
         .with_bg_color(Color::TRANSPARENT)
         .with_adjust_style(move |state, _focused, shell, mut style| {
             let now = Instant::now();
-            hover_anim.borrow_mut().update(matches!(state, ButtonState::Hover | ButtonState::Pressed));
-            press_anim.borrow_mut().update(matches!(state, ButtonState::Pressed));
+            hover_anim
+                .borrow_mut()
+                .update(matches!(state, ButtonState::Hover | ButtonState::Pressed));
+            press_anim
+                .borrow_mut()
+                .update(matches!(state, ButtonState::Pressed));
 
             let base_color = hover_anim.borrow().interpolate_using(
                 shell,
@@ -240,7 +292,7 @@ pub fn close_button<Message: 'static + Send + Clone>(
                         .with_font_size(10.0)
                         .with_font_family(get_font())
                         .with_color(ColorChoice::CurrentColor)
-                        .as_element()
+                        .as_element(),
                 )],
                 ..Default::default()
             },

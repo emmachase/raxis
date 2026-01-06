@@ -1,7 +1,7 @@
+use std::sync::{Mutex, MutexGuard};
 use windows::Win32::Foundation::{HWND, POINT, RECT};
 use windows::Win32::Graphics::Gdi::ClientToScreen;
 use windows::Win32::UI::WindowsAndMessaging::GetClientRect;
-use std::sync::{Mutex, MutexGuard};
 
 use super::{ApplicationHandle, Result};
 
@@ -10,9 +10,9 @@ pub fn state_mut_from_hwnd<State, Message>(
     hwnd: HWND,
 ) -> Option<MutexGuard<'static, ApplicationHandle<State, Message>>> {
     unsafe {
-        use windows::Win32::UI::WindowsAndMessaging::{GetWindowLongPtrW, GWLP_USERDATA};
         use log::warn;
-        
+        use windows::Win32::UI::WindowsAndMessaging::{GWLP_USERDATA, GetWindowLongPtrW};
+
         let ptr = GetWindowLongPtrW(hwnd, GWLP_USERDATA);
 
         if ptr != 0 {
@@ -57,7 +57,7 @@ pub fn window_rect(hwnd: HWND) -> Result<RECT> {
 /// Get keyboard modifiers state
 pub fn get_modifiers() -> crate::widgets::Modifiers {
     use windows::Win32::UI::Input::KeyboardAndMouse::{GetKeyState, VK_CONTROL, VK_MENU, VK_SHIFT};
-    
+
     unsafe {
         let ctrl = GetKeyState(VK_CONTROL.0 as i32) < 0;
         let shift = GetKeyState(VK_SHIFT.0 as i32) < 0;

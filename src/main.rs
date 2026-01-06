@@ -9,16 +9,40 @@ use std::{
 
 use lazy_static::lazy_static;
 use raxis::{
-    ContextMenuItem, HookManager, SvgPathCommands, SystemCommand, SystemCommandResponse, TrayEvent, TrayIconConfig, layout::{
+    ContextMenuItem, HookManager, SvgPathCommands, SystemCommand, SystemCommandResponse, TrayEvent,
+    TrayIconConfig,
+    layout::{
         helpers::{center, spacer},
         model::{
-            Alignment, BackdropFilter, Border, BorderPlacement, BorderRadius, BoxAmount, Color, Direction, DropShadow, Element, FloatingConfig, ScrollConfig, ScrollbarStyle, Sizing, StrokeDashStyle, StrokeLineCap, StrokeLineJoin, TextShadow
+            Alignment, BackdropFilter, Border, BorderPlacement, BorderRadius, BoxAmount, Color,
+            Direction, DropShadow, Element, FloatingConfig, ScrollConfig, ScrollbarStyle, Sizing,
+            StrokeDashStyle, StrokeLineCap, StrokeLineJoin, TextShadow,
         },
-    }, math::easing::Easing, row, runtime::{
-        Backdrop, context_menu::ContextMenuItemExt, font_manager::FontIdentifier, scroll::ScrollPosition, task::{Task, hide_window}
-    }, use_animation, util::{str::StableString, unique::combine_id}, w_id, widgets::{
-        button::Button, image::Image, slider::Slider, svg::ViewBox, svg_path::SvgPath, text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment, TextSpan}, text_input::TextInput, titlebar_controls::titlebar_controls, toggle::Toggle, widget
-    }
+    },
+    math::easing::Easing,
+    row,
+    runtime::{
+        Backdrop,
+        context_menu::ContextMenuItemExt,
+        font_manager::FontIdentifier,
+        scroll::ScrollPosition,
+        task::{Task, hide_window},
+    },
+    use_animation,
+    util::{str::StableString, unique::combine_id},
+    w_id,
+    widgets::{
+        button::Button,
+        image::Image,
+        slider::Slider,
+        svg::ViewBox,
+        svg_path::SvgPath,
+        text::{ColoredTextSegment, ParagraphAlignment, Text, TextAlignment, TextSpan},
+        text_input::TextInput,
+        titlebar_controls::titlebar_controls,
+        toggle::Toggle,
+        widget,
+    },
 };
 use raxis_core::svg;
 use raxis_proc_macro::svg_path;
@@ -569,18 +593,6 @@ fn call_controls_demo(hook: &mut HookManager<Message>) -> Element<Message> {
                         .as_element(
                             w_id!(),
                             Element {
-
-                                // <path d="M12 19v3" />
-                                // <path d="M19 10v2a7 7 0 0 1-14 0v-2" />
-                                // <rect x="9" y="2" width="6" height="13" rx="3" />                                
-
-                                // <path d="M12 19v3" />
-                                // <path d="M15 9.34V5a3 3 0 0 0-5.68-1.33" />
-                                // <path d="M16.95 16.95A7 7 0 0 1 5 12v-2" />
-                                // <path d="M18.89 13.23A7 7 0 0 0 19 12v-2" />
-                                // <path d="m2 2 20 20" />
-                                // <path d="M9 9v3a3 3 0 0 0 5.12 2.12" />
-                                
                                 id: Some(w_id!()),
                                 width: Sizing::fixed(56.0),
                                 height: Sizing::fixed(56.0),
@@ -1043,7 +1055,7 @@ fn backdrop_filter_demo() -> Element<Message> {
                 width: Sizing::fixed(350.0),
                 height: Sizing::fixed(100.0),
                 background_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.25)), // Semi-transparent white
-                backdrop_filter: Some(BackdropFilter::blur(10.0)), // Apply blur
+                backdrop_filter: Some(BackdropFilter::blur(10.0)),             // Apply blur
                 border_radius: Some(BorderRadius::all(15.0)),
                 content: widget(
                     Text::new("Blurred Background")
@@ -1353,7 +1365,7 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
             scrollbar_style: Some(
                 ScrollbarStyle::new()
                     .with_track_radius(BorderRadius::all(4.0))
-                    .with_thumb_radius(BorderRadius::all(4.0))
+                    .with_thumb_radius(BorderRadius::all(4.0)),
             ),
             ..Default::default()
         }),
@@ -1719,7 +1731,7 @@ fn colored_text_demo() -> Element<Message> {
                         ColoredTextSegment::new("Hello ", Color::from(0xFF6B6BFF)),
                         ColoredTextSegment::new("World", Color::from(0x4ECDC4FF)),
                     ])
-                    .with_font_size(18.0)
+                    .with_font_size(18.0),
                 ),
                 ..Default::default()
             },
@@ -1738,7 +1750,7 @@ fn colored_text_demo() -> Element<Message> {
                         ColoredTextSegment::new("o", Color::from(0x4B0082FF)),
                         ColoredTextSegment::new("w", Color::from(0x9400D3FF)),
                     ])
-                    .with_font_size(24.0)
+                    .with_font_size(24.0),
                 ),
                 ..Default::default()
             },
@@ -1753,7 +1765,7 @@ fn colored_text_demo() -> Element<Message> {
                         ColoredTextSegment::new("hello", Color::from(0x66D9EFFF)),
                         ColoredTextSegment::new("() {", Color::from(0xF8F8F2FF)),
                     ])
-                    .with_font_size(16.0)
+                    .with_font_size(16.0),
                 ),
                 ..Default::default()
             },
@@ -1802,8 +1814,8 @@ fn hyperlink_demo() -> Element<Message> {
                         .with_span(
                             TextSpan::new(10, 22, Color::from(0x3366CCFF))
                                 .with_url("https://www.rust-lang.org")
-                                .with_hover_color(Color::from(0x6699FFFF))
-                        )
+                                .with_hover_color(Color::from(0x6699FFFF)),
+                        ),
                 ),
                 ..Default::default()
             },
@@ -1818,13 +1830,13 @@ fn hyperlink_demo() -> Element<Message> {
                         .with_span(
                             TextSpan::new(10, 16, Color::from(0x3366CCFF))
                                 .with_url("https://github.com")
-                                .with_hover_color(Color::from(0x6699FFFF))
+                                .with_hover_color(Color::from(0x6699FFFF)),
                         )
                         .with_span(
                             TextSpan::new(20, 26, Color::from(0xFC6D26FF))
                                 .with_url("https://gitlab.com")
-                                .with_hover_color(Color::from(0xFCA326FF))
-                        )
+                                .with_hover_color(Color::from(0xFCA326FF)),
+                        ),
                 ),
                 ..Default::default()
             },
@@ -1840,8 +1852,8 @@ fn hyperlink_demo() -> Element<Message> {
                         .with_span(
                             TextSpan::new(36, 40, Color::from(0x2196F3FF))
                                 .with_url("https://example.com/raxis")
-                                .with_hover_color(Color::from(0x64B5F6FF))
-                        )
+                                .with_hover_color(Color::from(0x64B5F6FF)),
+                        ),
                 ),
                 ..Default::default()
             },
@@ -1884,9 +1896,7 @@ fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
             //     ],
             //     ..Default::default()
             // },
-            row![
-                titlebar_controls(hook)
-            ]
+            row![titlebar_controls(hook)]
                 .with_width(Sizing::grow())
                 .with_axis_align_content(Alignment::End),
             Element {
@@ -1900,7 +1910,7 @@ fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
                     scrollbar_style: Some(
                         ScrollbarStyle::new()
                             .with_track_radius(BorderRadius::all(4.0))
-                            .with_thumb_radius(BorderRadius::all(4.0))
+                            .with_thumb_radius(BorderRadius::all(4.0)),
                     ),
                     ..Default::default()
                 }),

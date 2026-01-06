@@ -217,7 +217,8 @@ impl ButtonStyleSet {
 
 pub type OnClickFn<Message> = dyn Fn(&mut UIArenas, &mut Shell<Message>);
 pub type IsFocused = bool;
-pub type AdjustStyleFn<Message> = dyn Fn(ButtonState, IsFocused, &mut Shell<Message>, ElementStyle) -> ElementStyle;
+pub type AdjustStyleFn<Message> =
+    dyn Fn(ButtonState, IsFocused, &mut Shell<Message>, ElementStyle) -> ElementStyle;
 
 /// Button widget with text label and click handling
 pub struct Button<Message> {
@@ -390,7 +391,8 @@ impl<Message: 'static + Send> Button<Message> {
 
     pub fn with_adjust_style(
         mut self,
-        adjust_fn: impl Fn(ButtonState, IsFocused, &mut Shell<Message>, ElementStyle) -> ElementStyle + 'static,
+        adjust_fn: impl Fn(ButtonState, IsFocused, &mut Shell<Message>, ElementStyle) -> ElementStyle
+        + 'static,
     ) -> Self {
         self.adjust_style_fn = Some(Box::new(adjust_fn));
         self
@@ -559,10 +561,13 @@ impl<Message> Widget<Message> for Button<Message> {
                 state.is_mouse_over = point.within(bounds.border_box);
                 state.update_state(self.enabled);
 
-                if was_pressed && point.within(bounds.border_box) && self.enabled
-                    && let Some(handler) = self.on_click.as_ref() {
-                        handler(arenas, shell);
-                    }
+                if was_pressed
+                    && point.within(bounds.border_box)
+                    && self.enabled
+                    && let Some(handler) = self.on_click.as_ref()
+                {
+                    handler(arenas, shell);
+                }
 
                 shell.request_redraw(hwnd, RedrawRequest::Immediate);
             }

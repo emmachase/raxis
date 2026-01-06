@@ -222,24 +222,27 @@ impl<Message: 'static> MouseArea<Message> {
                 };
 
                 if let Some(ref handler) = self.event_handler
-                    && let Some(message) = handler(synthetic_event, shell) {
-                        shell.publish(message);
-                    }
+                    && let Some(message) = handler(synthetic_event, shell)
+                {
+                    shell.publish(message);
+                }
             } else if inside {
                 state.last_mouse_pos = Some((*x, *y));
             }
         } else if let Event::MouseLeave { x, y } = event
-            && state.mouse_inside {
-                state.mouse_inside = false;
-                state.last_mouse_pos = Some((*x, *y));
+            && state.mouse_inside
+        {
+            state.mouse_inside = false;
+            state.last_mouse_pos = Some((*x, *y));
 
-                if let Some(ref handler) = self.event_handler
-                    && let Some(message) = handler(MouseAreaEvent::MouseLeft { x: *x, y: *y }, shell) {
-                        shell.publish(message);
-                    }
+            if let Some(ref handler) = self.event_handler
+                && let Some(message) = handler(MouseAreaEvent::MouseLeft { x: *x, y: *y }, shell)
+            {
+                shell.publish(message);
             }
+        }
 
-            // TODO: Replace synthetic handling with framework enter/leave events
+        // TODO: Replace synthetic handling with framework enter/leave events
     }
 
     pub fn as_element(self, id: u64, children: impl Into<Element<Message>>) -> Element<Message> {
@@ -318,9 +321,10 @@ where
         // Map and handle core mouse events
         if let Some(mouse_event) = self.map_event(state, event, &bounds)
             && let Some(ref handler) = self.event_handler
-                && let Some(message) = handler(mouse_event, shell) {
-                    shell.publish(message);
-                }
+            && let Some(message) = handler(mouse_event, shell)
+        {
+            shell.publish(message);
+        }
 
         if matches!(event, Event::MouseButtonUp { .. }) {
             state.mouse_held = false;

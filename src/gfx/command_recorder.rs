@@ -1,4 +1,6 @@
-use crate::layout::model::{BackdropFilter, Border, BorderRadius, Color, DropShadow, TextShadow, StrokeDashStyle};
+use crate::layout::model::{
+    BackdropFilter, Border, BorderRadius, Color, DropShadow, StrokeDashStyle, TextShadow,
+};
 use crate::{
     gfx::{
         RectDIP,
@@ -81,12 +83,13 @@ impl CommandRecorder {
         filter: BackdropFilter,
         border_radius: Option<&BorderRadius>,
     ) {
-        self.commands.push(DrawCommand::FillRectangleWithBackdropFilter {
-            rect: *rect,
-            color: color.into(),
-            filter,
-            border_radius: border_radius.cloned(),
-        });
+        self.commands
+            .push(DrawCommand::FillRectangleWithBackdropFilter {
+                rect: *rect,
+                color: color.into(),
+                filter,
+                border_radius: border_radius.cloned(),
+            });
     }
 
     /// Record a blurred shadow drawing operation

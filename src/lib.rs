@@ -26,7 +26,11 @@ use crate::{
         visitors::{self, VisitAction},
     },
     math::easing::Easing,
-    runtime::{focus::FocusManager, scroll::{ScrollPosition, ScrollStateManager}, task::Task},
+    runtime::{
+        focus::FocusManager,
+        scroll::{ScrollPosition, ScrollStateManager},
+        task::Task,
+    },
     widgets::{DragData, DragEvent, DropResult, Event, Operation, dispatch_operation},
 };
 
@@ -408,7 +412,8 @@ impl<Message> Shell<Message> {
     }
 
     pub fn open_url(&mut self, url: &str) {
-        self.deferred_controls.push(DeferredControl::OpenUrl(url.to_string()));
+        self.deferred_controls
+            .push(DeferredControl::OpenUrl(url.to_string()));
     }
 
     pub fn drain_deferred_controls(&mut self) -> Option<Vec<DeferredControl>> {
@@ -470,10 +475,11 @@ impl<Message> Shell<Message> {
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
             let element = &ui_tree.slots[key];
             if let Some(id) = element.id
-                && id == target_id {
-                    found_key = Some(key);
-                    return VisitAction::Exit;
-                }
+                && id == target_id
+            {
+                found_key = Some(key);
+                return VisitAction::Exit;
+            }
             VisitAction::Continue
         });
         found_key
@@ -605,121 +611,116 @@ impl<Message> Shell<Message> {
 
         // For mouse events, use targeted dispatching
         if event.is_mouse_event()
-            && let Some((x, y)) = event.mouse_position() {
-                // Determine target element ID
-                let innermost_key = Self::find_innermost_element_at(ui_tree, x, y);
-                let target_key = if let Some(active_id) = self.active_element_id {
-                    // If there's an active element, use it
-                    Self::find_key_by_id(ui_tree, active_id).or(innermost_key)
-                } else {
-                    // Otherwise, find the innermost element at the mouse position
-                    innermost_key
-                };
+            && let Some((x, y)) = event.mouse_position()
+        {
+            // Determine target element ID
+            let innermost_key = Self::find_innermost_element_at(ui_tree, x, y);
+            let target_key = if let Some(active_id) = self.active_element_id {
+                // If there's an active element, use it
+                Self::find_key_by_id(ui_tree, active_id).or(innermost_key)
+            } else {
+                // Otherwise, find the innermost element at the mouse position
+                innermost_key
+            };
 
-                // Dispatch to target and its ancestry
-                if let Some(target_key) = target_key {
-                    let ancestry_keys = Self::collect_ancestry(ui_tree, target_key);
+            // Dispatch to target and its ancestry
+            if let Some(target_key) = target_key {
+                let ancestry_keys = Self::collect_ancestry(ui_tree, target_key);
 
-                    // Merge in any inner children if we share common ancestry
-                    // This way child elements still receive mouse events if only the container is actually capturing the event
-                    let ancestry_keys =
-                        Self::try_extend_ancestry_to(ui_tree, ancestry_keys, innermost_key);
+                // Merge in any inner children if we share common ancestry
+                // This way child elements still receive mouse events if only the container is actually capturing the event
+                let ancestry_keys =
+                    Self::try_extend_ancestry_to(ui_tree, ancestry_keys, innermost_key);
 
-                    // Collect current ancestry IDs for enter/leave tracking
-                    let mut current_ancestry_ids = Vec::new();
-                    for &key in &ancestry_keys {
-                        if let Some(id) = ui_tree.slots[key].id {
-                            current_ancestry_ids.push(id);
-                        }
+                // Collect current ancestry IDs for enter/leave tracking
+                let mut current_ancestry_ids = Vec::new();
+                for &key in &ancestry_keys {
+                    if let Some(id) = ui_tree.slots[key].id {
+                        current_ancestry_ids.push(id);
                     }
+                }
 
-                    if matches!(event, Event::MouseButtonDown { .. })
-                        && let Some(id) = self.focus_manager.focused_widget
-                        && !current_ancestry_ids.contains(&id)
-                    {
-                        self.focus_manager.release_focus(id);
-                    }
+                if matches!(event, Event::MouseButtonDown { .. })
+                    && let Some(id) = self.focus_manager.focused_widget
+                    && !current_ancestry_ids.contains(&id)
+                {
+                    self.focus_manager.release_focus(id);
+                }
 
-                    // For MouseMove events, generate synthetic enter/leave events
-                    if matches!(event, Event::MouseMove { .. }) {
-                        // Find elements that were left (in previous but not in current)
-                        // TODO: I don't like cloning here...
-                        for &prev_id in &self.previous_mouse_ancestry.clone() {
-                            if !current_ancestry_ids.contains(&prev_id) {
-                                self.dispatch_event_to(
-                                    hwnd,
-                                    ui_tree,
-                                    Event::MouseLeave { x, y },
-                                    prev_id,
-                                );
-                            }
-                        }
-
-                        // Find elements that were entered (in current but not in previous)
-                        for &curr_id in &current_ancestry_ids {
-                            if !self.previous_mouse_ancestry.contains(&curr_id) {
-                                self.dispatch_event_to(
-                                    hwnd,
-                                    ui_tree,
-                                    Event::MouseEnter { x, y },
-                                    curr_id,
-                                );
-                            }
-                        }
-                    }
-
-                    // Dispatch the main event from innermost to outermost
-                    for key in ancestry_keys {
-                        let element = &mut ui_tree.slots[key];
-                        let bounds = element.bounds();
-
-                        if let Some(ref mut widget) = element.content
-                            && let Some(id) = element.id {
-                                let instance = ui_tree.widget_state.get_mut(&id).unwrap();
-                                widget.update(
-                                    &mut ui_tree.arenas,
-                                    instance,
-                                    hwnd,
-                                    self,
-                                    &event,
-                                    bounds,
-                                );
-
-                                if self.event_captured_by.is_some() {
-                                    break;
-                                }
-                            }
-                    }
-
-                    // Update previous ancestry for next event
-                    if matches!(event, Event::MouseMove { .. }) {
-                        self.previous_mouse_ancestry = current_ancestry_ids;
-                    }
-                } else if matches!(event, Event::MouseMove { .. }) {
-                    // Mouse is outside all elements - send leave events to all previously hovered elements
+                // For MouseMove events, generate synthetic enter/leave events
+                if matches!(event, Event::MouseMove { .. }) {
+                    // Find elements that were left (in previous but not in current)
                     // TODO: I don't like cloning here...
                     for &prev_id in &self.previous_mouse_ancestry.clone() {
-                        self.dispatch_event_to(hwnd, ui_tree, Event::MouseLeave { x, y }, prev_id);
+                        if !current_ancestry_ids.contains(&prev_id) {
+                            self.dispatch_event_to(
+                                hwnd,
+                                ui_tree,
+                                Event::MouseLeave { x, y },
+                                prev_id,
+                            );
+                        }
                     }
-                    self.previous_mouse_ancestry.clear();
+
+                    // Find elements that were entered (in current but not in previous)
+                    for &curr_id in &current_ancestry_ids {
+                        if !self.previous_mouse_ancestry.contains(&curr_id) {
+                            self.dispatch_event_to(
+                                hwnd,
+                                ui_tree,
+                                Event::MouseEnter { x, y },
+                                curr_id,
+                            );
+                        }
+                    }
                 }
 
-                // Track active element on mouse down/up
-                if matches!(event, Event::MouseButtonDown { .. }) {
-                    // let key = Self::find_innermost_element_at(ui_tree, x, y);
-                    // if let Some(id) = self.event_captured_by {
-                    //     self.active_element_id = Some(id); //target_key.and_then(|key| ui_tree.slots[key].id); // key.and_then(|key| ui_tree.slots[key].id);
-                    // }
-                    self.active_element_id = self.event_captured_by;
-                } else if matches!(event, Event::MouseButtonUp { .. }) {
-                    self.active_element_id = None;
+                // Dispatch the main event from innermost to outermost
+                for key in ancestry_keys {
+                    let element = &mut ui_tree.slots[key];
+                    let bounds = element.bounds();
+
+                    if let Some(ref mut widget) = element.content
+                        && let Some(id) = element.id
+                    {
+                        let instance = ui_tree.widget_state.get_mut(&id).unwrap();
+                        widget.update(&mut ui_tree.arenas, instance, hwnd, self, &event, bounds);
+
+                        if self.event_captured_by.is_some() {
+                            break;
+                        }
+                    }
                 }
 
-                if let Some(message) = (self.event_mapper)(event, self.event_captured_by) {
-                    self.publish(message);
+                // Update previous ancestry for next event
+                if matches!(event, Event::MouseMove { .. }) {
+                    self.previous_mouse_ancestry = current_ancestry_ids;
                 }
-                return;
+            } else if matches!(event, Event::MouseMove { .. }) {
+                // Mouse is outside all elements - send leave events to all previously hovered elements
+                // TODO: I don't like cloning here...
+                for &prev_id in &self.previous_mouse_ancestry.clone() {
+                    self.dispatch_event_to(hwnd, ui_tree, Event::MouseLeave { x, y }, prev_id);
+                }
+                self.previous_mouse_ancestry.clear();
             }
+
+            // Track active element on mouse down/up
+            if matches!(event, Event::MouseButtonDown { .. }) {
+                // let key = Self::find_innermost_element_at(ui_tree, x, y);
+                // if let Some(id) = self.event_captured_by {
+                //     self.active_element_id = Some(id); //target_key.and_then(|key| ui_tree.slots[key].id); // key.and_then(|key| ui_tree.slots[key].id);
+                // }
+                self.active_element_id = self.event_captured_by;
+            } else if matches!(event, Event::MouseButtonUp { .. }) {
+                self.active_element_id = None;
+            }
+
+            if let Some(message) = (self.event_mapper)(event, self.event_captured_by) {
+                self.publish(message);
+            }
+            return;
+        }
 
         // For non-mouse events, use the original broadcast behavior
         visitors::visit_reverse_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
@@ -1003,51 +1004,51 @@ impl<Message> Shell<Message> {
                 let element = &mut ui_tree.slots[key];
                 if let Some(ref mut widget) = element.content
                     && let Some(text_input) = widget.as_drop_target()
-                        && let Some(id) = element.id
-                        && let Some(instance) = ui_tree.widget_state.get_mut(&id)
-                    {
-                        new_drag_widget = Some(key);
+                    && let Some(id) = element.id
+                    && let Some(instance) = ui_tree.widget_state.get_mut(&id)
+                {
+                    new_drag_widget = Some(key);
 
-                        match event {
-                            DragEvent::DragEnter { drag_info } => {
+                    match event {
+                        DragEvent::DragEnter { drag_info } => {
+                            let effect = text_input.drag_enter(instance, drag_info, bounds);
+                            result = Some(DropResult {
+                                effect,
+                                handled: true,
+                            });
+                        }
+                        DragEvent::DragOver { drag_info } => {
+                            if prev_drag_widget != Some(key) {
+                                // Moving to a new widget, call drag_enter
                                 let effect = text_input.drag_enter(instance, drag_info, bounds);
                                 result = Some(DropResult {
                                     effect,
                                     handled: true,
                                 });
-                            }
-                            DragEvent::DragOver { drag_info } => {
-                                if prev_drag_widget != Some(key) {
-                                    // Moving to a new widget, call drag_enter
-                                    let effect = text_input.drag_enter(instance, drag_info, bounds);
-                                    result = Some(DropResult {
-                                        effect,
-                                        handled: true,
-                                    });
-                                } else {
-                                    // Same widget, call drag_over
-                                    let effect = text_input.drag_over(instance, drag_info, bounds);
-                                    result = Some(DropResult {
-                                        effect,
-                                        handled: true,
-                                    });
-                                }
-                            }
-                            DragEvent::Drop { drag_info } => {
-                                result = Some(text_input.drop(instance, self, drag_info, bounds));
-
-                                // Make sure to reset active element after drop as we dont get mouse-up for this.
-                                self.active_element_id = None;
-                            }
-                            DragEvent::DragLeave => {
-                                text_input.drag_leave(instance, bounds);
+                            } else {
+                                // Same widget, call drag_over
+                                let effect = text_input.drag_over(instance, drag_info, bounds);
+                                result = Some(DropResult {
+                                    effect,
+                                    handled: true,
+                                });
                             }
                         }
+                        DragEvent::Drop { drag_info } => {
+                            result = Some(text_input.drop(instance, self, drag_info, bounds));
 
-                        if !matches!(event, DragEvent::DragLeave) {
-                            return VisitAction::Exit;
+                            // Make sure to reset active element after drop as we dont get mouse-up for this.
+                            self.active_element_id = None;
+                        }
+                        DragEvent::DragLeave => {
+                            text_input.drag_leave(instance, bounds);
                         }
                     }
+
+                    if !matches!(event, DragEvent::DragLeave) {
+                        return VisitAction::Exit;
+                    }
+                }
             }
             VisitAction::Continue
         });

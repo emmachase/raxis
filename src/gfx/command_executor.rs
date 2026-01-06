@@ -8,8 +8,8 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LAYER_PARAMETERS1,
 };
 use windows::Win32::Graphics::Direct2D::{
-    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT, D2D1_INTERPOLATION_MODE_LINEAR,
-    ID2D1Brush, ID2D1Geometry, ID2D1Image,
+    D2D1_ANTIALIAS_MODE_PER_PRIMITIVE, D2D1_DRAW_TEXT_OPTIONS_ENABLE_COLOR_FONT,
+    D2D1_INTERPOLATION_MODE_LINEAR, ID2D1Brush, ID2D1Geometry, ID2D1Image,
 };
 use windows_core::Interface;
 use windows_numerics::{Matrix3x2, Vector2};
@@ -71,7 +71,11 @@ impl CommandExecutor {
 
     /// Check if a non-clip command should be executed based on screen bounds
     /// This excludes clip push/pop commands which are handled separately
-    fn should_execute_command_simple(command: &DrawCommand, bounds: &RectDIP, skip_depth: &mut u32) -> bool {
+    fn should_execute_command_simple(
+        command: &DrawCommand,
+        bounds: &RectDIP,
+        skip_depth: &mut u32,
+    ) -> bool {
         match command {
             // Commands that always execute regardless of bounds
             DrawCommand::Clear { .. } => true,
@@ -201,7 +205,11 @@ impl CommandExecutor {
     }
 
     /// Execute a single drawing command
-    pub fn execute_command(renderer: &Renderer, command_list: &[DrawCommand], command_index: usize) -> windows::core::Result<()> {
+    pub fn execute_command(
+        renderer: &Renderer,
+        command_list: &[DrawCommand],
+        command_index: usize,
+    ) -> windows::core::Result<()> {
         let command = &command_list[command_index];
 
         unsafe {
@@ -253,7 +261,7 @@ impl CommandExecutor {
                             X: rect.x + shadow.offset_x,
                             Y: rect.y + shadow.offset_y,
                         };
-                        
+
                         if shadow.blur_radius > 0.0 {
                             // Use Direct2D shadow effect for blurred shadows
                             renderer.draw_text_with_blurred_shadow(
@@ -280,7 +288,7 @@ impl CommandExecutor {
                             );
                         }
                     }
-                    
+
                     // Draw the actual text
                     renderer.brush.SetColor(&D2D1_COLOR_F {
                         r: color.r,
@@ -527,7 +535,12 @@ impl CommandExecutor {
                     );
                 }
 
-                DrawCommand::FillRectangleWithBackdropFilter { rect, border_radius, color, filter } => {
+                DrawCommand::FillRectangleWithBackdropFilter {
+                    rect,
+                    border_radius,
+                    color,
+                    filter,
+                } => {
                     // Backdrop-filter commands are handled separately in execute_commands_with_bounds
                     // This should not be reached in normal execution
                     Self::execute_backdrop_filter(
@@ -607,10 +620,8 @@ impl CommandExecutor {
             .iter()
             .map(|(_, cmd)| (*cmd).clone())
             .collect();
-        let background_bitmap = renderer.render_commands_to_bitmap(
-            &background_cmds,
-            &expanded_bounds,
-        )?;
+        let background_bitmap =
+            renderer.render_commands_to_bitmap(&background_cmds, &expanded_bounds)?;
 
         // Apply blur effect
         let blur_effect = renderer.apply_gaussian_blur(&background_bitmap, blur_radius)?;
@@ -679,7 +690,9 @@ impl CommandExecutor {
                 }
             } else {
                 // No border radius - just draw blurred background
-                renderer.render_target.PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
+                renderer
+                    .render_target
+                    .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
                 let blur_image: ID2D1Image = Interface::cast(&blur_effect)?;
                 renderer.render_target.DrawImage(

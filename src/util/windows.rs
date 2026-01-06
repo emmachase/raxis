@@ -1,7 +1,7 @@
 use std::sync::OnceLock;
 
-use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
 use windows::Wdk::System::SystemServices::RtlGetVersion;
+use windows::Win32::System::SystemInformation::OSVERSIONINFOW;
 
 static IS_WINDOWS_11: OnceLock<bool> = OnceLock::new();
 

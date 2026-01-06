@@ -1,6 +1,7 @@
 use crate::gfx::RectDIP;
 use crate::layout::model::{
-    BackdropFilter, BorderRadius, Color, DropShadow, TextShadow, StrokeDashStyle, StrokeLineCap, StrokeLineJoin,
+    BackdropFilter, BorderRadius, Color, DropShadow, StrokeDashStyle, StrokeLineCap,
+    StrokeLineJoin, TextShadow,
 };
 use windows::Win32::Graphics::Direct2D::Common::D2D1_COLOR_F;
 use windows::Win32::Graphics::Direct2D::{ID2D1Bitmap, ID2D1PathGeometry, ID2D1SvgDocument};

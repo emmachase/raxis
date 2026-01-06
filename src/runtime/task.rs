@@ -697,8 +697,7 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
     use windows::Win32::Foundation::{LPARAM, WPARAM};
     use windows::Win32::UI::WindowsAndMessaging::SetForegroundWindow;
     use windows::Win32::UI::WindowsAndMessaging::{
-        IsZoomed, PostMessageW, SW_HIDE, SW_SHOW,
-        ShowWindow, WM_CLOSE,
+        IsZoomed, PostMessageW, SW_HIDE, SW_SHOW, ShowWindow, WM_CLOSE,
     };
 
     async fn process_task_stream<Message: Send + Clone + 'static>(
@@ -755,15 +754,37 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                         ShowWindow(hwnd.0, show_cmd).ok().ok();
                     },
                     WindowAction::Minimize => unsafe {
-                        PostMessageW(Some(hwnd.0), WM_SYSCOMMAND, WPARAM(SC_MINIMIZE as usize), LPARAM(0)).ok();
+                        PostMessageW(
+                            Some(hwnd.0),
+                            WM_SYSCOMMAND,
+                            WPARAM(SC_MINIMIZE as usize),
+                            LPARAM(0),
+                        )
+                        .ok();
                     },
                     WindowAction::ToggleMaximizeRestore => unsafe {
                         let is_maximized = IsZoomed(hwnd.0).as_bool();
-                        let show_cmd = if is_maximized { SC_RESTORE } else { SC_MAXIMIZE };
-                        PostMessageW(Some(hwnd.0), WM_SYSCOMMAND, WPARAM(show_cmd as usize), LPARAM(0)).ok();
+                        let show_cmd = if is_maximized {
+                            SC_RESTORE
+                        } else {
+                            SC_MAXIMIZE
+                        };
+                        PostMessageW(
+                            Some(hwnd.0),
+                            WM_SYSCOMMAND,
+                            WPARAM(show_cmd as usize),
+                            LPARAM(0),
+                        )
+                        .ok();
                     },
                     WindowAction::Close => unsafe {
-                        PostMessageW(Some(hwnd.0), WM_SYSCOMMAND, WPARAM(SC_CLOSE as usize), LPARAM(0)).ok();
+                        PostMessageW(
+                            Some(hwnd.0),
+                            WM_SYSCOMMAND,
+                            WPARAM(SC_CLOSE as usize),
+                            LPARAM(0),
+                        )
+                        .ok();
                     },
                 },
                 Action::System(action) => {

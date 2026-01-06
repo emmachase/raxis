@@ -383,10 +383,11 @@ pub fn dispatch_operation<Message>(ui_tree: BorrowedUITree<Message>, operation: 
     visitors::visit_bfs(ui_tree, ui_tree.root, |ui_tree, key, _| {
         let element = &mut ui_tree.slots[key];
         if let Some(widget) = element.content.as_mut()
-            && let Some(id) = element.id {
-                let instance = ui_tree.widget_state.get_mut(&id).unwrap();
-                widget.operate(&ui_tree.arenas, instance, operation);
-            }
+            && let Some(id) = element.id
+        {
+            let instance = ui_tree.widget_state.get_mut(&id).unwrap();
+            widget.operate(&ui_tree.arenas, instance, operation);
+        }
     });
 }
 

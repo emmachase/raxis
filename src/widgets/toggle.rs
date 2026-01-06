@@ -258,7 +258,10 @@ impl<Message> Widget<Message> for Toggle<Message> {
         _arenas: &UIArenas,
         _device_resources: &crate::runtime::DeviceResources,
     ) -> super::State {
-        Some(ToggleWidgetState::new(self.checked, self.animation_duration, self.animation_easing).into_any())
+        Some(
+            ToggleWidgetState::new(self.checked, self.animation_duration, self.animation_easing)
+                .into_any(),
+        )
     }
 
     fn limits_x(

@@ -358,7 +358,7 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
             state.focused_at = None;
             if self.on_text_input.is_some() {
                 self.on_text_input.as_ref().unwrap()(state.text.as_str(), shell);
-                
+
                 // Request another view pass
                 // This will potentially update the passed text value
                 shell.request_redraw(hwnd, RedrawRequest::Immediate);
@@ -436,12 +436,13 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                 if state.is_dragging && state.can_drag_drop && !state.has_started_ole_drag {
                     // Check if we have selected text and the drag started within the selection
                     if let Some(start_pos) = state.drag_start_position
-                        && let Some(drag_data) = state.can_ole_drag(start_pos) {
-                            // Start OLE drag operation
-                            state.handoff_ole_drag(instance.id, shell, &drag_data);
+                        && let Some(drag_data) = state.can_ole_drag(start_pos)
+                    {
+                        // Start OLE drag operation
+                        state.handoff_ole_drag(instance.id, shell, &drag_data);
 
-                            return; // Don't update text selection when starting OLE drag
-                        }
+                        return; // Don't update text selection when starting OLE drag
+                    }
                 }
 
                 if state.update_drag(widget_x, widget_y) {
@@ -526,9 +527,10 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                         }
                         VKey::V if ctrl_down => {
                             if !state.is_composing()
-                                && let Some(s) = get_clipboard_text(hwnd) {
-                                    let _ = state.insert_str(&s);
-                                }
+                                && let Some(s) = get_clipboard_text(hwnd)
+                            {
+                                let _ = state.insert_str(&s);
+                            }
                             true
                         }
                         VKey::Z if ctrl_down && shift_down => {
@@ -596,7 +598,9 @@ impl<Message: 'static> Widget<Message> for TextInput<Message> {
                 }
             }
             super::Event::Redraw { now } => {
-                if shell.focus_manager.is_focused(instance.id) && let Some(focused_at) = state.focused_at {
+                if shell.focus_manager.is_focused(instance.id)
+                    && let Some(focused_at) = state.focused_at
+                {
                     let next_blink =
                         (0.05 + BLINK_TIME) - (*now - focused_at).as_secs_f64() % BLINK_TIME;
                     shell.request_redraw(
@@ -1107,7 +1111,8 @@ impl<Message> WidgetState<Message> {
         unsafe {
             let layout = self.layout.as_ref().expect("layout not built");
 
-            let caret_visible = (((now - self.focused_at.unwrap_or(now)).as_secs_f64()) / BLINK_TIME) % 2.0 < 1.0;
+            let caret_visible =
+                (((now - self.focused_at.unwrap_or(now)).as_secs_f64()) / BLINK_TIME) % 2.0 < 1.0;
 
             // Normal rendering: selection, base text, caret
             self.draw_selection_with_recorder(layout, recorder, bounds)?;
@@ -1217,10 +1222,12 @@ impl<Message> WidgetState<Message> {
         let (sel_start, sel_end) = self.selection_range();
         if sel_start != sel_end
             && let Ok(idx) = self.hit_test_index(position.x, position.y)
-                && idx >= sel_start && idx <= sel_end
-                    && let Some(selected_text) = self.selected_text() {
-                        return Some(DragData::Text(selected_text.to_owned()));
-                    }
+            && idx >= sel_start
+            && idx <= sel_end
+            && let Some(selected_text) = self.selected_text()
+        {
+            return Some(DragData::Text(selected_text.to_owned()));
+        }
         None
     }
 
@@ -1546,9 +1553,10 @@ impl<Message> WidgetState<Message> {
         let bytes = self.text.as_bytes();
         let mut start_byte = 0usize;
         if byte_idx > 0
-            && let Some(pos) = bytes[..byte_idx].iter().rposition(|&c| c == b'\n') {
-                start_byte = pos + 1;
-            }
+            && let Some(pos) = bytes[..byte_idx].iter().rposition(|&c| c == b'\n')
+        {
+            start_byte = pos + 1;
+        }
         let mut end_byte = bytes.len();
         if let Some(off) = bytes[byte_idx..].iter().position(|&c| c == b'\n') {
             end_byte = byte_idx + off; // exclude newline
@@ -1593,12 +1601,13 @@ impl<Message> WidgetState<Message> {
 
             // If this segment is the next Unicode word, record it as a word range
             if let Some(next_word) = words.peek()
-                && *next_word == seg {
-                    starts.push(seg_start);
-                    ranges.push((seg_start, seg_start + seg_len16));
-                    let _ = words.next();
-                    continue;
-                }
+                && *next_word == seg
+            {
+                starts.push(seg_start);
+                ranges.push((seg_start, seg_start + seg_len16));
+                let _ = words.next();
+                continue;
+            }
 
             // Otherwise, treat this non-whitespace segment (punct/symbol run)
             // as its own selectable block, kept distinct from adjacent words.
@@ -2139,26 +2148,33 @@ impl<Message> WidgetState<Message> {
         }
     }
 
-    pub fn ensure_text(&mut self, shell: &Shell<Message>, id: WidgetId, text: Option<&str>) -> bool {
+    pub fn ensure_text(
+        &mut self,
+        shell: &Shell<Message>,
+        id: WidgetId,
+        text: Option<&str>,
+    ) -> bool {
         if let Some(text) = text
-            && !shell.focus_manager.is_focused(id) && self.text != text {
-                self.text = text.to_string();
-                self.recompute_text_boundaries();
-                let _ = self.build_text_layout();
-                let _ = self.recalc_metrics();
+            && !shell.focus_manager.is_focused(id)
+            && self.text != text
+        {
+            self.text = text.to_string();
+            self.recompute_text_boundaries();
+            let _ = self.build_text_layout();
+            let _ = self.recalc_metrics();
 
-                // Only reset selection if it's now out of bounds
-                let max_pos = self.text.encode_utf16().count() as u32;
-                if self.selection_anchor > max_pos {
-                    self.selection_anchor = max_pos;
-                }
-                if self.selection_active > max_pos {
-                    self.selection_active = max_pos;
-                }
-
-                // Request draw
-                return true;
+            // Only reset selection if it's now out of bounds
+            let max_pos = self.text.encode_utf16().count() as u32;
+            if self.selection_anchor > max_pos {
+                self.selection_anchor = max_pos;
             }
+            if self.selection_active > max_pos {
+                self.selection_active = max_pos;
+            }
+
+            // Request draw
+            return true;
+        }
 
         false
     }
