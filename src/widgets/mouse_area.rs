@@ -228,8 +228,8 @@ impl<Message: 'static> MouseArea<Message> {
             } else if inside {
                 state.last_mouse_pos = Some((*x, *y));
             }
-        } else if let Event::MouseLeave { x, y } = event {
-            if state.mouse_inside {
+        } else if let Event::MouseLeave { x, y } = event
+            && state.mouse_inside {
                 state.mouse_inside = false;
                 state.last_mouse_pos = Some((*x, *y));
 
@@ -239,8 +239,7 @@ impl<Message: 'static> MouseArea<Message> {
                     }
             }
 
-            // TODO: Replace synthetic handling with framework enter/leave events 
-        }
+            // TODO: Replace synthetic handling with framework enter/leave events
     }
 
     pub fn as_element(self, id: u64, children: impl Into<Element<Message>>) -> Element<Message> {

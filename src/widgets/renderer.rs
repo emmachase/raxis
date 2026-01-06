@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::{cell::RefCell, collections::hash_map, mem::ManuallyDrop};
 use windows::Win32::Graphics::Direct2D::Common::D2D1_BORDER_MODE_HARD;
-use windows::Win32::Graphics::Direct2D::{D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED, D2D1_LAYER_PARAMETERS, D2D1_PROPERTY_TYPE_ENUM, D2D1_PROPERTY_TYPE_INT32, D2D1_PROPERTY_TYPE_UINT32};
+use windows::Win32::Graphics::Direct2D::{D2D1_GAUSSIANBLUR_OPTIMIZATION_SPEED, D2D1_PROPERTY_TYPE_ENUM};
 use windows::Win32::Graphics::Direct2D::{
     CLSID_D2D1GaussianBlur, CLSID_D2D1Shadow,
     Common::{
@@ -18,7 +18,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_LINE_JOIN_ROUND, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_VECTOR4,
     D2D1_ROUNDED_RECT, D2D1_SHADOW_PROP_BLUR_STANDARD_DEVIATION, D2D1_SHADOW_PROP_COLOR,
     D2D1_STROKE_STYLE_PROPERTIES, D2D1_SWEEP_DIRECTION_CLOCKWISE, D2D1_SWEEP_DIRECTION_COUNTER_CLOCKWISE,
-    ID2D1Bitmap, ID2D1Brush, ID2D1DeviceContext6, ID2D1Effect, ID2D1Factory,
+    ID2D1Bitmap, ID2D1DeviceContext6, ID2D1Effect, ID2D1Factory,
     ID2D1Geometry, ID2D1GeometrySink, ID2D1Image, ID2D1SolidColorBrush, ID2D1StrokeStyle,
 };
 use windows_core::Interface;

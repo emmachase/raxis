@@ -27,7 +27,7 @@ use crate::widgets::{
     Bounds, DragData, DragInfo, DropResult, Instance, Widget, WidgetDragDropTarget, limit_response,
     widget,
 };
-use crate::{DeferredControl, InputMethod, RedrawRequest, RequestAnimation, Shell, with_state};
+use crate::{DeferredControl, InputMethod, RedrawRequest, Shell, with_state};
 use unicode_segmentation::UnicodeSegmentation;
 
 const BLINK_TIME: f64 = 0.5;
@@ -2140,8 +2140,8 @@ impl<Message> WidgetState<Message> {
     }
 
     pub fn ensure_text(&mut self, shell: &Shell<Message>, id: WidgetId, text: Option<&str>) -> bool {
-        if let Some(text) = text {
-            if !shell.focus_manager.is_focused(id) && self.text != text {
+        if let Some(text) = text
+            && !shell.focus_manager.is_focused(id) && self.text != text {
                 self.text = text.to_string();
                 self.recompute_text_boundaries();
                 let _ = self.build_text_layout();
@@ -2159,7 +2159,6 @@ impl<Message> WidgetState<Message> {
                 // Request draw
                 return true;
             }
-        }
 
         false
     }

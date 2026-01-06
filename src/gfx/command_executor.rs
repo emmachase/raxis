@@ -110,7 +110,7 @@ impl CommandExecutor {
             DrawCommand::DrawBorder { rect, .. } => Self::rect_intersects_bounds(rect, bounds),
 
             DrawCommand::PushAxisAlignedClip { rect } => {
-                if Self::rect_intersects_bounds(rect, &bounds) {
+                if Self::rect_intersects_bounds(rect, bounds) {
                     true // Execute the push
                 } else {
                     *skip_depth += 1; // Start skipping
@@ -118,7 +118,7 @@ impl CommandExecutor {
                 }
             }
             DrawCommand::PushRoundedClip { rect, .. } => {
-                if Self::rect_intersects_bounds(rect, &bounds) {
+                if Self::rect_intersects_bounds(rect, bounds) {
                     true // Execute the push
                 } else {
                     *skip_depth += 1; // Start skipping

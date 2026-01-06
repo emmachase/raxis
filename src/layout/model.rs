@@ -1159,7 +1159,7 @@ impl<Message> Element<Message> {
         F: Fn(Element<Message>) -> Element<Message> + Clone,
     {
         Element {
-            children: self.children.into_iter().map(|c| f(c)).collect(),
+            children: self.children.into_iter().map(f).collect(),
             ..self
         }
     }

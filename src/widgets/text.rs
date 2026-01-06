@@ -897,12 +897,10 @@ impl<Message> Widget<Message> for Text {
                         state.cached_spans_hash = None;
                         shell.request_redraw(hwnd, RedrawRequest::Immediate);
                     }
-                } else {
-                    if state.hovered_hyperlink_index.is_some() {
-                        state.hovered_hyperlink_index = None;
-                        state.cached_spans_hash = None;
-                        shell.request_redraw(hwnd, RedrawRequest::Immediate);
-                    }
+                } else if state.hovered_hyperlink_index.is_some() {
+                    state.hovered_hyperlink_index = None;
+                    state.cached_spans_hash = None;
+                    shell.request_redraw(hwnd, RedrawRequest::Immediate);
                 }
             }
             super::Event::MouseLeave { .. } => {
@@ -916,13 +914,11 @@ impl<Message> Widget<Message> for Text {
                 let widget_x = x - content_box.x;
                 let widget_y = y - content_box.y;
 
-                if let Some(idx) = state.hit_test_index(widget_x, widget_y) {
-                    if let Some(span_idx) = state.find_hyperlink_at_index(idx, &self.spans) {
-                        if let Some(url) = &self.spans[span_idx].url {
+                if let Some(idx) = state.hit_test_index(widget_x, widget_y)
+                    && let Some(span_idx) = state.find_hyperlink_at_index(idx, &self.spans)
+                        && let Some(url) = &self.spans[span_idx].url {
                             shell.open_url(url);
                         }
-                    }
-                }
             }
             _ => {}
         }
@@ -1014,11 +1010,10 @@ impl<Message> Widget<Message> for Text {
         let widget_x = point.x - content_box.x;
         let widget_y = point.y - content_box.y;
 
-        if let Some(idx) = state.hit_test_index(widget_x, widget_y) {
-            if state.find_hyperlink_at_index(idx, &self.spans).is_some() {
+        if let Some(idx) = state.hit_test_index(widget_x, widget_y)
+            && state.find_hyperlink_at_index(idx, &self.spans).is_some() {
                 return Some(super::Cursor::Pointer);
             }
-        }
         None // Text widget doesn't change cursor otherwise
     }
 }
