@@ -2045,7 +2045,6 @@ fn main() {
                 }
             }
         })
-        .with_initial_display(InitialDisplay::Minimized)
         .replace_titlebar()
         .with_syscommand_handler(|state, command| {
             match command {
