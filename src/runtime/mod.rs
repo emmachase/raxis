@@ -30,6 +30,7 @@ use crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING;
 use crate::runtime::context_menu::WM_SHOW_CONTEXT_MENU;
 use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::tray::{WM_TRAYICON, load_icon_from_resource};
+use crate::runtime::window::builder::InitialDisplay;
 use crate::widgets::drop_target::DropTarget;
 use crate::widgets::{DragData, DragEvent, Event};
 use crate::{DeferredControl, RedrawRequest};
@@ -38,9 +39,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Mutex, OnceLock};
 use windows::Win32::Foundation::COLORREF;
 use windows::Win32::Graphics::Dwm::{
-    DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_NONE, DWMSBT_TABBEDWINDOW,
-    DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE, DWMWA_USE_IMMERSIVE_DARK_MODE,
-    DwmDefWindowProc, DwmSetWindowAttribute,
+    DWM_SYSTEMBACKDROP_TYPE, DWMSBT_MAINWINDOW, DWMSBT_NONE,
+    DWMSBT_TABBEDWINDOW, DWMSBT_TRANSIENTWINDOW, DWMWA_SYSTEMBACKDROP_TYPE,
+    DWMWA_USE_IMMERSIVE_DARK_MODE, DwmDefWindowProc, DwmSetWindowAttribute,
 };
 use windows::Win32::Graphics::Gdi::{CreateSolidBrush, DeleteObject, FillRect, HDC};
 use windows::Win32::System::Com::CoUninitialize;
@@ -50,7 +51,7 @@ use windows::Win32::UI::Input::Ime::{
 };
 use windows::Win32::UI::WindowsAndMessaging::{
     HTNOWHERE, IsZoomed, NCCALCSIZE_PARAMS, PostMessageW, SM_CXFRAME, SM_CXPADDEDBORDER,
-    SM_CYFRAME, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
+    SM_CYFRAME, SW_HIDE, SW_MINIMIZE, SWP_NOMOVE, WM_ACTIVATE, WM_DPICHANGED, WM_ERASEBKGND, WM_GETMINMAXINFO, WM_KEYUP,
     WM_MOUSEWHEEL, WM_NCCALCSIZE, WM_NCHITTEST, WM_SYSCOMMAND, WM_TIMER, WM_USER, WNDCLASSEXW,
     WS_EX_NOREDIRECTIONBITMAP, WS_MAXIMIZEBOX, WS_OVERLAPPED, WS_THICKFRAME,
 };
@@ -430,6 +431,8 @@ impl<
             backdrop,
             replace_titlebar,
 
+            initial_display: start_minimised,
+
             tray_config,
             tray_event_handler,
 
@@ -616,7 +619,11 @@ impl<
             .ok();
 
             // We don't care if the window was previously hidden or not
-            let _ = ShowWindow(hwnd, SW_SHOW);
+            let _ = ShowWindow(hwnd, match start_minimised {
+                InitialDisplay::Shown => SW_SHOW,
+                InitialDisplay::Minimized => SW_MINIMIZE,
+                InitialDisplay::Hidden => SW_HIDE
+            });
             UpdateWindow(hwnd).ok()?;
 
             let mut msg = MSG::default();

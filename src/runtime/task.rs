@@ -36,11 +36,13 @@ use windows::Win32::UI::Shell::FOLDERID_LocalAppData;
 use windows::Win32::UI::Shell::FOLDERID_RoamingAppData;
 use windows::Win32::UI::Shell::KNOWN_FOLDER_FLAG;
 use windows::Win32::UI::Shell::SHGetKnownFolderPath;
+use windows::Win32::UI::WindowsAndMessaging::IsIconic;
 use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 use windows::Win32::UI::WindowsAndMessaging::SC_CLOSE;
 use windows::Win32::UI::WindowsAndMessaging::SC_MAXIMIZE;
 use windows::Win32::UI::WindowsAndMessaging::SC_MINIMIZE;
 use windows::Win32::UI::WindowsAndMessaging::SC_RESTORE;
+use windows::Win32::UI::WindowsAndMessaging::SW_MINIMIZE;
 use windows::Win32::UI::WindowsAndMessaging::WM_SYSCOMMAND;
 // use futures::{BoxStream, Send, boxed_stream};
 
@@ -68,6 +70,7 @@ pub enum ClipboardAction {
 pub enum WindowMode {
     Windowed,
     Hidden,
+    Minimized
 }
 
 pub enum WindowAction {
@@ -75,6 +78,7 @@ pub enum WindowAction {
     GetMode(Sender<WindowMode>),
     SetMode(WindowMode),
     Minimize,
+    Restore,
     ToggleMaximizeRestore,
     Close,
 }
@@ -601,6 +605,11 @@ pub fn minimize_window<T>() -> Task<T> {
     effect(Action::Window(WindowAction::Minimize))
 }
 
+/// Creates a new [`Task`] that restores the window.
+pub fn restore_window<T>() -> Task<T> {
+    effect(Action::Window(WindowAction::Restore))
+}
+
 /// Creates a new [`Task`] that toggles between maximized and restored window state.
 pub fn toggle_maximize_window<T>() -> Task<T> {
     effect(Action::Window(WindowAction::ToggleMaximizeRestore))
@@ -742,14 +751,18 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                     },
                     WindowAction::GetMode(sender) => unsafe {
                         let _ = sender.send(match IsWindowVisible(hwnd.0).as_bool() {
-                            true => WindowMode::Windowed,
                             false => WindowMode::Hidden,
+                            true => match IsIconic(hwnd.0).as_bool() {
+                                false => WindowMode::Windowed,
+                                true => WindowMode::Minimized,
+                            },
                         });
                     },
                     WindowAction::SetMode(mode) => unsafe {
                         let show_cmd = match mode {
                             WindowMode::Windowed => SW_SHOW,
                             WindowMode::Hidden => SW_HIDE,
+                            WindowMode::Minimized => SW_MINIMIZE
                         };
                         ShowWindow(hwnd.0, show_cmd).ok().ok();
                     },
@@ -761,6 +774,9 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                             LPARAM(0),
                         )
                         .ok();
+                    },
+                    WindowAction::Restore => unsafe {
+                        PostMessageW(Some(hwnd.0), WM_SYSCOMMAND, WPARAM(SC_RESTORE as usize), LPARAM(0)).ok();
                     },
                     WindowAction::ToggleMaximizeRestore => unsafe {
                         let is_maximized = IsZoomed(hwnd.0).as_bool();

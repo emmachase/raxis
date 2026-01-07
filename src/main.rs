@@ -28,6 +28,7 @@ use raxis::{
         font_manager::FontIdentifier,
         scroll::ScrollPosition,
         task::{Task, hide_window},
+        window::builder::InitialDisplay,
     },
     use_animation,
     util::{str::StableString, unique::combine_id},
@@ -2044,6 +2045,7 @@ fn main() {
                 }
             }
         })
+        .with_initial_display(InitialDisplay::Minimized)
         .replace_titlebar()
         .with_syscommand_handler(|state, command| {
             match command {
