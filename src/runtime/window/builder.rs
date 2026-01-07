@@ -1,8 +1,13 @@
+use crate::gfx::effects::{EffectFactory, PixelShaderEffect};
 use crate::layout::model::ScrollbarStyle;
+use crate::runtime::device::DeviceResources;
 use crate::runtime::syscommand::{SystemCommand, SystemCommandResponse};
 use crate::runtime::task::Task;
 use crate::runtime::tray::{TrayEvent, TrayIconConfig};
 use crate::{EventMapperFn, UpdateFn, ViewFn};
+
+/// Type-erased effect registration function.
+pub(crate) type EffectRegistrationFn = Box<dyn Fn(&DeviceResources) -> windows::core::Result<()>>;
 
 #[derive(Debug, Default)]
 pub enum Backdrop {
@@ -42,6 +47,9 @@ pub struct Application<
         Option<Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>>,
 
     pub(crate) scrollbar_style: ScrollbarStyle,
+
+    /// Custom effects to register with Direct2D
+    pub(crate) effect_registrations: Vec<EffectRegistrationFn>,
 }
 
 impl<
@@ -79,6 +87,8 @@ impl<
             syscommand_handler: None,
 
             scrollbar_style: ScrollbarStyle::default(),
+
+            effect_registrations: vec![],
         }
     }
 
@@ -165,5 +175,29 @@ impl<
             scrollbar_style,
             ..self
         }
+    }
+
+    /// Registers a custom pixel shader effect to be used with the application.
+    ///
+    /// Effects are automatically registered with Direct2D when device resources
+    /// are created. You can then use them via `Renderer::create_effect` or
+    /// `Renderer::apply_effect`.
+    ///
+    /// The effect type must have the `#[pixel_shader_effect]` attribute applied.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// Application::new(state, view, update, boot)
+    ///     .with_effect::<GrayscaleEffect>()
+    ///     .with_effect::<SepiaEffect>()
+    ///     .run()
+    /// ```
+    pub fn with_effect<E: PixelShaderEffect + EffectFactory>(mut self) -> Self {
+        self.effect_registrations
+            .push(Box::new(|device_resources: &DeviceResources| {
+                device_resources.register_effect::<E>()
+            }));
+        self
     }
 }

@@ -301,6 +301,10 @@ pub type UpdateFn<State, Message> =
     fn(&mut State, Message) -> Option<crate::runtime::task::Task<Message>>;
 pub type EventMapperFn<Message> = fn(Event, Option<u64>) -> Option<Message>;
 
+pub use gfx::effects::{
+    DynPixelShaderEffect, EffectInstance, EffectMetadata, EffectProperty, EffectRegistry,
+    PixelShaderEffect,
+};
 pub use runtime::Application;
 pub use runtime::context_menu::{ContextMenu, ContextMenuItem};
 pub use runtime::syscommand::{SystemCommand, SystemCommandResponse};

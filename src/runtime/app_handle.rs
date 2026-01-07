@@ -176,6 +176,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
             Box<dyn Fn(&State, SystemCommand) -> SystemCommandResponse<Message>>,
         >,
         scrollbar_style: ScrollbarStyle,
+        effect_registrations: Vec<crate::runtime::window::builder::EffectRegistrationFn>,
     ) -> Result<Self> {
         unsafe {
             let mut d3d_device = None;
@@ -265,7 +266,15 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 dcomp_target,
                 dcomp_visual: None,
                 shadow_cache: RefCell::new(crate::widgets::renderer::ShadowCache::default()),
+                effect_registry: RefCell::new(crate::gfx::effects::EffectRegistry::new()),
             };
+
+            // Register custom effects with Direct2D
+            for register_effect in effect_registrations {
+                if let Err(e) = register_effect(&device_resources) {
+                    eprintln!("Warning: Failed to register custom effect: {:?}", e);
+                }
+            }
 
             // Call boot before we touch the tree
             let boot_task = boot_fn(&user_state);

@@ -495,15 +495,52 @@ impl TextShadow {
 
 // ---------- Backdrop Filter ----------
 
-#[derive(Clone, Copy, Debug, PartialEq)]
+/// Filter effects that can be applied to the backdrop behind an element.
+#[derive(Clone)]
 pub enum BackdropFilter {
     /// Apply a Gaussian blur to the backdrop
     Blur { radius: f32 },
+
+    /// Apply any custom pixel shader effect
+    Custom(std::sync::Arc<dyn crate::gfx::effects::DynPixelShaderEffect>),
+}
+
+impl std::fmt::Debug for BackdropFilter {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Blur { radius } => f.debug_struct("Blur").field("radius", radius).finish(),
+            Self::Custom(effect) => f
+                .debug_struct("Custom")
+                .field("clsid", &effect.clsid())
+                .finish(),
+        }
+    }
+}
+
+impl PartialEq for BackdropFilter {
+    fn eq(&self, other: &Self) -> bool {
+        match (self, other) {
+            (Self::Blur { radius: a }, Self::Blur { radius: b }) => a == b,
+            (Self::Custom(a), Self::Custom(b)) => std::sync::Arc::ptr_eq(a, b),
+            _ => false,
+        }
+    }
 }
 
 impl BackdropFilter {
     pub fn blur(radius: f32) -> Self {
         Self::Blur { radius }
+    }
+
+    /// Create a custom effect filter from any `PixelShaderEffect`.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// BackdropFilter::custom(MyEffect { intensity: 0.5 })
+    /// ```
+    pub fn custom(effect: impl crate::gfx::effects::PixelShaderEffect) -> Self {
+        Self::Custom(std::sync::Arc::new(effect))
     }
 }
 
@@ -737,7 +774,7 @@ impl<Message> From<&UIElement<Message>> for ElementStyle {
             drop_shadows: value.drop_shadows.clone(),
             text_shadows: value.text_shadows.clone(),
             border: value.border,
-            backdrop_filter: value.backdrop_filter,
+            backdrop_filter: value.backdrop_filter.clone(),
             snap: value.snap,
         }
     }

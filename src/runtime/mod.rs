@@ -439,6 +439,8 @@ impl<
             syscommand_handler,
 
             scrollbar_style,
+
+            effect_registrations,
         } = self;
 
         WNDPROC_IMPL
@@ -560,6 +562,7 @@ impl<
                 tray_event_handler,
                 syscommand_handler,
                 scrollbar_style,
+                effect_registrations,
             )?;
 
             let dips = dips_scale(hwnd);

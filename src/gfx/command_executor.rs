@@ -550,7 +550,7 @@ impl CommandExecutor {
                         *rect,
                         *color,
                         *border_radius,
-                        *filter,
+                        filter.clone(),
                     )?;
                 }
             }
@@ -600,13 +600,12 @@ impl CommandExecutor {
             }
         }
 
-        // Get blur radius from filter
-        let blur_radius = match filter {
-            BackdropFilter::Blur { radius } => radius,
+        // Calculate padding for effects that expand (blur effects need padding)
+        let blur_padding = match &filter {
+            BackdropFilter::Blur { radius } => radius * 3.0,
+            BackdropFilter::Custom(effect) => effect.input_padding(),
         };
 
-        // Expand bounds for blur bleed
-        let blur_padding = blur_radius * 3.0;
         let expanded_bounds = RectDIP {
             x: bounds.x - blur_padding,
             y: bounds.y - blur_padding,
@@ -615,7 +614,6 @@ impl CommandExecutor {
         };
 
         // Render background commands to offscreen bitmap
-        // Collect commands into a vector we can pass as a slice
         let background_cmds: Vec<DrawCommand> = background_commands
             .iter()
             .map(|(_, cmd)| (*cmd).clone())
@@ -623,8 +621,8 @@ impl CommandExecutor {
         let background_bitmap =
             renderer.render_commands_to_bitmap(&background_cmds, &expanded_bounds)?;
 
-        // Apply blur effect
-        let blur_effect = renderer.apply_gaussian_blur(&background_bitmap, blur_radius)?;
+        // Apply the appropriate effect based on filter type
+        let effect_output = Self::apply_backdrop_effect(renderer, &background_bitmap, filter)?;
 
         let clip_rect = D2D_RECT_F {
             left: bounds.x,
@@ -664,8 +662,8 @@ impl CommandExecutor {
                     };
                     renderer.render_target.Clear(Some(&d2d_color));
 
-                    // Draw blurred background
-                    let blur_image: ID2D1Image = Interface::cast(&blur_effect)?;
+                    // Draw filtered background
+                    let blur_image: ID2D1Image = Interface::cast(&effect_output)?;
                     renderer.render_target.DrawImage(
                         &blur_image,
                         Some(&Vector2::new(expanded_bounds.x, expanded_bounds.y)),
@@ -694,9 +692,9 @@ impl CommandExecutor {
                     .render_target
                     .PushAxisAlignedClip(&clip_rect, D2D1_ANTIALIAS_MODE_PER_PRIMITIVE);
 
-                let blur_image: ID2D1Image = Interface::cast(&blur_effect)?;
+                let effect_image: ID2D1Image = Interface::cast(&effect_output)?;
                 renderer.render_target.DrawImage(
-                    &blur_image,
+                    &effect_image,
                     Some(&Vector2::new(expanded_bounds.x, expanded_bounds.y)),
                     None,
                     D2D1_INTERPOLATION_MODE_LINEAR,
@@ -710,6 +708,122 @@ impl CommandExecutor {
             }
         }
 
+        Ok(())
+    }
+
+    /// Apply the appropriate effect based on the BackdropFilter variant.
+    fn apply_backdrop_effect(
+        renderer: &Renderer,
+        bitmap: &windows::Win32::Graphics::Direct2D::ID2D1Bitmap,
+        filter: BackdropFilter,
+    ) -> windows::core::Result<windows::Win32::Graphics::Direct2D::ID2D1Effect> {
+        match filter {
+            BackdropFilter::Blur { radius } => renderer.apply_gaussian_blur(bitmap, radius),
+            BackdropFilter::Custom(effect) => {
+                // Create effect by CLSID from the trait object
+                let clsid = effect.clsid();
+                let d2d_effect = unsafe { renderer.render_target.CreateEffect(&clsid)? };
+                unsafe {
+                    d2d_effect.SetInput(0, Some(&bitmap.cast::<ID2D1Image>()?), false);
+                }
+
+                // Apply properties from the effect
+                for prop in effect.properties() {
+                    Self::set_effect_property(&d2d_effect, prop)?;
+                }
+
+                Ok(d2d_effect)
+            }
+        }
+    }
+
+    /// Set a single property on an effect.
+    fn set_effect_property(
+        effect: &windows::Win32::Graphics::Direct2D::ID2D1Effect,
+        prop: crate::gfx::effects::EffectProperty,
+    ) -> windows::core::Result<()> {
+        use crate::gfx::effects::EffectProperty;
+        use windows::Win32::Graphics::Direct2D::{
+            D2D1_PROPERTY_TYPE_BOOL, D2D1_PROPERTY_TYPE_FLOAT, D2D1_PROPERTY_TYPE_INT32,
+            D2D1_PROPERTY_TYPE_UINT32, D2D1_PROPERTY_TYPE_VECTOR2, D2D1_PROPERTY_TYPE_VECTOR3,
+            D2D1_PROPERTY_TYPE_VECTOR4,
+        };
+
+        unsafe {
+            match prop {
+                EffectProperty::Float { index, value } => {
+                    effect.SetValue(
+                        index,
+                        D2D1_PROPERTY_TYPE_FLOAT,
+                        std::slice::from_raw_parts(
+                            &value as *const f32 as *const u8,
+                            std::mem::size_of::<f32>(),
+                        ),
+                    )?;
+                }
+                EffectProperty::Float2 { index, value } => {
+                    effect.SetValue(
+                        index,
+                        D2D1_PROPERTY_TYPE_VECTOR2,
+                        std::slice::from_raw_parts(
+                            value.as_ptr() as *const u8,
+                            std::mem::size_of::<[f32; 2]>(),
+                        ),
+                    )?;
+                }
+                EffectProperty::Float3 { index, value } => {
+                    effect.SetValue(
+                        index,
+                        D2D1_PROPERTY_TYPE_VECTOR3,
+                        std::slice::from_raw_parts(
+                            value.as_ptr() as *const u8,
+                            std::mem::size_of::<[f32; 3]>(),
+                        ),
+                    )?;
+                }
+                EffectProperty::Float4 { index, value } => {
+                    effect.SetValue(
+                        index,
+                        D2D1_PROPERTY_TYPE_VECTOR4,
+                        std::slice::from_raw_parts(
+                            value.as_ptr() as *const u8,
+                            std::mem::size_of::<[f32; 4]>(),
+                        ),
+                    )?;
+                }
+                EffectProperty::Int { index, value } => {
+                    effect.SetValue(
+                        index,
+                        D2D1_PROPERTY_TYPE_INT32,
+                        std::slice::from_raw_parts(
+                            &value as *const i32 as *const u8,
+                            std::mem::size_of::<i32>(),
+                        ),
+                    )?;
+                }
+                EffectProperty::UInt { index, value } => {
+                    effect.SetValue(
+                        index,
+                        D2D1_PROPERTY_TYPE_UINT32,
+                        std::slice::from_raw_parts(
+                            &value as *const u32 as *const u8,
+                            std::mem::size_of::<u32>(),
+                        ),
+                    )?;
+                }
+                EffectProperty::Bool { index, value } => {
+                    let bool_val: i32 = if value { 1 } else { 0 };
+                    effect.SetValue(
+                        index,
+                        D2D1_PROPERTY_TYPE_BOOL,
+                        std::slice::from_raw_parts(
+                            &bool_val as *const i32 as *const u8,
+                            std::mem::size_of::<i32>(),
+                        ),
+                    )?;
+                }
+            }
+        }
         Ok(())
     }
 }

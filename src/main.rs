@@ -11,6 +11,7 @@ use lazy_static::lazy_static;
 use raxis::{
     ContextMenuItem, HookManager, SvgPathCommands, SystemCommand, SystemCommandResponse, TrayEvent,
     TrayIconConfig,
+    gfx::effects::builtins::{BoxBlurEffect, LiquidGlassEffect},
     layout::{
         helpers::{center, spacer},
         model::{
@@ -1037,7 +1038,7 @@ fn backdrop_filter_demo() -> Element<Message> {
         id: Some(w_id!()),
         direction: Direction::TopToBottom,
         width: Sizing::grow(),
-        height: Sizing::fixed(200.0),
+        height: Sizing::fixed(540.0),
         padding: BoxAmount::all(12.0),
         background_color: Some(Color::from(0xF0F0F000)), // Light background
         border_radius: Some(BorderRadius::all(8.0)),
@@ -1055,10 +1056,48 @@ fn backdrop_filter_demo() -> Element<Message> {
                 width: Sizing::fixed(350.0),
                 height: Sizing::fixed(100.0),
                 background_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.25)), // Semi-transparent white
-                backdrop_filter: Some(BackdropFilter::blur(10.0)),             // Apply blur
+                backdrop_filter: Some(BackdropFilter::blur(10.0)),             // D2D Gaussian blur
                 border_radius: Some(BorderRadius::all(15.0)),
                 content: widget(
-                    Text::new("Blurred Background")
+                    Text::new("Gaussian Blur (D2D)")
+                        .with_paragraph_alignment(ParagraphAlignment::Center)
+                        .with_text_alignment(TextAlignment::Center)
+                        .with_color(Color::BLACK),
+                ),
+                ..Default::default()
+            },
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::fixed(350.0),
+                height: Sizing::fixed(100.0),
+                background_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.25)), // Semi-transparent white
+                backdrop_filter: Some(BackdropFilter::custom(BoxBlurEffect {
+                    radius: 16.0,
+                    intensity: 1.0,
+                })), // Custom box blur shader
+                border_radius: Some(BorderRadius::all(15.0)),
+                content: widget(
+                    Text::new("Box Blur (Custom Shader)")
+                        .with_paragraph_alignment(ParagraphAlignment::Center)
+                        .with_text_alignment(TextAlignment::Center)
+                        .with_color(Color::BLACK),
+                ),
+                ..Default::default()
+            },
+            Element {
+                id: Some(w_id!()),
+                width: Sizing::fixed(350.0),
+                height: Sizing::fixed(100.0),
+                background_color: Some(Color::from_rgba(1.0, 1.0, 1.0, 0.0)), // Fully transparent
+                backdrop_filter: Some(BackdropFilter::custom(LiquidGlassEffect {
+                    refraction: 3.0,
+                    glow: 0.25,
+                    noise: 0.04,
+                    size: 1.0,
+                })), // Liquid glass distortion
+                // border_radius: Some(BorderRadius::all(15.0)),
+                content: widget(
+                    Text::new("Liquid Glass (Distortion)")
                         .with_paragraph_alignment(ParagraphAlignment::Center)
                         .with_text_alignment(TextAlignment::Center)
                         .with_color(Color::BLACK),
@@ -1989,6 +2028,8 @@ fn main() {
     raxis::Application::new(State::default(), view, update, |_state| None)
         .with_title("Raxis Demo")
         .with_backdrop(Backdrop::Mica)
+        .with_effect::<BoxBlurEffect>()
+        .with_effect::<LiquidGlassEffect>()
         .with_tray_icon(tray_config)
         .with_tray_event_handler(|state, event| {
             match event {

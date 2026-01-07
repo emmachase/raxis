@@ -7,6 +7,7 @@ pub mod color;
 pub mod command_executor;
 pub mod command_recorder;
 pub mod draw_commands;
+pub mod effects;
 
 #[derive(Debug, Default, Clone, Copy, PartialEq)]
 pub struct PointDIP {

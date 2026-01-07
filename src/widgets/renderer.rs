@@ -1808,6 +1808,56 @@ impl Renderer<'_> {
         }
     }
 
+    /// Creates a custom pixel shader effect instance.
+    ///
+    /// The effect type must have been registered via [`DeviceResources::register_effect`]
+    /// before calling this method.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let effect = renderer.create_effect::<MySepiaEffect>()?;
+    /// effect.set_input_image(&input_bitmap.cast::<ID2D1Image>()?);
+    /// effect.update(&MySepiaEffect { intensity: 0.8 })?;
+    /// let output = effect.output()?;
+    /// renderer.render_target.DrawImage(&output, ...);
+    /// ```
+    pub fn create_effect<E: crate::gfx::effects::PixelShaderEffect>(
+        &self,
+    ) -> windows::core::Result<crate::gfx::effects::EffectInstance<E>> {
+        crate::gfx::effects::EffectInstance::create(self.render_target)
+    }
+
+    /// Applies a custom pixel shader effect to a bitmap and returns the result.
+    ///
+    /// This is a convenience method that creates an effect instance, sets up the input,
+    /// applies the effect properties, and returns the output image.
+    ///
+    /// # Arguments
+    ///
+    /// * `bitmap` - The input bitmap to process
+    /// * `effect` - The effect configuration with property values
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// let output = renderer.apply_effect(
+    ///     &input_bitmap,
+    ///     &MySepiaEffect { intensity: 0.8 }
+    /// )?;
+    /// renderer.render_target.DrawImage(&output, ...);
+    /// ```
+    pub fn apply_effect<E: crate::gfx::effects::PixelShaderEffect>(
+        &self,
+        bitmap: &ID2D1Bitmap,
+        effect: &E,
+    ) -> windows::core::Result<ID2D1Image> {
+        let instance = self.create_effect::<E>()?;
+        instance.set_input_image(&bitmap.cast::<ID2D1Image>().unwrap());
+        instance.update(effect)?;
+        instance.output()
+    }
+
     /// Render a subset of commands to an offscreen bitmap, maintaining clip state
     pub fn render_commands_to_bitmap(
         &self,

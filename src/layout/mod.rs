@@ -199,12 +199,12 @@ pub fn generate_paint_commands<Message>(
                         };
 
                         // Check if backdrop filter is specified
-                        if let Some(backdrop_filter) = style.backdrop_filter {
+                        if let Some(ref backdrop_filter) = style.backdrop_filter {
                             // Use backdrop filter rendering
                             recorder.fill_rectangle_with_backdrop_filter(
                                 &element_rect,
                                 color,
-                                backdrop_filter,
+                                backdrop_filter.clone(),
                                 style.border_radius.as_ref(),
                             );
                         } else if let Some(border_radius) = &style.border_radius {

@@ -1,3 +1,4 @@
+use crate::gfx::effects::EffectRegistry;
 use crate::widgets::renderer::ShadowCache;
 use std::cell::RefCell;
 use std::mem::ManuallyDrop;
@@ -8,7 +9,8 @@ use windows::Win32::Graphics::Direct2D::Common::{
 };
 use windows::Win32::Graphics::Direct2D::{
     D2D1_BITMAP_OPTIONS_CANNOT_DRAW, D2D1_BITMAP_OPTIONS_TARGET, D2D1_BITMAP_PROPERTIES1,
-    ID2D1Bitmap1, ID2D1Device6, ID2D1DeviceContext6, ID2D1Factory7, ID2D1SolidColorBrush,
+    ID2D1Bitmap1, ID2D1Device6, ID2D1DeviceContext6, ID2D1Factory1, ID2D1Factory7,
+    ID2D1SolidColorBrush,
 };
 use windows::Win32::Graphics::Direct3D11::{ID3D11Device, ID3D11DeviceContext, ID3D11Texture2D};
 use windows::Win32::Graphics::DirectComposition::{
@@ -73,6 +75,9 @@ pub struct DeviceResources {
 
     // Shadow rendering cache
     pub shadow_cache: RefCell<ShadowCache>,
+
+    // Custom effects registry
+    pub effect_registry: RefCell<EffectRegistry>,
 }
 
 impl DeviceResources {
@@ -229,5 +234,31 @@ impl DeviceResources {
         }
 
         Ok(())
+    }
+
+    /// Registers a custom pixel shader effect with Direct2D.
+    ///
+    /// This must be called once per effect type before creating instances.
+    /// Multiple calls with the same effect type are safely ignored.
+    ///
+    /// The effect type must have the `#[pixel_shader_effect]` attribute applied.
+    ///
+    /// # Example
+    ///
+    /// ```ignore
+    /// device_resources.register_effect::<MySepiaEffect>()?;
+    /// ```
+    pub fn register_effect<
+        E: crate::gfx::effects::PixelShaderEffect + crate::gfx::effects::EffectFactory,
+    >(
+        &self,
+    ) -> windows::core::Result<()> {
+        let factory: ID2D1Factory1 = self.d2d_factory.cast()?;
+        self.effect_registry.borrow_mut().register::<E>(&factory)
+    }
+
+    /// Checks if a custom effect type has been registered.
+    pub fn is_effect_registered<E: crate::gfx::effects::PixelShaderEffect>(&self) -> bool {
+        self.effect_registry.borrow().is_registered::<E>()
     }
 }
