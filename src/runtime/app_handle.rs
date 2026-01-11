@@ -160,6 +160,9 @@ pub struct ApplicationHandle<State, Message> {
 
     // Active mouse tracking flags for WM_MOUSELEAVE detection
     pub(crate) active_mouse_tracking_flags: TRACKMOUSEEVENT_FLAGS,
+
+    // Fallback background color for Windows 10 (where Mica/Acrylic aren't supported)
+    pub(crate) fallback_background_color: Option<Color>,
 }
 
 impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, Message> {
@@ -177,6 +180,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         >,
         scrollbar_style: ScrollbarStyle,
         effect_registrations: Vec<crate::runtime::window::builder::EffectRegistrationFn>,
+        fallback_background_color: Option<Color>,
     ) -> Result<Self> {
         unsafe {
             let mut d3d_device = None;
@@ -385,6 +389,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 tray_event_handler,
                 syscommand_handler,
                 active_mouse_tracking_flags: TRACKMOUSEEVENT_FLAGS(0),
+                fallback_background_color,
             })
         }
     }

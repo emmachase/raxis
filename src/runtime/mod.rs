@@ -26,7 +26,9 @@ use windows::Win32::UI::HiDpi::{GetDpiForWindow, GetSystemMetricsForDpi};
 
 use crate::dips_scale;
 use crate::gfx::PointDIP;
+use crate::layout::model::Color;
 use crate::runtime::app_handle::PENDING_MESSAGE_PROCESSING;
+use crate::util::windows::is_windows_11;
 use crate::runtime::context_menu::WM_SHOW_CONTEXT_MENU;
 use crate::runtime::dragdrop::start_text_drag;
 use crate::runtime::tray::{WM_TRAYICON, load_icon_from_resource};
@@ -549,6 +551,13 @@ impl<
                 size_of::<DWM_SYSTEMBACKDROP_TYPE>() as _,
             );
 
+            // Windows 10 doesn't support Mica/MicaAlt/Acrylic backdrops - use solid #202020 fallback
+            let fallback_background_color = if !is_windows_11() && !matches!(backdrop, Backdrop::None) {
+                Some(Color::from_hex(0x202020FF))
+            } else {
+                None
+            };
+
             if replace_titlebar {
                 REPLACE_TITLEBAR.store(true, Ordering::Relaxed);
             }
@@ -566,6 +575,7 @@ impl<
                 syscommand_handler,
                 scrollbar_style,
                 effect_registrations,
+                fallback_background_color,
             )?;
 
             let dips = dips_scale(hwnd);

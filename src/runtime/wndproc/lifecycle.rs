@@ -131,8 +131,9 @@ pub fn handle_paint<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND)
             Ok(commands) => {
                 let device_resources = state.device_resources.clone();
                 let redraw_request = state.shell.redraw_request;
+                let fallback_bg = state.fallback_background_color;
 
-                Some((commands, device_resources, redraw_request))
+                Some((commands, device_resources, redraw_request, fallback_bg))
             }
             Err(e) => {
                 error!("Failed to paint: {e}");
@@ -143,7 +144,7 @@ pub fn handle_paint<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND)
         None
     };
 
-    if let Some((commands, device_resources, redraw_request)) = commands {
+    if let Some((commands, device_resources, redraw_request, fallback_bg)) = commands {
         let mut ps = PAINTSTRUCT::default();
         let _ = unsafe { BeginPaint(hwnd, &mut ps) };
 
@@ -161,13 +162,23 @@ pub fn handle_paint<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND)
             &device_resources.solid_brush,
         ) {
             unsafe { rt.BeginDraw() };
-            let white = D2D1_COLOR_F {
-                r: 0.0,
-                g: 0.0,
-                b: 0.0,
-                a: 0.0,
+            // Use fallback background color on Windows 10 (where Mica/Acrylic aren't supported)
+            let clear_color = if let Some(bg) = fallback_bg {
+                D2D1_COLOR_F {
+                    r: bg.r,
+                    g: bg.g,
+                    b: bg.b,
+                    a: 1.0,
+                }
+            } else {
+                D2D1_COLOR_F {
+                    r: 0.0,
+                    g: 0.0,
+                    b: 0.0,
+                    a: 0.0,
+                }
             };
-            unsafe { rt.Clear(Some(&white)) };
+            unsafe { rt.Clear(Some(&clear_color)) };
 
             let bounds = RectDIP::from(hwnd, rc);
 
