@@ -209,12 +209,21 @@ pub fn handle_paint<State: 'static, Message: 'static + Send + Clone>(hwnd: HWND)
             }
         }
 
-        if let Some(ref swap_chain) = device_resources.dxgi_swapchain {
+        // Clone handles we need before dropping the borrow.
+        // Present() and Commit() can trigger synchronous messages via
+        // SendMessageW, which would cause re-entrant calls that may 
+        // borrow_mut() on device_resources again.
+        let swap_chain = device_resources.dxgi_swapchain.clone();
+        let dcomp_device = device_resources.dcomp_device.clone();
+
+        // Drop the borrow before calling Present/Commit to avoid RefCell re-entrancy
+        drop(device_resources);
+
+        if let Some(ref swap_chain) = swap_chain {
             let _ = unsafe { swap_chain.Present(0, DXGI_PRESENT::default()) };
 
             unsafe {
-                device_resources
-                    .dcomp_device
+                dcomp_device
                     .Commit()
                     .expect("Failed to commit DirectComposition");
             }
