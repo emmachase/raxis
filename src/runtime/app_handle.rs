@@ -543,9 +543,9 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 && let Some(scroll_config) = element.scroll.as_ref()
             {
                 (
-                    scroll_config.horizontal.is_some()
+                    scroll_config.horizontal
                         && element.computed_content_width > element.computed_width,
-                    scroll_config.vertical.is_some()
+                    scroll_config.vertical
                         && element.computed_content_height > element.computed_height,
                 )
             } else {

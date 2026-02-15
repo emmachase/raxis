@@ -261,9 +261,9 @@ pub fn grow_and_shrink_along_axis<Message>(
                 .as_ref()
                 .map(|s| {
                     if x_axis {
-                        s.horizontal.unwrap_or(false)
+                        s.horizontal
                     } else {
-                        s.vertical.unwrap_or(false)
+                        s.vertical
                     }
                 })
                 .unwrap_or(false);
@@ -543,7 +543,7 @@ pub fn grow_and_shrink_along_axis<Message>(
                     let scroll_enabled = element!()
                         .scroll
                         .as_ref()
-                        .map(|s| s.horizontal.unwrap_or(false))
+                        .map(|s| s.horizontal)
                         .unwrap_or(false);
 
                     if !scroll_enabled && row_remaining_size.lt_eps(&-0.01) {
@@ -595,9 +595,9 @@ pub fn grow_and_shrink_along_axis<Message>(
                     .as_ref()
                     .map(|s| {
                         if x_axis {
-                            s.horizontal.unwrap_or(false)
+                            s.horizontal
                         } else {
-                            s.vertical.unwrap_or(false)
+                            s.vertical
                         }
                     })
                     .unwrap_or(false);
@@ -688,9 +688,9 @@ pub fn grow_and_shrink_along_axis<Message>(
                     .as_ref()
                     .map(|s| {
                         if x_axis {
-                            s.horizontal.unwrap_or(false)
+                            s.horizontal
                         } else {
-                            s.vertical.unwrap_or(false)
+                            s.vertical
                         }
                     })
                     .unwrap_or(false);

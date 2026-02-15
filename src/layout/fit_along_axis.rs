@@ -13,8 +13,8 @@ pub fn fit_along_axis<Message>(ui_tree: BorrowedUITree<'_, Message>, root: UIKey
         el.scroll
             .as_ref()
             .map(|s| match axis {
-                Axis::X => s.horizontal.unwrap_or(false),
-                Axis::Y => s.vertical.unwrap_or(false),
+                Axis::X => s.horizontal,
+                Axis::Y => s.vertical,
             })
             .unwrap_or(false)
     }

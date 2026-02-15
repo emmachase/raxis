@@ -1201,8 +1201,8 @@ fn todo_app(hook: &mut HookManager<Message>) -> Element<Message> {
                         width: Sizing::grow(),
                         height: Sizing::fit().min(40.0).max(120.0),
                         scroll: Some(ScrollConfig {
-                            vertical: Some(true),
-                            sticky_bottom: Some(true),
+                            vertical: true,
+                            sticky_bottom: true,
                             ..Default::default()
                         }),
                         background_color: Some(Color::WHITE),
@@ -1399,9 +1399,9 @@ fn virtual_scroll(hook: &mut HookManager<Message>) -> Element<Message> {
             max: 300.0,
         },
         scroll: Some(ScrollConfig {
-            horizontal: Some(true),
-            vertical: Some(true),
-            safe_area_padding: Some(BoxAmount::from(4.0)),
+            horizontal: true,
+            vertical: true,
+            safe_area_padding: BoxAmount::from(4.0),
             scrollbar_style: Some(
                 ScrollbarStyle::new()
                     .with_track_radius(BorderRadius::all(4.0))
@@ -1945,8 +1945,8 @@ fn view(state: &State, hook: &mut HookManager<Message>) -> Element<Message> {
                 width: Sizing::grow(),
                 height: Sizing::grow(),
                 scroll: Some(ScrollConfig {
-                    vertical: Some(true),
-                    safe_area_padding: Some(BoxAmount::from(4.0)),
+                    vertical: true,
+                    safe_area_padding: BoxAmount::from(4.0),
                     scrollbar_style: Some(
                         ScrollbarStyle::new()
                             .with_track_radius(BorderRadius::all(4.0))

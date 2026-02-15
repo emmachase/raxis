@@ -139,10 +139,9 @@ pub fn generate_paint_commands<Message>(
                 let width = element.computed_width;
                 let height = element.computed_height;
 
-                let has_scroll_x =
-                    matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
-                let has_scroll_y =
-                    matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
+                let no_overflow = element.scroll.as_ref().map(|s| s.overflow == false).unwrap_or(false);
+                let has_scroll_x = element.scroll.as_ref().map(|s| s.horizontal).unwrap_or(false);
+                let has_scroll_y = element.scroll.as_ref().map(|s| s.vertical).unwrap_or(false);
 
                 let bounds = element.bounds();
                 let mut style = ElementStyle::from(&*element);
@@ -249,7 +248,7 @@ pub fn generate_paint_commands<Message>(
                     }
                 }
 
-                if has_scroll_x || has_scroll_y {
+                if has_scroll_x || has_scroll_y || no_overflow {
                     let clip_rect = RectDIP {
                         x,
                         y,
@@ -284,12 +283,11 @@ pub fn generate_paint_commands<Message>(
                     let mut recorder = recorder.borrow_mut();
                     let element = &slots[key];
 
-                    let has_scroll_x =
-                        matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
-                    let has_scroll_y =
-                        matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
+                    let no_overflow = element.scroll.as_ref().map(|s| s.overflow == false).unwrap_or(false);
+                    let has_scroll_x = element.scroll.as_ref().map(|s| s.horizontal).unwrap_or(false);
+                    let has_scroll_y = element.scroll.as_ref().map(|s| s.vertical).unwrap_or(false);
 
-                    if has_scroll_x || has_scroll_y {
+                    if has_scroll_x || has_scroll_y || no_overflow {
                         let scroll_config = element.scroll.as_ref().unwrap();
                         let global_style = shell.borrow().scrollbar_style;
 

@@ -258,8 +258,8 @@ pub fn compute_scrollbar_geom<Message>(
     element: &UIElement<Message>,
     axis: Axis,
 ) -> Option<ScrollbarGeom> {
-    let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal.is_some());
-    let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical.is_some());
+    let has_scroll_x = matches!(element.scroll.as_ref(), Some(s) if s.horizontal);
+    let has_scroll_y = matches!(element.scroll.as_ref(), Some(s) if s.vertical);
     let id = element.id?;
     let sc = element.scroll.as_ref()?;
 
@@ -297,7 +297,7 @@ pub fn compute_scrollbar_geom<Message>(
             };
             let visible_ratio = (height / content_height).min(1.0);
 
-            let safe_area_padding = sc.safe_area_padding.unwrap_or_default();
+            let safe_area_padding = sc.safe_area_padding;
             let x = element.x + safe_area_padding.left;
             let y = element.y + safe_area_padding.top;
             let safe_width = width - safe_area_padding.left - safe_area_padding.right;
@@ -356,7 +356,7 @@ pub fn compute_scrollbar_geom<Message>(
             };
             let visible_ratio = (width / content_width).min(1.0);
 
-            let safe_area_padding = sc.safe_area_padding.unwrap_or_default();
+            let safe_area_padding = sc.safe_area_padding;
             let x = element.x + safe_area_padding.left;
             let y = element.y + safe_area_padding.top;
             let safe_width = width - safe_area_padding.left - safe_area_padding.right;

@@ -822,8 +822,8 @@ impl<Message> Shell<Message> {
             };
 
             let scroll_cfg = ancestor.scroll.as_ref().unwrap();
-            let has_scroll_x = scroll_cfg.horizontal.unwrap_or(false);
-            let has_scroll_y = scroll_cfg.vertical.unwrap_or(false);
+            let has_scroll_x = scroll_cfg.horizontal;
+            let has_scroll_y = scroll_cfg.vertical;
 
             if !has_scroll_x && !has_scroll_y {
                 continue;

@@ -145,8 +145,8 @@ pub fn position_elements<Message>(
                 let max_scroll_y =
                     (slots[key].computed_content_height - slots[key].computed_height).max(0.0);
 
-                let sticky_bottom = scroll_cfg.sticky_bottom.unwrap_or(false);
-                let sticky_right = scroll_cfg.sticky_right.unwrap_or(false);
+                let sticky_bottom = scroll_cfg.sticky_bottom;
+                let sticky_right = scroll_cfg.sticky_right;
 
                 let (prev_w, prev_h) =
                     scroll_state_manager.get_previous_content_dimensions(element_id);
@@ -227,8 +227,8 @@ pub fn position_elements<Message>(
 
             let (scroll_h, scroll_v) = if let Some(cfg) = slots[key].scroll.as_ref() {
                 (
-                    cfg.horizontal.unwrap_or(false),
-                    cfg.vertical.unwrap_or(false),
+                    cfg.horizontal,
+                    cfg.vertical,
                 )
             } else {
                 (false, false)

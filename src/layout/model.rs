@@ -733,17 +733,16 @@ impl ScrollbarStyle {
 
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct ScrollConfig {
-    pub horizontal: Option<bool>,
-    pub vertical: Option<bool>,
-    pub safe_area_padding: Option<BoxAmount>,
-    pub horizontal_scroll_amount: Option<f32>,
-    pub vertical_scroll_amount: Option<f32>,
+    pub overflow: bool,
+    pub horizontal: bool,
+    pub vertical: bool,
+    pub safe_area_padding: BoxAmount,
     pub max_horizontal_scroll: Option<f32>,
     pub max_vertical_scroll: Option<f32>,
 
     // Sticky scrolling behavior
-    pub sticky_bottom: Option<bool>, // keep scrolled to bottom when content height increases
-    pub sticky_right: Option<bool>,  // keep scrolled to right when content width increases
+    pub sticky_bottom: bool, // keep scrolled to bottom when content height increases
+    pub sticky_right: bool,  // keep scrolled to right when content width increases
 
     // Scrollbar appearance customization
     pub scrollbar_style: Option<ScrollbarStyle>,
