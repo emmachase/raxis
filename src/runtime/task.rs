@@ -83,11 +83,6 @@ pub enum WindowAction {
     Close,
 }
 
-pub enum SystemAction {
-    GetRoamingAppData(Sender<Option<PathBuf>>),
-    GetLocalAppData(Sender<Option<PathBuf>>),
-}
-
 pub enum ContextMenuAction {
     Show {
         items: Vec<ContextMenuItem>, // label, message, enabled, checked, is_separator
@@ -100,7 +95,6 @@ pub enum Action<T> {
     Output(T),
     Clipboard(ClipboardAction),
     Window(WindowAction),
-    System(SystemAction),
     ContextMenu(ContextMenuAction),
     Exit,
 }
@@ -119,7 +113,6 @@ impl<T> Action<T> {
             Action::Clipboard(action) => Err(Action::Clipboard(action)),
             Action::Window(action) => Err(Action::Window(action)),
             Action::ContextMenu(action) => Err(Action::ContextMenu(action)),
-            Action::System(action) => Err(Action::System(action)),
             // Action::Reload => Err(Action::Reload),
             Action::Exit => Err(Action::Exit),
         }
@@ -683,16 +676,6 @@ pub fn show_context_menu<T: Clone + Send + Sync + 'static>(
 //     })
 // }
 
-/// Creates a new [`Task`] that gets the roaming app data directory.
-pub fn get_roaming_app_data() -> Task<Option<PathBuf>> {
-    oneshot(|sender| Action::System(SystemAction::GetRoamingAppData(sender)))
-}
-
-/// Creates a new [`Task`] that gets the local app data directory.
-pub fn get_local_app_data() -> Task<Option<PathBuf>> {
-    oneshot(|sender| Action::System(SystemAction::GetLocalAppData(sender)))
-}
-
 /// Runs the task executor loop on an async runtime
 pub fn run_task_executor<Message: Send + Clone + 'static>(
     task_receiver: std::sync::mpsc::Receiver<Task<Message>>,
@@ -803,34 +786,6 @@ pub fn run_task_executor<Message: Send + Clone + 'static>(
                         .ok();
                     },
                 },
-                Action::System(action) => {
-                    // Determine folder ID before extracting sender
-                    let folder_id = match &action {
-                        SystemAction::GetRoamingAppData(_) => &FOLDERID_RoamingAppData,
-                        SystemAction::GetLocalAppData(_) => &FOLDERID_LocalAppData,
-                    };
-
-                    // Extract sender
-                    let sender = match action {
-                        SystemAction::GetRoamingAppData(sender)
-                        | SystemAction::GetLocalAppData(sender) => sender,
-                    };
-
-                    let Ok(co_path) =
-                        (unsafe { SHGetKnownFolderPath(folder_id, KNOWN_FOLDER_FLAG(0), None) })
-                    else {
-                        let _ = sender.send(None);
-                        continue;
-                    };
-
-                    let Ok(path) = (unsafe { co_path.to_string() }) else {
-                        let _ = sender.send(None);
-                        continue;
-                    };
-                    unsafe { CoTaskMemFree(Some(co_path.0 as _)) };
-
-                    let _ = sender.send(Some(PathBuf::from(path)));
-                }
                 Action::ContextMenu(ContextMenuAction::Show {
                     items,
                     position,

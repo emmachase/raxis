@@ -1,9 +1,5 @@
 use std::{
-    any::Any,
-    cell::RefCell,
-    rc::Rc,
-    sync::mpsc,
-    time::{Duration, Instant},
+    any::Any, cell::RefCell, path::PathBuf, rc::Rc, sync::mpsc, time::{Duration, Instant}
 };
 
 use log::{debug, trace};
@@ -308,7 +304,10 @@ pub use gfx::effects::{
 pub use runtime::Application;
 pub use runtime::context_menu::{ContextMenu, ContextMenuItem};
 pub use runtime::syscommand::{SystemCommand, SystemCommandResponse};
-pub use runtime::task::{close_window, minimize_window, show_context_menu, toggle_maximize_window};
+pub use runtime::task::{
+    close_window, minimize_window,
+    show_context_menu, toggle_maximize_window,
+};
 pub use runtime::tray::{TrayEvent, TrayIconConfig};
 
 pub enum DeferredControl {
@@ -1117,4 +1116,14 @@ pub fn dips_scale(hwnd: HWND) -> f32 {
 
 pub fn dips_scale_for_dpi(dpi: u32) -> f32 {
     96.0f32 / (dpi as f32).max(1.0)
+}
+
+/// Returns the roaming app data directory (`%APPDATA%`) synchronously via environment variable.
+pub fn get_roaming_app_data() -> Option<PathBuf> {
+    std::env::var("APPDATA").ok().map(PathBuf::from)
+}
+
+/// Returns the local app data directory (`%LOCALAPPDATA%`) synchronously via environment variable.
+pub fn get_local_app_data() -> Option<PathBuf> {
+    std::env::var("LOCALAPPDATA").ok().map(PathBuf::from)
 }
