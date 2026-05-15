@@ -31,11 +31,6 @@ use futures::channel::oneshot::Sender;
 use futures::future::{self, FutureExt};
 use futures::stream::BoxStream;
 use futures::stream::{self, Stream, StreamExt};
-use windows::Win32::System::Com::CoTaskMemFree;
-use windows::Win32::UI::Shell::FOLDERID_LocalAppData;
-use windows::Win32::UI::Shell::FOLDERID_RoamingAppData;
-use windows::Win32::UI::Shell::KNOWN_FOLDER_FLAG;
-use windows::Win32::UI::Shell::SHGetKnownFolderPath;
 use windows::Win32::UI::WindowsAndMessaging::IsIconic;
 use windows::Win32::UI::WindowsAndMessaging::IsWindowVisible;
 use windows::Win32::UI::WindowsAndMessaging::SC_CLOSE;
@@ -49,7 +44,6 @@ use windows::Win32::UI::WindowsAndMessaging::WM_SYSCOMMAND;
 // pub type BoxStream<'a, T> = Pin<Box<dyn Stream<Item = T> + Send + 'a>>;
 
 use std::convert::Infallible;
-use std::path::PathBuf;
 use std::sync::Arc;
 
 use crate::ContextMenuItem;

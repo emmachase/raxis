@@ -37,8 +37,7 @@ use windows::Win32::Graphics::Direct2D::{
     D2D1_FACTORY_TYPE_SINGLE_THREADED, D2D1CreateFactory, ID2D1Factory7, ID2D1PathGeometry,
 };
 use windows::Win32::Graphics::Direct3D::{
-    D3D_DRIVER_TYPE_HARDWARE, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3,
-    D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1,
+    D3D_DRIVER_TYPE_HARDWARE, D3D_DRIVER_TYPE_UNKNOWN, D3D_FEATURE_LEVEL_9_1, D3D_FEATURE_LEVEL_9_2, D3D_FEATURE_LEVEL_9_3, D3D_FEATURE_LEVEL_10_0, D3D_FEATURE_LEVEL_10_1, D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_11_1
 };
 use windows::Win32::Graphics::Direct3D11::{
     D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_SDK_VERSION, D3D11CreateDevice, ID3D11Device,
@@ -47,7 +46,7 @@ use windows::Win32::Graphics::DirectComposition::{DCompositionCreateDevice2, IDC
 use windows::Win32::Graphics::DirectWrite::{
     DWRITE_FACTORY_TYPE_SHARED, DWriteCreateFactory, IDWriteFactory6,
 };
-use windows::Win32::Graphics::Dxgi::{IDXGIDevice4, IDXGIFactory7};
+use windows::Win32::Graphics::Dxgi::{CreateDXGIFactory, IDXGIDevice4, IDXGIFactory, IDXGIFactory7};
 use windows::Win32::Graphics::Gdi::ScreenToClient;
 use windows::Win32::System::Ole::IDropTarget;
 use windows::Win32::UI::Input::KeyboardAndMouse::TRACKMOUSEEVENT_FLAGS;
@@ -185,7 +184,7 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
         unsafe {
             let mut d3d_device = None;
             let mut d3d_context = None;
-            D3D11CreateDevice(
+            if D3D11CreateDevice(
                 None,
                 D3D_DRIVER_TYPE_HARDWARE,
                 HMODULE::default(),
@@ -202,9 +201,39 @@ impl<State: 'static, Message: 'static + Send + Clone> ApplicationHandle<State, M
                 D3D11_SDK_VERSION,
                 Some(&mut d3d_device),
                 None,
-                Some(&mut d3d_context),
-            )
-            .map_err(RuntimeError::D3D11DeviceCreationFailed)?;
+                Some(&mut d3d_context)
+            ).is_err() {
+                let factory = CreateDXGIFactory::<IDXGIFactory>().expect("Failed to create DXGI Factory");
+                let mut adapter_idx = 0u32;
+                loop {
+                    let adapter = factory
+                        .EnumAdapters(adapter_idx)
+                        .map_err(RuntimeError::D3D11DeviceCreationFailed)?;
+                    let success = D3D11CreateDevice(
+                        Some(&adapter),
+                        D3D_DRIVER_TYPE_UNKNOWN,
+                        HMODULE::default(),
+                        D3D11_CREATE_DEVICE_BGRA_SUPPORT,
+                        Some(&[
+                            D3D_FEATURE_LEVEL_11_1,
+                            D3D_FEATURE_LEVEL_11_0,
+                            D3D_FEATURE_LEVEL_10_1,
+                            D3D_FEATURE_LEVEL_10_0,
+                            D3D_FEATURE_LEVEL_9_3,
+                            D3D_FEATURE_LEVEL_9_2,
+                            D3D_FEATURE_LEVEL_9_1,
+                        ]),
+                        D3D11_SDK_VERSION,
+                        Some(&mut d3d_device),
+                        None,
+                        Some(&mut d3d_context)
+                    );
+                    match success {
+                        Ok(_) => break,
+                        Err(_) => adapter_idx += 1
+                    }
+                }
+            };
             let d3d_device: ID3D11Device = d3d_device.expect("Failed to create D3D device");
             let d3d_context = d3d_context.expect("Failed to create D3D context");
 
