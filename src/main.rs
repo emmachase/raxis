@@ -28,7 +28,6 @@ use raxis::{
         font_manager::FontIdentifier,
         scroll::ScrollPosition,
         task::{Task, hide_window},
-        window::builder::InitialDisplay,
     },
     use_animation,
     util::{str::StableString, unique::combine_id},
